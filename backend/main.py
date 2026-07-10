@@ -801,11 +801,15 @@ output_data = {{"status": "success", "file_path": out_path}}
             elif btype == "merge_excel":
                 header_rows = int(bdata.get("headerRows", 3))
                 excel_filename = bdata.get("excelFileName", "merged.xlsx").strip()
+                merge_all_input = bdata.get("mergeAllInput", True)
                 selected_files = bdata.get("selectedFiles", [])
                 if not excel_filename:
                     excel_filename = "merged.xlsx"
                 
-                if not selected_files:
+                # Nếu bật chọn tất cả Input: tự động quét toàn bộ file trong INPUT_DIR
+                if merge_all_input:
+                    selected_files = None  # Sẽ tự quét trong code Python
+                elif not selected_files:
                     if log_fn:
                         log_fn(bid, "error", f"❌ Merge Excel: Bạn chưa chọn file nào để gộp!")
                     _finish_run(run_id, "error", start, error="No files selected")
@@ -817,13 +821,22 @@ output_data = {{"status": "success", "file_path": out_path}}
                 if log_fn:
                     log_fn(bid, "info", f"⚡ Đang chạy Merge Excel: {label}...")
                 
+                if merge_all_input:
+                    file_list_code = """
+# T\u1ef1 đ\u1ed9ng qu\u00e9t t\u1ea5t c\u1ea3 file .xlsx/.csv trong INPUT_DIR
+file_list = sorted([f for f in os.listdir(INPUT_DIR) if f.endswith('.xlsx') or f.endswith('.csv')])
+print(f"T\u1ef1 đ\u1ed9ng ph\u00e1t hi\u1ec7n {len(file_list)} file trong th\u01b0 m\u1ee5c Input.")
+"""
+                else:
+                    _fl = selected_files
+                    file_list_code = f"""file_list = {_fl!r}\nprint(f\"\u0110ang gh\u00e9p {{len(file_list)}} file \u0111\u00e3 ch\u1ecdn.\")"""
+
                 code = f'''
 import os
 import pandas as pd
 import openpyxl
 
-print(f"Đang tìm kiếm {len(selected_files)} file Excel trong thư mục: {{INPUT_DIR}}...")
-file_list = {selected_files!r}
+{file_list_code}
 
 if not file_list:
     raise ValueError(f"Không tìm thấy file .xlsx nào trong Dữ liệu Workflow (INPUT_DIR)")

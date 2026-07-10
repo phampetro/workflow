@@ -140,6 +140,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   
   const [availableFiles, setAvailableFiles] = useState([])
   const [loadingFiles, setLoadingFiles] = useState(false)
+  const [mergeAllInput, setMergeAllInput] = useState(node.data.mergeAllInput !== false) // default ON
+  const [mergeFileSource, setMergeFileSource] = useState(node.data.mergeFileSource || 'input') // 'input' | 'output'
   
   const pivotInputFiles = Form.useWatch('pivotInputFiles', form)
   const pivotInputFile = pivotInputFiles?.[0] || ''
@@ -169,7 +171,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const isPivotExcel = node.data.type === 'pivot_excel'
 
   const hasCodeEditor = isPython || isSqlToExcel
-  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel
+  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel
 
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
@@ -281,7 +283,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       onSave(node.id, {
         ...values,
         ...(isPython ? { code } : {}),
-        ...(isSqlToExcel ? { sqlQuery: sqlCode } : {})
+        ...(isSqlToExcel ? { sqlQuery: sqlCode } : {}),
+        ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {})
       })
       message.success('Đã lưu cấu hình khối!')
     } catch (e) {
@@ -469,9 +472,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
 
           {isMergeExcel && (
             <>
-              <Form.Item name="selectedFiles" label="Thứ tự các file cần ghép (File đầu tiên được chọn sẽ giữ nguyên tiêu đề)" rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}>
-                <FileSelectionTable files={availableFiles} loading={loadingFiles} />
-              </Form.Item>
               <Form.Item name="headerRows" label="Số dòng tiêu đề (Header)" rules={[{ required: true, message: 'Nhập số dòng tiêu đề' }]}>
                 <InputNumber min={0} style={{ width: '100%' }} placeholder="VD: 3" />
               </Form.Item>
@@ -607,6 +607,95 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
                   ))}
                 </Select>
               </Form.Item>
+            </div>
+          ) : isMergeExcel ? (
+            <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                <span style={{ fontSize: 20 }}>📂</span>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Chọn file cần ghép</h3>
+              </div>
+
+              {/* Toggle chọn tất cả Input */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-default)' }}>
+                <Switch
+                  checked={mergeAllInput}
+                  onChange={(checked) => {
+                    setMergeAllInput(checked)
+                    if (checked) {
+                      // Tự động chọn tất cả input
+                      const inputFiles = availableFiles.filter(f => f.source === 'input')
+                      form.setFieldsValue({ selectedFiles: inputFiles.map(f => f.name) })
+                    }
+                  }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Chọn tất cả file đầu vào (Input)</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tự động ghép tất cả file trong thư mục Input theo thứ tự tên</div>
+                </div>
+              </div>
+
+              {/* Nếu tắt → Hiện 2 tab chọn nguồn */}
+              {!mergeAllInput && (
+                <>
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                    <button
+                      type="button"
+                      onClick={() => setMergeFileSource('input')}
+                      style={{
+                        flex: 1, padding: '8px 0', borderRadius: 8, border: `2px solid ${mergeFileSource === 'input' ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                        background: mergeFileSource === 'input' ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'var(--bg-card)',
+                        color: mergeFileSource === 'input' ? 'var(--accent-primary)' : 'var(--text-primary)',
+                        fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', transition: 'all 0.2s'
+                      }}
+                    >
+                      📬 File Đầu vào (Input)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMergeFileSource('output')}
+                      style={{
+                        flex: 1, padding: '8px 0', borderRadius: 8, border: `2px solid ${mergeFileSource === 'output' ? '#f59e0b' : 'var(--border-default)'}`,
+                        background: mergeFileSource === 'output' ? 'color-mix(in srgb, #f59e0b 12%, transparent)' : 'var(--bg-card)',
+                        color: mergeFileSource === 'output' ? '#f59e0b' : 'var(--text-primary)',
+                        fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', transition: 'all 0.2s'
+                      }}
+                    >
+                      📤 File Đầu ra (Output)
+                    </button>
+                  </div>
+
+                  <Form.Item
+                    name="selectedFiles"
+                    label="Thứ tự các file cần ghép"
+                    rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}
+                    extra="File đầu tiên được chọn sẽ giữ nguyên tiêu đề"
+                  >
+                    <FileSelectionTable
+                      files={availableFiles.filter(f => f.source === mergeFileSource)}
+                      loading={loadingFiles}
+                    />
+                  </Form.Item>
+                </>
+              )}
+
+              {/* Khi bật all input → chỉ preview */}
+              {mergeAllInput && (
+                <div style={{ marginTop: 4, padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-default)' }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8 }}>File sẽ được ghép (tất cả Input):</div>
+                  {loadingFiles ? (
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Đang tải...</div>
+                  ) : availableFiles.filter(f => f.source === 'input').length === 0 ? (
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Chưa có file nào trong thư mục Input.</div>
+                  ) : (
+                    availableFiles.filter(f => f.source === 'input').map((f, i) => (
+                      <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border-default)' }}>
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: 700, width: 20, textAlign: 'center' }}>{i + 1}</span>
+                        <span style={{ fontSize: '0.9rem' }}>{f.name}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           ) : isPivotExcel ? (
             <div style={{ padding: 24, flex: 1 }}>
