@@ -5,10 +5,10 @@ import { Clock, RefreshCw, CheckCircle, XCircle, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STATUS_CONFIG = {
-  running:   { label: 'Đang chạy', color: 'processing', icon: <Loader size={12} className="spinning" /> },
-  success:   { label: 'Thành công', color: 'success', icon: <CheckCircle size={12} /> },
+  running:   { label: 'Đang chạy', color: 'processing', icon: <Loader size="0.75rem" className="spinning" /> },
+  success:   { label: 'Thành công', color: 'success', icon: <CheckCircle size="0.75rem" /> },
   scheduled: { label: 'Lên lịch',  color: 'warning' },
-  error:     { label: 'Lỗi',       color: 'error', icon: <XCircle size={12} /> },
+  error:     { label: 'Lỗi',       color: 'error', icon: <XCircle size="0.75rem" /> },
   idle:      { label: 'Chờ',       color: 'default' },
   pending:   { label: 'Chờ',       color: 'default' },
 }
@@ -92,7 +92,7 @@ export default function WorkflowHistoryPanel({ workflowId }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="section-header">
         <h3 className="section-title">Lịch sử chạy gần đây</h3>
-        <Button icon={<RefreshCw size={14} />} onClick={loadHistory} size="small" loading={loading}>
+        <Button icon={<RefreshCw size="0.875rem" />} onClick={loadHistory} size="small" loading={loading}>
           Làm mới
         </Button>
       </div>

@@ -45,7 +45,7 @@ export default function DeleteEdge({
                 data?.onDelete?.(id)
               }}
             >
-              <X size={12} />
+              <X size="0.75rem" />
             </button>
           </div>
         </EdgeLabelRenderer>

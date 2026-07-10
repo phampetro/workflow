@@ -53,6 +53,27 @@ async def get_workflow(workflow_id: str, session: AsyncSession = Depends(get_ses
     return wf.to_dict()
 
 
+@router.post("/api/workflows/{workflow_id}/duplicate", status_code=201)
+async def duplicate_workflow(workflow_id: str, session: AsyncSession = Depends(get_session)):
+    wf = await session.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow không tồn tại")
+    
+    new_wf = Workflow(
+        id=str(uuid.uuid4()),
+        name=wf.name + " (Copy)",
+        description=wf.description,
+        project_id=wf.project_id,
+        graph_json=wf.graph_json,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    session.add(new_wf)
+    await session.commit()
+    await session.refresh(new_wf)
+    return new_wf.to_dict()
+
+
 @router.put("/api/workflows/{workflow_id}")
 async def update_workflow(workflow_id: str, body: dict, session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)

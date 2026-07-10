@@ -5,77 +5,77 @@ import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCirc
 const BLOCK_TYPES = {
   start: {
     label: 'Start',
-    icon: <Zap size={14} />,
+    icon: <Zap size="0.875rem" />,
     color: '#00d4aa',
     gradient: 'linear-gradient(135deg, #00d4aa, #0891b2)',
     description: 'Điểm bắt đầu workflow',
   },
   python: {
     label: 'Python Block',
-    icon: <Code2 size={14} />,
+    icon: <Code2 size="0.875rem" />,
     color: '#6c63ff',
     gradient: 'linear-gradient(135deg, #6c63ff, #8b5cf6)',
     description: 'Chạy đoạn code Python',
   },
   condition: {
     label: 'Condition',
-    icon: <GitBranch size={14} />,
+    icon: <GitBranch size="0.875rem" />,
     color: '#f59e0b',
     gradient: 'linear-gradient(135deg, #f59e0b, #ef4444)',
     description: 'Rẽ nhánh theo điều kiện',
   },
   delay: {
     label: 'Delay',
-    icon: <Timer size={14} />,
+    icon: <Timer size="0.875rem" />,
     color: '#8b5cf6',
     gradient: 'linear-gradient(135deg, #8b5cf6, #c084fc)',
     description: 'Dừng chờ theo số giây',
   },
   telegram: {
     label: 'Telegram',
-    icon: <Send size={14} />,
+    icon: <Send size="0.875rem" />,
     color: '#0088cc',
     gradient: 'linear-gradient(135deg, #0088cc, #33aadd)',
     description: 'Gửi tin nhắn Telegram',
   },
   email: {
     label: 'Email',
-    icon: <Mail size={14} />,
+    icon: <Mail size="0.875rem" />,
     color: '#f43f5e',
     gradient: 'linear-gradient(135deg, #f43f5e, #e11d48)',
     description: 'Gửi Email tự động',
   },
   end: {
     label: 'End',
-    icon: <Flag size={14} />,
+    icon: <Flag size="0.875rem" />,
     color: '#ef4444',
     gradient: 'linear-gradient(135deg, #ef4444, #dc2626)',
     description: 'Kết thúc workflow',
   },
   database: {
     label: 'Database',
-    icon: <Database size={14} />,
+    icon: <Database size="0.875rem" />,
     color: '#10b981',
     gradient: 'linear-gradient(135deg, #10b981, #059669)',
     description: 'Kết nối Cơ sở dữ liệu',
   },
   sql_to_excel: {
     label: 'SQL to Excel',
-    icon: <Table size={14} />,
+    icon: <Table size="0.875rem" />,
     color: '#059669',
     gradient: 'linear-gradient(135deg, #059669, #047857)',
     description: 'Xuất kết quả SQL ra Excel',
   },
   merge_excel: {
     label: 'Merge Excel',
-    icon: <Files size={14} />,
+    icon: <Files size="0.875rem" />,
     color: '#8b5cf6',
     gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
     description: 'Ghép nhiều file Excel thành 1',
   },
   pivot_excel: {
     label: 'Pivot Excel',
-    icon: <TableProperties size={14} />,
+    icon: <TableProperties size="0.875rem" />,
     color: '#f59e0b',
     gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
     description: 'Tổng hợp dữ liệu (Pivot)',
@@ -127,9 +127,9 @@ const BlockNode = memo(({ data, selected }) => {
         <div className="block-type-icon">{type.icon}</div>
         <span className="block-type-label">{type.label}</span>
         <div className="block-status-icon">
-          {runStatus === 'running' && <Loader size={12} className="spinning" />}
-          {runStatus === 'success' && <CheckCircle size={12} color="white" />}
-          {runStatus === 'error' && <XCircle size={12} color="white" />}
+          {runStatus === 'running' && <Loader size="0.75rem" className="spinning" />}
+          {runStatus === 'success' && <CheckCircle size="0.75rem" color="white" />}
+          {runStatus === 'error' && <XCircle size="0.75rem" color="white" />}
         </div>
       </div>
 
@@ -171,14 +171,14 @@ const BlockNode = memo(({ data, selected }) => {
           onClick={() => data.onEdit?.()}
           title="Chỉnh sửa"
         >
-          <Settings size={14} />
+          <Settings size="0.875rem" />
         </button>
         <button
           className="block-action-btn danger"
           onClick={() => data.onDelete?.()}
           title="Xóa"
         >
-          <Trash2 size={14} />
+          <Trash2 size="0.875rem" />
         </button>
       </div>
 
@@ -223,26 +223,33 @@ const BlockNode = memo(({ data, selected }) => {
 
       <style>{`
         .block-node {
-          background: var(--bg-elevated);
-          border: 1.5px solid var(--border-default);
-          border-radius: 6px;
-          min-width: 100px;
-          max-width: 140px;
-          transition: all 0.2s ease;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-md);
+          min-width: 120px;
+          max-width: 160px;
+          transition: all var(--transition-fast);
           position: relative;
           overflow: visible;
+          box-shadow: var(--shadow-sm);
+        }
+
+        .block-node:hover {
+          transform: translateY(-2px);
         }
 
         .block-node:hover .block-actions {
           opacity: 1;
+          transform: translateY(0);
         }
 
         .block-header {
           display: flex;
           align-items: center;
-          gap: 4px;
-          padding: 2px 6px;
-          border-radius: 5px 5px 0 0;
+          gap: 6px;
+          padding: 6px 8px;
+          border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+          box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1);
         }
 
         .block-type-icon {
@@ -252,11 +259,11 @@ const BlockNode = memo(({ data, selected }) => {
         }
 
         .block-type-label {
-          font-size: 6px;
+          font-size: 0.65rem;
           font-weight: 700;
-          color: rgba(255,255,255,0.95);
+          color: white;
           text-transform: uppercase;
-          letter-spacing: 0.04em;
+          letter-spacing: 0.05em;
           flex: 1;
         }
 
@@ -266,29 +273,34 @@ const BlockNode = memo(({ data, selected }) => {
           align-items: center;
         }
         .block-type-icon svg, .block-status-icon svg {
-          width: 12px;
-          height: 12px;
+          width: 14px;
+          height: 14px;
         }
 
         .block-body {
-          padding: 4px 6px 6px;
+          padding: 8px;
+          border-radius: 0 0 11px 11px;
+          background: var(--bg-surface);
         }
 
         .block-name {
-          font-size: 7px;
-          font-weight: 700;
+          font-size: 0.75rem;
+          font-weight: 600;
           color: var(--text-primary);
           margin-bottom: 2px;
-          line-height: 1.1;
+          line-height: 1.2;
         }
 
         .block-desc {
-          font-size: 6px;
+          font-size: 0.65rem;
           color: var(--text-muted);
-          line-height: 1.1;
+          line-height: 1.2;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
         }
-
-
 
         .block-condition {
           margin-top: 8px;
@@ -298,44 +310,46 @@ const BlockNode = memo(({ data, selected }) => {
         }
 
         .condition-label {
-          font-size: 6px;
+          font-size: 0.6rem;
           font-weight: 700;
           color: var(--accent-warning);
           text-transform: uppercase;
         }
 
         .block-condition code {
-          font-size: 6px;
+          font-size: 0.6rem;
           background: rgba(245,158,11,0.1);
           color: var(--accent-warning);
           border: 1px solid rgba(245,158,11,0.2);
-          padding: 1px 4px;
-          border-radius: 4px;
+          padding: 2px 4px;
+          border-radius: var(--radius-sm);
         }
 
         .block-actions {
           position: absolute;
-          top: -28px;
+          top: -34px;
           right: 0;
           display: flex;
           flex-direction: row;
-          gap: 4px;
+          gap: 6px;
           opacity: 0;
-          transition: opacity 0.15s ease;
+          transform: translateY(4px);
+          transition: all var(--transition-fast);
         }
 
         .block-action-btn {
-          width: 20px;
-          height: 20px;
-          border-radius: 4px;
+          width: 26px;
+          height: 26px;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--border-default);
-          background: var(--bg-elevated);
+          background: var(--bg-surface);
           color: var(--text-secondary);
           display: flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: all var(--transition-fast);
+          box-shadow: var(--shadow-sm);
         }
 
         .block-action-btn:hover {
@@ -345,26 +359,27 @@ const BlockNode = memo(({ data, selected }) => {
         }
 
         .block-action-btn.danger:hover {
-          background: rgba(239,68,68,0.15);
+          background: rgba(239,68,68,0.1);
           color: var(--accent-danger);
           border-color: rgba(239,68,68,0.3);
         }
         .block-action-btn svg {
-          width: 12px;
-          height: 12px;
+          width: 14px;
+          height: 14px;
         }
 
         .block-handle {
-          width: 8px !important;
-          height: 8px !important;
-          border: 1.5px solid var(--bg-elevated) !important;
+          width: 10px !important;
+          height: 10px !important;
+          border: 2px solid var(--bg-surface) !important;
           border-radius: 50% !important;
-          transition: transform 0.15s ease !important;
+          transition: transform var(--transition-fast) !important;
           z-index: 10 !important;
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
         }
 
         .block-handle:hover {
-          transform: scale(1.3) !important;
+          transform: scale(1.4) !important;
         }
 
         .spinning {

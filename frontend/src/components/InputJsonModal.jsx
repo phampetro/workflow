@@ -182,7 +182,7 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       key: 'name',
       render: (text) => (
         <Space>
-          <FileText size={16} color="var(--accent-primary)" />
+          <FileText size="1rem" color="var(--accent-primary)" />
           <span style={{ color: 'var(--text-primary)' }}>{text}</span>
         </Space>
       )
@@ -198,15 +198,15 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       key: 'action',
       render: (_, record) => (
         <Space>
-          <Button type="text" icon={<Eye size={16} />} onClick={() => handleView(record.name, isOutput)} title="Xem" />
-          <Button type="text" icon={<Download size={16} />} onClick={() => handleDownload(record.name, isOutput)} title="Tải xuống" />
+          <Button type="text" icon={<Eye size="1rem" />} onClick={() => handleView(record.name, isOutput)} title="Xem" />
+          <Button type="text" icon={<Download size="1rem" />} onClick={() => handleDownload(record.name, isOutput)} title="Tải xuống" />
           <Popconfirm
             title="Bạn có chắc chắn muốn xóa tệp này?"
             onConfirm={() => isOutput ? handleDeleteOutFile(record.name) : handleDeleteFile(record.name)}
             okText="Xóa"
             cancelText="Hủy"
           >
-            <Button type="text" danger icon={<Trash2 size={16} />} title="Xóa" />
+            <Button type="text" danger icon={<Trash2 size="1rem" />} title="Xóa" />
           </Popconfirm>
         </Space>
       )
@@ -217,7 +217,7 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
     <Drawer
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FileText size={18} color="var(--accent-primary)" /> 
+          <FileText size="1.125rem" color="var(--accent-primary)" /> 
           <span>Dữ liệu Workflow</span>
         </div>
       }
@@ -281,16 +281,16 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
                   </div>
                   {selectedInputRowKeys.length > 0 && (
                     <Space>
-                      <Button size="small" type="primary" icon={<Download size={14} />} onClick={() => handleBatchDownload(false)}>Tải {selectedInputRowKeys.length} tệp</Button>
+                      <Button size="small" type="primary" icon={<Download size="0.875rem" />} onClick={() => handleBatchDownload(false)}>Tải {selectedInputRowKeys.length} tệp</Button>
                       <Popconfirm title={`Xóa ${selectedInputRowKeys.length} tệp đã chọn?`} onConfirm={() => handleBatchDelete(false)}>
-                        <Button size="small" danger icon={<Trash2 size={14} />}>Xóa {selectedInputRowKeys.length} tệp</Button>
+                        <Button size="small" danger icon={<Trash2 size="0.875rem" />}>Xóa {selectedInputRowKeys.length} tệp</Button>
                       </Popconfirm>
                     </Space>
                   )}
                 </div>
                 <Dragger {...uploadProps} style={{ marginBottom: 16, background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '12px 0' }}>
-                    <UploadCloud size={28} color="var(--accent-primary)" />
+                    <UploadCloud size="1.75rem" color="var(--accent-primary)" />
                     <span style={{ color: 'var(--text-primary)', fontSize: '0.95rem' }}>Nhấp hoặc kéo thả tệp vào đây để tải lên</span>
                   </div>
                 </Dragger>
@@ -321,9 +321,9 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
                   </div>
                   {selectedOutputRowKeys.length > 0 && (
                     <Space>
-                      <Button size="small" type="primary" icon={<Download size={14} />} onClick={() => handleBatchDownload(true)}>Tải {selectedOutputRowKeys.length} tệp</Button>
+                      <Button size="small" type="primary" icon={<Download size="0.875rem" />} onClick={() => handleBatchDownload(true)}>Tải {selectedOutputRowKeys.length} tệp</Button>
                       <Popconfirm title={`Xóa ${selectedOutputRowKeys.length} tệp kết quả?`} onConfirm={() => handleBatchDelete(true)}>
-                        <Button size="small" danger icon={<Trash2 size={14} />}>Xóa {selectedOutputRowKeys.length} tệp</Button>
+                        <Button size="small" danger icon={<Trash2 size="0.875rem" />}>Xóa {selectedOutputRowKeys.length} tệp</Button>
                       </Popconfirm>
                     </Space>
                   )}

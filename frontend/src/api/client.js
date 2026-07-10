@@ -55,6 +55,7 @@ export const getWorkflows      = (projectId)  => api.get(`/api/projects/${projec
 export const createWorkflow    = (projectId, data) => api.post(`/api/projects/${projectId}/workflows`, data)
 export const getWorkflow       = (id)         => api.get(`/api/workflows/${id}`)
 export const updateWorkflow    = (id, data)   => api.put(`/api/workflows/${id}`, data)
+export const duplicateWorkflow = (id)         => api.post(`/api/workflows/${id}/duplicate`)
 export const getWorkflowInput  = (id)         => api.get(`/api/workflows/${id}/input`)
 export const updateWorkflowInput = (id, data) => api.put(`/api/workflows/${id}/input`, data)
 export const getWorkflowFiles    = (id)         => api.get(`/api/workflows/${id}/files`)

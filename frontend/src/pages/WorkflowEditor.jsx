@@ -19,6 +19,7 @@ import {
 import { Button, Drawer, Space, Input, message } from 'antd'
 import toast from 'react-hot-toast'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput } from '../api/client'
+import useStore from '../store/useStore'
 
 const nodeTypes = { block: BlockNode }
 const edgeTypes = { custom: DeleteEdge }
@@ -52,12 +53,18 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const [showScheduler, setShowScheduler] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [searchBlock, setSearchBlock] = useState('')
-  const [isRunning, setIsRunning] = useState(false)
   const [showInputModal, setShowInputModal] = useState(false)
   const [inputData, setInputData] = useState({})
   const [inputKeys, setInputKeys] = useState([])
-  const [currentRunId, setCurrentRunId] = useState(null)
   const [saveStatus, setSaveStatus] = useState('saved')
+
+  const activeRuns = useStore((s) => s.activeRuns)
+  const setActiveRun = useStore((s) => s.setActiveRun)
+  const clearActiveRun = useStore((s) => s.clearActiveRun)
+  const clearLogs = useStore((s) => s.clearLogs)
+
+  const currentRunId = activeRuns[workflow?.id] || null
+  const isRunning = !!currentRunId
   const [wfData, setWfData] = useState(workflow)
   const saveTimer = useRef(null)
   const reactFlowWrapper = useRef(null)
@@ -209,30 +216,30 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     await saveGraph(nodes, edges)
 
-    setIsRunning(true)
     setShowLogs(true)
     try {
       const res = await runWorkflow(wfData.id)
-      setCurrentRunId(res.data.run_id)
+      const run_id = res.data.run_id
+      clearLogs(run_id)
+      setActiveRun(wfData.id, run_id)
       toast.success('Đã kích hoạt chạy workflow!')
     } catch (e) {
       toast.error('Lỗi chạy workflow: ' + e.message)
-      setIsRunning(false)
+      clearActiveRun(wfData.id)
     }
   }
 
   const handleStop = async () => {
     if (wfData?.id) {
       await stopWorkflow(wfData.id).catch(() => {})
+      clearActiveRun(wfData.id)
     }
-    setIsRunning(false)
   }
 
   const handleRunFinished = useCallback(() => {
-    setIsRunning(false)
-    setCurrentRunId(null)
+    if (wfData?.id) clearActiveRun(wfData.id)
     message.success('Chạy Workflow hoàn tất!')
-  }, [])
+  }, [wfData?.id, clearActiveRun])
 
   // Drag and drop support
   const onDragStart = (event, nodeType) => {
@@ -301,15 +308,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     <div className="workflow-editor">
       <div className="editor-toolbar">
         <div className="toolbar-left">
-          <Button size="small" type="text" onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <ArrowLeft size={14} /> Quay lại
+          <Button type="text" onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <ArrowLeft size="0.875rem" /> Quay lại
           </Button>
           <div className="toolbar-sep" />
           <div className="toolbar-info" style={{ overflow: 'hidden' }}>
             <div className="toolbar-dot" style={{ background: proj.color, flexShrink: 0 }} />
-            <span className="text-secondary text-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{proj.name}</span>
+            <span className="text-secondary text-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '9.375rem' }}>{proj.name}</span>
             <span className="text-muted" style={{ flexShrink: 0 }}>/</span>
-            <span className="font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{wfData?.name || 'Workflow'}</span>
+            <span className="font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '12.5rem' }}>{wfData?.name || 'Workflow'}</span>
           </div>
         </div>
 
@@ -319,19 +326,19 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
         <div className="toolbar-right">
           <div className="save-status">
-            {SaveIcon && <SaveIcon size={14} className={saveStatus === 'saving' ? 'spinning' : ''} />}
+            {SaveIcon && <SaveIcon size="0.875rem" className={saveStatus === 'saving' ? 'spinning' : ''} />}
             <span>{saveStatus === 'saving' ? 'Đang lưu...' : saveStatus === 'saved' ? 'Đã lưu' : saveStatus === 'error' ? 'Lỗi lưu' : 'Chưa lưu'}</span>
           </div>
           <Space>
-            <Button size="small" icon={<Database size={14} />} onClick={() => setShowInputModal(true)}>Dữ liệu Workflow</Button>
-            <Button size="small" icon={<History size={14} />} onClick={() => setShowHistory(true)}>Lịch sử</Button>
-            <Button size="small" icon={<Calendar size={14} />} onClick={() => setShowScheduler(true)}>Lịch chạy</Button>
-            <Button size="small" icon={<Terminal size={14} />} onClick={() => setShowLogs(!showLogs)} type={showLogs ? 'primary' : 'default'} ghost={showLogs}>Logs</Button>
-            <Button size="small" icon={<Save size={14} />} onClick={handleManualSave} disabled={saveStatus === 'saving'}>Lưu</Button>
+            <Button icon={<Database size="0.875rem" />} onClick={() => setShowInputModal(true)}>Dữ liệu Workflow</Button>
+            <Button icon={<History size="0.875rem" />} onClick={() => setShowHistory(true)}>Lịch sử</Button>
+            <Button icon={<Calendar size="0.875rem" />} onClick={() => setShowScheduler(true)}>Lịch chạy</Button>
+            <Button icon={<Terminal size="0.875rem" />} onClick={() => setShowLogs(!showLogs)} type={showLogs ? 'primary' : 'default'} ghost={showLogs}>Logs</Button>
+            <Button icon={<Save size="0.875rem" />} onClick={handleManualSave} disabled={saveStatus === 'saving'}>Lưu</Button>
             {isRunning ? (
-              <Button size="small" danger icon={<Square size={14} />} onClick={handleStop}>Dừng</Button>
+              <Button danger icon={<Square size="0.875rem" />} onClick={handleStop}>Dừng</Button>
             ) : (
-              <Button size="small" type="primary" icon={<Play size={14} />} onClick={handleRun} disabled={!wfData?.id}>Chạy</Button>
+              <Button type="primary" icon={<Play size="0.875rem" />} onClick={handleRun} disabled={!wfData?.id}>Chạy</Button>
             )}
           </Space>
         </div>
@@ -342,7 +349,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         <div className="sidebar-palette">
           <div className="palette-title">Khối chức năng</div>
           <div className="palette-desc">Kéo thả vào vùng vẽ</div>
-          <div style={{ padding: '0 12px 8px 12px' }}>
+          <div style={{ padding: '0 0.75rem 0.5rem 0.75rem' }}>
             <Input 
               placeholder="Tìm khối..." 
               value={searchBlock}
@@ -407,7 +414,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             }}
             style={{ background: 'transparent' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(255,255,255,0.04)" />
+            <Background variant={BackgroundVariant.Dots} gap={24} size="0.062rem" color="rgba(255,255,255,0.04)" />
             <Controls style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }} />
             <MiniMap
               style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }}
@@ -467,72 +474,84 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       )}
 
       <style>{`
-        .workflow-editor { display:flex; flex-direction:column; height:100%; overflow:hidden; }
-        .editor-toolbar { display:flex; align-items:center; justify-content:space-between; padding:0 var(--space-4); height:52px; background:var(--bg-surface); border-bottom:1px solid var(--border-default); flex-shrink:0; gap:var(--space-4); }
-        .toolbar-left, .toolbar-right { display:flex; align-items:center; gap:var(--space-2); flex:1; }
-        .toolbar-right { justify-content:flex-end; }
-        .toolbar-sep { width:1px; height:18px; background:var(--border-default); }
-        .toolbar-info { display:flex; align-items:center; gap:6px; font-size:.875rem; }
-        .toolbar-dot { width:8px; height:8px; border-radius:50%; }
+        .workflow-editor { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--bg-base); }
+        .editor-toolbar { 
+          display: flex; align-items: center; justify-content: space-between; 
+          padding: 0 var(--space-6); height: var(--navbar-height); 
+          background: var(--bg-surface); 
+          border-bottom: 1px solid var(--border-default); 
+          flex-shrink: 0; gap: var(--space-4); 
+          box-shadow: var(--shadow-sm);
+          z-index: 10;
+        }
+        .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: var(--space-3); flex: 1; }
+        .toolbar-right { justify-content: flex-end; }
+        .toolbar-sep { width: 1px; height: 1.25rem; background: var(--border-default); }
+        .toolbar-info { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+        .toolbar-dot { width: 0.625rem; height: 0.625rem; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
         
-        .editor-body { flex:1; display:flex; overflow:hidden; }
+        .editor-body { flex: 1; display: flex; overflow: hidden; position: relative; }
         
         /* Sidebar Palette Styles */
         .sidebar-palette {
-          width: 260px;
+          width: 17.5rem;
           background: var(--bg-surface);
           border-right: 1px solid var(--border-default);
           display: flex;
           flex-direction: column;
           overflow-y: auto;
           flex-shrink: 0;
+          z-index: 5;
         }
         .palette-title {
           font-weight: 600;
-          padding: 16px 16px 4px 16px;
+          font-size: 1.05rem;
+          padding: 1.25rem 1.25rem 0.25rem 1.25rem;
           color: var(--text-primary);
         }
         .palette-desc {
-          font-size: 0.75rem;
+          font-size: 0.8rem;
           color: var(--text-muted);
-          padding: 0 16px 16px 16px;
-          border-bottom: 1px solid var(--border-subtle);
+          padding: 0 1.25rem 1rem 1.25rem;
         }
         .palette-list {
-          padding: 12px;
+          padding: 1rem 1.25rem;
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 1.25rem;
         }
         .palette-group {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 0.625rem;
         }
         .palette-group-title {
-          font-size: 0.7rem;
+          font-size: 0.75rem;
           font-weight: 600;
           color: var(--text-muted);
           text-transform: uppercase;
           letter-spacing: 0.05em;
-          padding-left: 4px;
+          padding-left: 0.125rem;
         }
         .palette-item {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
+          gap: 0.75rem;
+          padding: 0.625rem 0.75rem;
           background: var(--bg-elevated);
           border: 1px solid var(--border-default);
-          border-left-width: 4px;
-          border-radius: 8px;
+          border-left-width: 0.25rem;
+          border-radius: var(--radius-md);
           cursor: grab;
-          transition: all 0.2s;
+          transition: all var(--transition-fast);
         }
         .palette-item:hover {
           background: var(--bg-hover);
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-sm);
+          border-right-color: var(--border-accent);
+          border-top-color: var(--border-accent);
+          border-bottom-color: var(--border-accent);
         }
         .palette-item:active {
           cursor: grabbing;
@@ -541,46 +560,47 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--bg-base);
-          padding: 4px;
-          border-radius: 6px;
+          background: var(--bg-surface);
+          padding: 0.375rem;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border-default);
         }
         .palette-info {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 0.125rem;
           overflow: hidden;
         }
         .palette-label {
-          font-weight: 500;
-          font-size: 0.75rem;
+          font-weight: 600;
+          font-size: 0.85rem;
           color: var(--text-primary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
         .palette-desc-text {
-          font-size: 0.65rem;
+          font-size: 0.75rem;
           color: var(--text-secondary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .canvas-area { flex:1; background:var(--bg-base); position:relative; }
+        .canvas-area { flex: 1; background: var(--bg-base); position: relative; }
         
-        .save-status { display:flex; align-items:center; gap:5px; font-size:.75rem; color:var(--text-muted); padding:0 8px; }
-        .save-status svg { color:var(--accent-success); }
+        .save-status { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); padding: 0 0.75rem; }
+        .save-status svg { color: var(--accent-success); }
 
-        .spinning { animation:spin .8s linear infinite; }
+        .spinning { animation: spin 1s linear infinite; }
 
-        .edge-delete-btn { width: 20px; height: 20px; background: var(--bg-surface); border: 1px solid var(--accent-danger); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--accent-danger); transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .edge-delete-btn:hover { background: var(--accent-danger); color: white; transform: scale(1.1); box-shadow: 0 4px 8px rgba(239,68,68,0.4); }
+        .edge-delete-btn { width: 1.5rem; height: 1.5rem; background: var(--bg-surface); border: 1px solid var(--accent-danger); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--accent-danger); transition: all 0.2s; box-shadow: var(--shadow-sm); }
+        .edge-delete-btn:hover { background: var(--accent-danger); color: white; transform: scale(1.15); box-shadow: 0 4px 12px rgba(239,68,68,0.4); }
 
-        .react-flow__controls button { background:var(--bg-elevated) !important; color:var(--text-secondary) !important; border:none !important; border-bottom:1px solid var(--border-default) !important; }
-        .react-flow__controls button:hover { background:var(--bg-hover) !important; color:var(--text-primary) !important; }
-        .react-flow__controls svg path { fill:currentColor !important; }
-        .react-flow__edge-path { stroke-width:2 !important; }
+        .react-flow__controls button { background: var(--bg-surface) !important; color: var(--text-secondary) !important; border: none !important; border-bottom: 1px solid var(--border-default) !important; transition: all 0.2s; }
+        .react-flow__controls button:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
+        .react-flow__controls svg path { fill: currentColor !important; }
+        .react-flow__edge-path { stroke-width: 2 !important; }
       `}</style>
     </div>
   )

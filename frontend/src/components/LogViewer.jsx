@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Terminal, Download } from 'lucide-react'
 import { createLogStream } from '../api/client'
 import { Drawer, Button, Space, Typography, Tag, Empty } from 'antd'
+import useStore from '../store/useStore'
 
 const { Text } = Typography
 
@@ -13,7 +14,8 @@ const LEVEL_STYLES = {
 }
 
 export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
-  const [logs, setLogs] = useState([])
+  const storeLogs = useStore(s => s.runLogs[runId] || [])
+  const appendLog = useStore(s => s.appendLog)
   const [autoScroll, setAutoScroll] = useState(true)
   const bottomRef = useRef(null)
   const logContainerRef = useRef(null)
@@ -24,7 +26,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
     const cleanup = createLogStream(
       runId,
       (data) => {
-        setLogs((prev) => [...prev, { time: data.time || new Date().toLocaleTimeString(), level: data.level, msg: data.message }])
+        appendLog(runId, { time: data.time || new Date().toLocaleTimeString(), level: data.level, msg: data.message })
         if (data.message && (data.message.includes('✅ Workflow hoàn thành') || data.message.includes('❌ Workflow thất bại') || data.message.includes('⏹ Đã dừng'))) {
           if (onFinished) onFinished()
         }
@@ -42,7 +44,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
     if (autoScroll && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [logs, autoScroll])
+  }, [storeLogs, autoScroll])
 
   const handleScroll = (e) => {
     const el = e.target
@@ -50,62 +52,64 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
     setAutoScroll(atBottom)
   }
 
-  const downloadLogs = () => {
-    const content = logs.map(l => `[${l.time}] ${l.msg}`).join('\n')
+  const exportLogs = () => {
+    const content = storeLogs.map(l => `[${l.time}] [${l.level.toUpperCase()}] ${l.msg}`).join('\n')
     const blob = new Blob([content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `workflow_log_${Date.now()}.txt`
+    a.download = `run_${runId}_logs.txt`
     a.click()
-    URL.revokeObjectURL(url)
   }
 
   return (
     <Drawer
       title={
-        <Space>
-          <Terminal size={16} color="var(--accent-secondary)" />
-          <span>Output Logs</span>
-          {isRunning && (
-            <Tag color="processing" icon={<span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'currentColor', marginRight: 6, animation: 'pulse 1.5s infinite' }}/>}>
-              Live
-            </Tag>
-          )}
-        </Space>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <Space>
+            <Terminal size="1.125rem" color="var(--accent-primary)" /> 
+            <span>Tiến trình chạy {runId && <Text type="secondary" style={{ fontSize: '0.8rem', marginLeft: 4 }}>#{runId.substring(0,6)}</Text>}</span>
+          </Space>
+          <div style={{ display: 'flex', gap: 8, marginRight: 24 }}>
+            {isRunning && (
+              <Tag color="processing" style={{ borderRadius: 12, border: 'none', background: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)', color: 'var(--accent-primary)', fontWeight: 500 }}>
+                <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-primary)', marginRight: 6, animation: 'pulse 1.5s infinite' }} />
+                Đang chạy
+              </Tag>
+            )}
+            <Button size="small" type="text" icon={<Download size="1rem" />} onClick={exportLogs} disabled={!storeLogs.length} style={{ color: 'var(--text-secondary)' }}>
+              Lưu Log
+            </Button>
+          </div>
+        </div>
       }
       placement="bottom"
-      height={300}
+      height="45vh"
       onClose={onClose}
       open={true}
       mask={false}
-      extra={
-        <Button size="small" type="text" icon={<Download size={14} />} onClick={downloadLogs}>
-          Tải Log
-        </Button>
-      }
       styles={{ 
-        header: { padding: '12px 24px', borderBottom: '1px solid #3c3c3c', background: '#252526', color: '#e5e5e5' }, 
-        body: { padding: '12px 24px', background: '#1e1e1e', overflowY: 'auto', fontFamily: 'var(--font-mono)' },
-        mask: { background: 'transparent' }
+        body: { padding: 0, background: '#1e1e1e', display: 'flex', flexDirection: 'column' },
+        header: { background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', padding: '12px 20px' }
       }}
     >
-      <div onScroll={handleScroll} style={{ height: '100%' }}>
-        {logs.length === 0 && (
-          <Empty 
-            image={<Terminal size={32} opacity={0.2} color="#fff" />}
-            description={<span style={{ color: '#888' }}>Chờ output...</span>}
-            style={{ marginTop: 40 }}
-          />
+      <div 
+        ref={logContainerRef}
+        onScroll={handleScroll}
+        style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '13px', lineHeight: 1.6 }}
+      >
+        {storeLogs.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: '#888' }}>Chưa có log nào...</span>} style={{ margin: '40px 0' }} />
+        ) : (
+          storeLogs.map((log, i) => (
+            <div key={i} style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem' }}>
+              <span style={{ color: '#888', flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
+              <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all', ...LEVEL_STYLES[log.level] }}>
+                {log.msg}
+              </span>
+            </div>
+          ))
         )}
-        {logs.map((log, i) => (
-          <div key={i} style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem' }}>
-            <span style={{ color: '#888', flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
-            <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all', ...LEVEL_STYLES[log.level] }}>
-              {log.msg}
-            </span>
-          </div>
-        ))}
         <div ref={bottomRef} />
       </div>
 

@@ -22,6 +22,7 @@ const VIEWS = {
 
 export default function App() {
   const theme = useStore((state) => state.theme)
+  const uiSize = useStore((state) => state.uiSize)
   const currentUser = useStore((state) => state.currentUser)
   const setCurrentUser = useStore((state) => state.setCurrentUser)
 
@@ -41,11 +42,15 @@ export default function App() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [openCreateModal, setOpenCreateModal] = useState(false)
 
-  // ── Sync Theme ──────────────
+  // ── Sync Theme & UI Size ──────────────
   useEffect(() => {
     if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
     else document.documentElement.removeAttribute('data-theme')
   }, [theme])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-size', uiSize)
+  }, [uiSize])
 
   // ── Bootstrap: check backend + user selection ──────────────
   useEffect(() => {
@@ -95,10 +100,20 @@ export default function App() {
   }, [currentUser])
 
   useEffect(() => {
-    if (view === VIEWS.DASHBOARD && currentUser) {
-      loadStats()
-    }
-  }, [view, refreshTick, currentUser])
+    if (!currentUser) return
+    loadStats()
+
+    // Background polling for real-time stats (lightweight, every 10s if tab is active)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        getDashboardStats()
+          .then(res => setStats(res.data?.data || null))
+          .catch(() => {})
+      }
+    }, 10000)
+
+    return () => clearInterval(timer)
+  }, [currentUser, refreshTick])
 
   const handleUserSelected = (user) => {
     setCurrentUser(user)
@@ -138,9 +153,41 @@ export default function App() {
       theme={{
         algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
-          colorPrimary: '#6c63ff',
+          colorPrimary: '#8b5cf6',
           fontFamily: 'var(--font-sans)',
+          borderRadius: uiSize === 'small' ? 6 : uiSize === 'large' ? 10 : 8,
+          borderRadiusSM: uiSize === 'small' ? 4 : uiSize === 'large' ? 8 : 6,
+          borderRadiusLG: uiSize === 'small' ? 8 : uiSize === 'large' ? 16 : 12,
+          controlHeight: uiSize === 'small' ? 28 : uiSize === 'large' ? 44 : 36,
+          controlHeightSM: uiSize === 'small' ? 24 : uiSize === 'large' ? 36 : 30,
+          controlHeightLG: uiSize === 'small' ? 36 : uiSize === 'large' ? 52 : 44,
+          fontSize: uiSize === 'small' ? 12 : uiSize === 'large' ? 16 : 14,
+          fontSizeSM: uiSize === 'small' ? 11 : uiSize === 'large' ? 14 : 12,
+          fontSizeLG: uiSize === 'small' ? 14 : uiSize === 'large' ? 18 : 16,
+          colorBgBase: theme === 'dark' ? '#09090b' : '#fafafa',
+          colorBgContainer: theme === 'dark' ? '#18181b' : '#ffffff',
+          colorBgElevated: theme === 'dark' ? '#27272a' : '#ffffff',
+          controlItemBgHover: theme === 'dark' ? '#3f3f46' : '#f4f4f5',
+          controlItemBgActive: theme === 'dark' ? '#52525b' : '#e4e4e7',
+          colorBorder: theme === 'dark' ? '#27272a' : '#e4e4e7',
+          colorText: theme === 'dark' ? '#f4f4f5' : '#09090b',
+          colorTextSecondary: theme === 'dark' ? '#a1a1aa' : '#52525b',
         },
+        components: {
+          Button: {
+            fontWeight: 500,
+            defaultShadow: 'none',
+            primaryShadow: 'none',
+            dangerShadow: 'none',
+          },
+          Input: {
+            activeShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)',
+            errorActiveShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)',
+          },
+          Select: {
+            activeShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)',
+          }
+        }
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -194,7 +241,7 @@ export default function App() {
                 subtitle={view === VIEWS.PROJECT ? `${selectedProject?.workflows_count || 0} workflows` : null}
                 onLogoClick={() => { setView(VIEWS.DASHBOARD); setSelectedProject(null) }}
                 isDashboard={view === VIEWS.DASHBOARD}
-                stats={view === VIEWS.DASHBOARD ? stats : null}
+                stats={stats}
                 loading={statsLoading}
                 onRefresh={handleNavRefresh}
                 onCreateProject={() => setOpenCreateModal(true)}

@@ -136,7 +136,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
             background: 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)',
             borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
           }}>
-            <User size={16} />
+            <User size="1rem" />
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Chọn người dùng</div>
@@ -215,7 +215,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                           padding: '1px 7px', borderRadius: 99,
                           border: '1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)',
                         }}>
-                          <CheckCircle size={9} style={{ flexShrink: 0 }} />
+                          <CheckCircle size="0.562rem" style={{ flexShrink: 0 }} />
                           Đang dùng
                         </span>
                       )}
@@ -224,15 +224,15 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                     {stats ? (
                       <div style={{ display: 'flex', gap: 10, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <FolderOpen size={11} style={{ color: '#a78bfa' }} />
+                          <FolderOpen size="0.688rem" style={{ color: '#a78bfa' }} />
                           {stats.project_count} project
                         </span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <Workflow size={11} style={{ color: '#2dd4bf' }} />
+                          <Workflow size="0.688rem" style={{ color: '#2dd4bf' }} />
                           {stats.workflow_count} workflow
                         </span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <Clock size={11} style={{ color: '#f59e0b' }} />
+                          <Clock size="0.688rem" style={{ color: '#f59e0b' }} />
                           {stats.schedule_count} lịch
                         </span>
                       </div>
@@ -247,7 +247,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       {!isActive && (
-                        <LogIn size={15} style={{ color: 'var(--text-muted)' }} />
+                        <LogIn size="0.938rem" style={{ color: 'var(--text-muted)' }} />
                       )}
                       <button
                         onClick={(e) => handleDelete(e, user)}
@@ -260,7 +260,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                         title="Xóa người dùng"
                         className="user-delete-btn"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size="0.875rem" />
                       </button>
                     </div>
                   )}
@@ -291,7 +291,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
         <Button
           type="dashed"
           block
-          icon={<Plus size={14} />}
+          icon={<Plus size="0.875rem" />}
           onClick={() => setShowInput(true)}
           style={{ marginTop: 4 }}
         >

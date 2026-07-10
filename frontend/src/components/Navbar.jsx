@@ -1,5 +1,5 @@
 import React from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, User, UserCog } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Maximize } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import useStore from '../store/useStore'
 
@@ -16,27 +16,29 @@ export default function Navbar({
 }) {
   const theme = useStore((state) => state.theme)
   const setTheme = useStore((state) => state.setTheme)
+  const uiSize = useStore((state) => state.uiSize)
+  const setUiSize = useStore((state) => state.setUiSize)
   const currentUser = useStore((state) => state.currentUser)
 
   const settingsItems = [
-    // User section
     {
       key: 'current-user',
       label: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
           <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)',
+            width: '2.2rem', height: '2.2rem', borderRadius: '50%',
+            background: 'linear-gradient(135deg, var(--accent-primary), #3b82f6)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 700, fontSize: '0.85rem', flexShrink: 0,
+            color: '#fff', fontWeight: 600, fontSize: '0.9rem', flexShrink: 0,
+            boxShadow: '0 2px 8px rgba(139, 92, 246, 0.4)'
           }}>
             {currentUser?.name?.charAt(0).toUpperCase() || '?'}
           </div>
           <div>
-            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.2 }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.2 }}>
               {currentUser?.name || 'Chưa chọn'}
             </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Người dùng hiện tại</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Người dùng hiện tại</div>
           </div>
         </div>
       ),
@@ -47,7 +49,7 @@ export default function Navbar({
       key: 'switch-user',
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <UserCog size={14} />
+          <UserCog size="0.938rem" />
           Chuyển người dùng
         </span>
       ),
@@ -58,17 +60,43 @@ export default function Navbar({
       key: 'theme',
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+          {theme === 'light' ? <Moon size="0.938rem" /> : <Sun size="0.938rem" />}
           {theme === 'light' ? 'Giao diện Tối' : 'Giao diện Sáng'}
         </span>
       ),
       onClick: () => setTheme(theme === 'light' ? 'dark' : 'light'),
     },
+    {
+      key: 'ui-size',
+      label: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Maximize size="0.938rem" />
+          Kích cỡ giao diện (Scale)
+        </span>
+      ),
+      children: [
+        {
+          key: 'size-small',
+          label: <span style={{ fontWeight: uiSize === 'small' ? 700 : 400 }}>Nhỏ gọn (Small)</span>,
+          onClick: () => setUiSize('small'),
+        },
+        {
+          key: 'size-medium',
+          label: <span style={{ fontWeight: uiSize === 'medium' ? 700 : 400 }}>Tiêu chuẩn (Medium)</span>,
+          onClick: () => setUiSize('medium'),
+        },
+        {
+          key: 'size-large',
+          label: <span style={{ fontWeight: uiSize === 'large' ? 700 : 400 }}>Mở rộng (Large)</span>,
+          onClick: () => setUiSize('large'),
+        },
+      ]
+    },
   ]
 
   return (
     <header className="navbar">
-      {/* LEFT: Logo + action buttons / breadcrumb */}
+      {/* LEFT: Logo + actions / breadcrumb */}
       <div className="navbar-left">
         <div
           className="navbar-brand"
@@ -76,42 +104,38 @@ export default function Navbar({
           style={{ cursor: onLogoClick ? 'pointer' : 'default' }}
         >
           <div className="brand-icon">
-            <Zap size={18} strokeWidth={2.5} />
+            <Zap size="1.125rem" strokeWidth={2.5} />
           </div>
           <span className="brand-name">
-            PyFlow <span>Studio</span>
+            PyFlow <span className="brand-highlight">Studio</span>
           </span>
         </div>
 
-        {/* Dashboard action buttons right next to logo */}
         {isDashboard && (
           <>
             <div className="navbar-sep" />
             <div className="navbar-actions">
               <Button
-                size="small"
                 type="primary"
                 onClick={onCreateProject}
-                icon={<Plus size={14} />}
-                className="nav-btn"
+                icon={<Plus size="0.875rem" />}
+                className="nav-btn-create"
               >
                 Tạo Project
               </Button>
-              <Tooltip title="Làm mới danh sách">
-                <button
+              <Tooltip title="Làm mới dữ liệu">
+                <Button
+                  type="text"
                   onClick={onRefresh}
                   disabled={loading}
-                  className="nav-btn-refresh"
-                >
-                  <RefreshCw size={14} className={loading ? 'spinning' : ''} />
-                  Làm mới
-                </button>
+                  icon={<RefreshCw size="0.875rem" className={loading ? 'spinning' : ''} />}
+                  className="nav-btn-ghost"
+                />
               </Tooltip>
             </div>
           </>
         )}
 
-        {/* Breadcrumb when inside a project */}
         {title && (
           <>
             <div className="navbar-sep" />
@@ -123,50 +147,48 @@ export default function Navbar({
         )}
       </div>
 
-      {/* RIGHT: compact stats + settings */}
+      {/* RIGHT: Stats + Settings */}
       <div className="navbar-right">
-        {isDashboard && stats && (
+        {stats && (
           <div className="navbar-stats">
             <Tooltip title="Số dự án">
               <div className="stat-chip">
-                <FolderOpen size={13} style={{ color: '#a78bfa' }} />
+                <FolderOpen size="0.875rem" className="text-accent" />
                 <span className="stat-val">{stats.total_projects ?? 0}</span>
-                <span className="stat-label">Dự án</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title="Tổng workflows">
               <div className="stat-chip">
-                <Workflow size={13} style={{ color: '#2dd4bf' }} />
+                <Workflow size="0.875rem" className="text-secondary" />
                 <span className="stat-val">{stats.total_workflows ?? 0}</span>
-                <span className="stat-label">Workflows</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title="Đang chạy">
-              <div className={`stat-chip${stats.running > 0 ? ' stat-running' : ''}`}>
-                <Clock size={13} className={stats.running > 0 ? 'spinning' : ''} style={{ color: stats.running > 0 ? '#3b82f6' : '#94a3b8' }} />
-                <span className="stat-val" style={{ color: stats.running > 0 ? '#3b82f6' : undefined }}>{stats.running ?? 0}</span>
-                <span className="stat-label">Đang chạy</span>
+              <div className={`stat-chip ${stats.running > 0 ? 'stat-running' : ''}`}>
+                <Clock size="0.875rem" className={stats.running > 0 ? 'spinning text-success' : 'text-muted'} />
+                <span className="stat-val" style={{ color: stats.running > 0 ? 'var(--accent-success)' : undefined }}>
+                  {stats.running ?? 0}
+                </span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title="Lịch hẹn hôm nay (đã chạy / tổng)">
               <div className="stat-chip">
-                <CalendarCheck size={13} style={{ color: '#f59e0b' }} />
+                <CalendarCheck size="0.875rem" className="text-warning" />
                 <span className="stat-val">
                   {stats.today_executed ?? 0}/{stats.today_total ?? 0}
                 </span>
-                <span className="stat-label">Lịch hôm nay</span>
               </div>
             </Tooltip>
-            <div className="navbar-sep" style={{ margin: '0 6px' }} />
           </div>
         )}
+        {stats && <div className="navbar-sep" />}
 
         <Dropdown menu={{ items: settingsItems }} placement="bottomRight" trigger={['click']}>
-          <Tooltip title="Cài đặt">
-            <Button type="text" size="small" icon={<Settings size={15} />} />
+          <Tooltip title="Cài đặt hệ thống">
+            <Button type="text" icon={<Settings size="1rem" />} className="nav-btn-ghost" />
           </Tooltip>
         </Dropdown>
       </div>
@@ -174,189 +196,139 @@ export default function Navbar({
       <style>{`
         .navbar {
           height: var(--navbar-height);
-          background: var(--bg-surface);
+          background: var(--bg-overlay);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid var(--border-default);
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 20px;
-          flex-shrink: 0;
-          position: relative;
-          z-index: 100;
-          gap: 12px;
+          padding: 0 var(--space-6);
+          position: sticky;
+          top: 0;
+          z-index: 1000;
+          box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1);
         }
 
-        .navbar-left {
+        .navbar-left, .navbar-right {
           display: flex;
           align-items: center;
-          gap: 10px;
-          flex-shrink: 0;
         }
 
         .navbar-brand {
           display: flex;
           align-items: center;
-          gap: 8px;
-          flex-shrink: 0;
+          gap: 0.6rem;
+          user-select: none;
+          transition: opacity var(--transition-fast);
         }
-
+        .navbar-brand:hover {
+          opacity: 0.9;
+        }
+        
         .brand-icon {
-          width: 30px;
-          height: 30px;
-          background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
-          border-radius: var(--radius-md);
+          width: 2rem;
+          height: 2rem;
+          border-radius: 0.5rem;
+          background: linear-gradient(135deg, var(--accent-primary), #3b82f6);
+          color: white;
           display: flex;
           align-items: center;
           justify-content: center;
-          color: white;
-          box-shadow: var(--shadow-accent);
-          flex-shrink: 0;
+          box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
         }
 
         .brand-name {
-          font-size: 1rem;
-          font-weight: 800;
+          font-size: 1.15rem;
+          font-weight: 700;
           color: var(--text-primary);
           letter-spacing: -0.02em;
-          white-space: nowrap;
         }
-        .brand-name span { color: var(--accent-primary); }
+        .brand-highlight {
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
 
         .navbar-sep {
           width: 1px;
-          height: 18px;
+          height: 1.25rem;
           background: var(--border-default);
-          flex-shrink: 0;
+          margin: 0 1rem;
         }
 
         .navbar-actions {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 0.5rem;
         }
 
-        /* Unified height + vertical centering for primary button */
-        .nav-btn {
-          height: 28px !important;
-          line-height: 28px !important;
-          padding: 0 10px !important;
-          font-size: 0.82rem !important;
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-          gap: 5px !important;
-        }
-        .nav-btn .anticon,
-        .nav-btn svg {
-          vertical-align: middle !important;
-          position: relative;
-          top: 0 !important;
+        .nav-btn-create {
+          box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2) !important;
         }
 
-        /* Plain button for Làm mới — avoids Ant Design line-height quirks */
-        .nav-btn-refresh {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-          height: 28px;
-          padding: 0 10px;
-          font-size: 0.82rem;
-          font-family: var(--font-sans);
-          color: var(--text-secondary);
-          background: transparent;
-          border: 1px solid var(--border-default);
-          border-radius: 6px;
-          cursor: pointer;
-          transition: background 0.15s, color 0.15s, border-color 0.15s;
-          outline: none;
-          line-height: 28px;
-          vertical-align: middle;
-          box-sizing: border-box;
+        .nav-btn-ghost {
+          color: var(--text-secondary) !important;
         }
-        .nav-btn-refresh svg {
-          display: block;
-          flex-shrink: 0;
-        }
-        .nav-btn-refresh:hover:not(:disabled) {
-          background: var(--bg-elevated);
-          color: var(--text-primary);
-        }
-        .nav-btn-refresh:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
+        .nav-btn-ghost:hover {
+          background: var(--bg-hover) !important;
+          color: var(--text-primary) !important;
         }
 
         .navbar-breadcrumb {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 0.75rem;
         }
         .breadcrumb-title {
           font-weight: 600;
-          font-size: 0.88rem;
+          font-size: 0.95rem;
           color: var(--text-primary);
-          white-space: nowrap;
         }
         .breadcrumb-sub {
-          font-size: 0.75rem;
+          font-size: 0.8rem;
           color: var(--text-muted);
-          background: var(--bg-elevated);
-          padding: 1px 8px;
+          background: var(--bg-hover);
+          padding: 2px 8px;
           border-radius: var(--radius-full);
-          border: 1px solid var(--border-default);
-          white-space: nowrap;
+          border: 1px solid var(--border-subtle);
         }
 
-        .navbar-right {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        /* Compact stats */
         .navbar-stats {
           display: flex;
           align-items: center;
-          gap: 2px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-full);
+          padding: 4px 12px;
+          box-shadow: var(--shadow-sm);
         }
+
         .stat-chip {
           display: flex;
           align-items: center;
-          gap: 5px;
-          padding: 4px 10px;
-          border-radius: var(--radius-md);
-          font-size: 0.78rem;
-          color: var(--text-secondary);
-          cursor: default;
-          transition: background 0.15s;
-          white-space: nowrap;
-          line-height: 1;
-        }
-        .stat-chip:hover { background: var(--bg-elevated); }
-        .stat-chip svg { color: var(--text-muted); flex-shrink: 0; }
-        .stat-val {
-          font-weight: 700;
+          gap: 6px;
+          padding: 4px 8px;
           font-size: 0.85rem;
+          font-weight: 600;
           color: var(--text-primary);
+          transition: all var(--transition-fast);
+          border-radius: var(--radius-sm);
         }
-        .stat-label {
-          font-size: 0.72rem;
-          color: var(--text-muted);
-          font-weight: 400;
+        .stat-chip:hover {
+          background: var(--bg-hover);
         }
-        .stat-running svg { color: #3b82f6 !important; }
-        .stat-running .stat-val { color: #3b82f6 !important; }
+
         .stat-divider {
           width: 1px;
           height: 14px;
           background: var(--border-default);
-          margin: 0 2px;
-          flex-shrink: 0;
+          margin: 0 4px;
         }
 
-        .spinning { animation: spin .9s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .spinning {
+          animation: spin 1s linear infinite;
+        }
       `}</style>
     </header>
   )

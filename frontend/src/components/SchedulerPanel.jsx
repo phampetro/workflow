@@ -174,9 +174,9 @@ export default function SchedulerPanel({ workflow, onClose }) {
       width: 100,
       render: (_, record) => (
         <Space size="small">
-          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} />
+          <Button size="small" type="text" icon={<Edit2 size="0.875rem" />} onClick={() => openEdit(record)} />
           <Popconfirm title="Xóa lịch này?" onConfirm={() => deleteSchedule(record.id)}>
-            <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
+            <Button size="small" type="text" danger icon={<Trash2 size="0.875rem" />} />
           </Popconfirm>
         </Space>
       )
@@ -187,7 +187,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
     <Drawer
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-          <Calendar size={18} color="var(--accent-warning)" style={{ flexShrink: 0 }} />
+          <Calendar size="1.125rem" color="var(--accent-warning)" style={{ flexShrink: 0 }} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             Lịch chạy — {workflow?.name}
           </span>

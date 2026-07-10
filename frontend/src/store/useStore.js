@@ -71,6 +71,12 @@ const useStore = create((set, get) => ({
     },
   })),
 
+  clearLogs: (runId) => set((state) => {
+    const next = { ...state.runLogs }
+    delete next[runId]
+    return { runLogs: next }
+  }),
+
   setActiveRun: (workflowId, runId) => set((state) => ({
     activeRuns: { ...state.activeRuns, [workflowId]: runId },
   })),
@@ -88,6 +94,13 @@ const useStore = create((set, get) => ({
     if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
     else document.documentElement.removeAttribute('data-theme')
     set({ theme })
+  },
+
+  uiSize: localStorage.getItem('pyflow_uiSize') || 'medium',
+  setUiSize: (uiSize) => {
+    localStorage.setItem('pyflow_uiSize', uiSize)
+    document.documentElement.setAttribute('data-size', uiSize)
+    set({ uiSize })
   },
 
   sidebarOpen: true,

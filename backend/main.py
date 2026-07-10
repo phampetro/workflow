@@ -736,7 +736,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         log_fn(bid, "info", f"⚡ Đang chạy: {label}...")
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
-                        timeout=30, label=label, log_fn=log_fn, input_dir=str(input_dir)
+                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir)
                     )
                     if not success:
                         _finish_run(run_id, "error", start, error=error)
@@ -790,7 +790,7 @@ output_data = {{"status": "success", "file_path": out_path}}
 '''
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
-                        timeout=300, label=label, log_fn=log_fn, input_dir=str(input_dir)
+                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir)
                     )
                     if not success:
                         _finish_run(run_id, "error", start, error=error)
@@ -889,7 +889,7 @@ output_data = {{"status": "success", "file_path": out_path}}
 '''
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input, 
-                    timeout=600, label=label, log_fn=log_fn, input_dir=str(input_dir)
+                    timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir)
                 )
                 if not success:
                     _finish_run(run_id, "error", start, error=error)
@@ -1065,7 +1065,7 @@ output_data = {{"status": "success", "file_path": out_path}}
 '''
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input, 
-                    timeout=600, label=label, log_fn=log_fn, input_dir=str(input_dir)
+                    timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir)
                 )
                 if not success:
                     _finish_run(run_id, "error", start, error=error)
@@ -1601,6 +1601,30 @@ def get_workflow(workflow_id):
     if not row:
         return jsonify({"error": "Workflow không tồn tại"}), 404
     return jsonify(dict(row))
+
+
+@app.route("/api/workflows/<workflow_id>/duplicate", methods=["POST"])
+def duplicate_workflow(workflow_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM workflow WHERE id=?", (workflow_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Workflow không tồn tại"}), 404
+
+    new_id = str(uuid.uuid4())
+    new_name = row["name"] + " (Copy)"
+    now = datetime.utcnow().isoformat()
+    
+    db.execute(
+        """
+        INSERT INTO workflow (id, name, description, project_id, created_at, updated_at, graph_json, color, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (new_id, new_name, row["description"], row["project_id"], now, now, row["graph_json"], row["color"], row["sort_order"])
+    )
+    db.commit()
+    
+    new_row = db.execute("SELECT * FROM workflow WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
 
 
 @app.route("/api/workflows/<workflow_id>", methods=["PUT"])

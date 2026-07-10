@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { getWorkflowFiles, getFileColumns, getFileColumnValues } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties } from 'lucide-react'
+import { Code2, Info, Box, Mail, TableProperties, Database } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, message, Radio, Switch, Table } from 'antd'
 import useStore from '../store/useStore'
 
@@ -171,7 +171,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const isPivotExcel = node.data.type === 'pivot_excel'
 
   const hasCodeEditor = isPython || isSqlToExcel
-  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel
+  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isDatabase
 
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
@@ -299,7 +299,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
 
   return (
     <Drawer
-      title={<Space><Code2 size={18} color="var(--accent-primary)" /> Chỉnh sửa Block</Space>}
+      title={<Space><Code2 size="1.125rem" color="var(--accent-primary)" /> Chỉnh sửa Block</Space>}
       width={hasRightPanel ? '75vw' : 360}
       onClose={onClose}
       open={true}
@@ -317,7 +317,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       <Form
         form={form}
         layout="vertical"
-        style={{ display: 'flex', width: '100%', height: '100%' }}
+        style={{ display: 'flex', width: '100%', height: '100%', background: 'var(--bg-base)' }}
         initialValues={{
             label: node.data.label || '',
             description: node.data.description || '',
@@ -364,7 +364,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
             outPosition: node.data.outPosition || 'right',
           }}
         >
-          <div style={{ width: hasRightPanel ? 360 : '100%', padding: 24, borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
+          <div style={{ width: hasRightPanel ? 360 : '100%', padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
             <Form.Item name="inPosition" label="Cổng vào (IN)" style={{ marginBottom: 0 }}>
               <PositionSelector />
@@ -403,7 +403,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
                 <Input placeholder="VD: success" />
               </Form.Item>
               <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 24, border: '1px solid var(--border-default)' }}>
-                <Box size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
+                <Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
                 Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.
               </div>
             </>
@@ -555,7 +555,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
             <Divider style={{ margin: '16px 0' }} />
             
             <div>
-              <Text strong style={{ display: 'block', marginBottom: 12 }}><Box size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }}/> Biến có sẵn</Text>
+              <Text strong style={{ display: 'block', marginBottom: 12 }}><Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }}/> Biến có sẵn</Text>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <Tag color="geekblue" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>input_data</Tag>
@@ -579,13 +579,63 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
         )}
       </div>
 
-      {/* Code Editor Panel or Email/Pivot Right Panel */}
+      {/* Code Editor Panel or Email/Pivot/Database Right Panel */}
       {hasRightPanel && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: theme === 'light' ? '#fff' : '#1e1e1e', overflowY: 'auto' }}>
-          {isEmail ? (
+          {isDatabase ? (
+            <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                <Database size="1.5rem" color="var(--accent-primary)" />
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>Tài liệu Khối Database</h2>
+              </div>
+              
+              <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24 }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '1.05rem', color: 'var(--text-primary)' }}>Mô tả Output (Dữ liệu trả về)</h3>
+                <p style={{ margin: '0 0 16px 0', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  Khi khối này chạy thành công, nó sẽ cung cấp các biến cấu hình kết nối (được mã hóa bảo mật) sang khối tiếp theo thông qua biến hệ thống <code>input_data</code>.
+                </p>
+                
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey="key"
+                  columns={[
+                    { title: 'Tên biến (Key)', dataIndex: 'key', width: '35%', render: t => <Text code>{t}</Text> },
+                    { title: 'Mô tả', dataIndex: 'desc' }
+                  ]}
+                  dataSource={[
+                    { key: 'db_type', desc: 'Loại database (VD: sqlserver, mysql, postgresql)' },
+                    { key: 'host', desc: 'Địa chỉ máy chủ (IP/Domain)' },
+                    { key: 'port', desc: 'Cổng kết nối (Port)' },
+                    { key: 'db_name', desc: 'Tên cơ sở dữ liệu' },
+                    { key: 'user', desc: 'Tên đăng nhập (Username)' },
+                    { key: 'password', desc: 'Mật khẩu' },
+                    { key: 'connection_string', desc: 'Chuỗi kết nối chuẩn SQLAlchemy' }
+                  ]}
+                />
+              </div>
+              
+              <div style={{ background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)', borderRadius: 8, padding: 16, border: '1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)' }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '1.05rem', color: 'var(--accent-primary)' }}>💡 Cách kết nối ở khối Python kế tiếp</h3>
+                <pre style={{ margin: 0, background: '#1e1e1e', padding: 12, borderRadius: 6, fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.1)', overflowX: 'auto' }}>
+<code style={{ color: '#d4d4d4' }}>{`# Lấy thông tin cấu hình từ khối Database truyền sang
+server = input_data.get("host")
+port = input_data.get("port")
+database = input_data.get("db_name")
+user = input_data.get("user")
+password = input_data.get("password")
+
+# Cú pháp tự nối chuỗi cho SQL Server (Tránh lỗi IM002)
+server_part = f"{server},{port}" if port else server
+conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID={user};PWD={{{password}}};TrustServerCertificate=yes;"
+`}</code>
+                </pre>
+              </div>
+            </div>
+          ) : isEmail ? (
             <div style={{ padding: 24, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-                <Mail size={20} color="var(--accent-primary)" />
+                <Mail size="1.25rem" color="var(--accent-primary)" />
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Nội dung Email</h3>
               </div>
               <Form.Item label="Người nhận (To)" name="mailTo" rules={[{ required: true, message: 'Vui lòng nhập Email người nhận' }]}>
@@ -700,7 +750,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
           ) : isPivotExcel ? (
             <div style={{ padding: 24, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-                <TableProperties size={20} color="var(--accent-primary)" />
+                <TableProperties size="1.25rem" color="var(--accent-primary)" />
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Cấu hình PivotTable</h3>
               </div>
 
@@ -794,17 +844,17 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
             </div>
           ) : (
             <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: theme === 'light' ? '#f5f5f5' : '#252526', borderBottom: theme === 'light' ? '1px solid #d9d9d9' : '1px solid #3c3c3c' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: theme === 'light' ? '#333' : '#e5e5e5' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
               {isPython ? 'Python Code' : 'SQL Query'}
             </span>
             <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e' }} />
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57', boxShadow: 'inset 0 0 2px rgba(0,0,0,0.2)' }} />
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e', boxShadow: 'inset 0 0 2px rgba(0,0,0,0.2)' }} />
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840', boxShadow: 'inset 0 0 2px rgba(0,0,0,0.2)' }} />
             </div>
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, background: 'var(--bg-base)' }}>
             <Editor
               height="100%"
               language={isPython ? "python" : "sql"}

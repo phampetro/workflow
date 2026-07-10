@@ -198,10 +198,10 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           }
           type="error"
           showIcon
-          icon={<WifiOff size={24} />}
+          icon={<WifiOff size="1.5rem" />}
           action={
             <Button size="small" type="primary" onClick={() => checkBackend().then(ok => ok && loadData())}>
-              <RefreshCw size={14} style={{ marginRight: 6 }} /> Thử lại
+              <RefreshCw size="0.875rem" style={{ marginRight: 6 }} /> Thử lại
             </Button>
           }
         />
@@ -210,9 +210,9 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   }
 
   return (
-    <div style={{ padding: '28px 36px', overflowY: 'auto', height: '100%' }}>
+    <div style={{ padding: '2rem 2.5rem', overflowY: 'auto', height: '100%' }}>
       {/* Greeting */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
           {currentUser ? `Xin chào, ${currentUser.name}! 👋` : 'Workspace'}
         </h2>
@@ -234,16 +234,20 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
       {/* Projects Grid */}
       <Spin spinning={loading}>
         {!loading && projects.length === 0 && !error ? (
-          <Empty
-            description={<span>Chưa có project nào. Tạo project đầu tiên để bắt đầu xây dựng workflow</span>}
-            style={{ margin: '60px 0' }}
-          >
-            <Button type="primary" onClick={() => setIsModalOpen(true)} icon={<Plus size={14} />}>Tạo Project</Button>
-          </Empty>
+          <div className="empty-state">
+            <FolderOpen className="empty-state-icon" />
+            <div>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 600 }}>Chưa có dự án nào</h3>
+              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>Bắt đầu bằng cách tạo một project mới để chứa các workflows.</p>
+            </div>
+            <Button type="primary" onClick={() => setIsModalOpen(true)} icon={<Plus size="1rem" />} size="large" style={{ marginTop: '0.5rem' }}>
+              Tạo Project
+            </Button>
+          </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={projects.map(p => p.id)} strategy={rectSortingStrategy}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 20 }}>
+              <div className="grid-projects">
                 {projects.map((project) => (
                   <SortableCard key={project.id} id={project.id}>
                     <ProjectCard
@@ -265,7 +269,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
         title={
           <Space>
             <div style={{ width:26, height:26, background:'linear-gradient(135deg,var(--accent-primary),#8b5cf6)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>
-              {editingProject ? <Settings size={14} /> : <Plus size={14} />}
+              {editingProject ? <Settings size="0.875rem" /> : <Plus size="0.875rem" />}
             </div>
             {editingProject ? 'Chỉnh sửa Project' : 'Tạo Project Mới'}
           </Space>
@@ -300,7 +304,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
                       transition: 'all 0.2s',
                     }}
                   >
-                    <IconComponent size={18} />
+                    <IconComponent size="1.125rem" />
                   </div>
                 )
               })}
@@ -333,16 +337,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
       </Modal>
 
       <style>{`
-        .spinning { animation: spin .8s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-        .project-row:hover {
-          border-color: var(--border-accent) !important;
-          background: var(--bg-hover) !important;
-        }
-        .btn-delete { opacity: 0.3; transition: all 0.2s; }
-        .project-row:hover .btn-delete { opacity: 1; }
-        .project-menu-btn { transition: all 0.2s; border-radius: 4px; }
-        .project-menu-btn:hover { background: var(--bg-surface); }
+        .spinning { animation: spin 1.2s linear infinite; }
       `}</style>
     </div>
   )
@@ -358,7 +353,7 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
         if (diff < 60000) return 'Vừa xong'
         return `${Math.floor(diff / 60000)} phút trước`
       }
-      const time = d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      const time = d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
       const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
       return `${time} ${date}`
     } catch { return iso }
@@ -371,56 +366,43 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
     statusText = 'Đang chạy'
     statusColor = 'processing'
   } else if (project.venv_ready) {
-    if (project.workflow_count === 0) {
-      statusText = 'Sẵn sàng'
-      statusColor = 'success'
-    } else {
-      statusText = 'Sẵn sàng'
-      statusColor = 'success'
-    }
+    statusText = 'Sẵn sàng'
+    statusColor = 'success'
   }
 
   const IconComponent = ICONS[project.icon] || Box
+  const pColor = project.color || 'var(--accent-primary)'
 
   const items = [
-    { key: 'edit', label: 'Chỉnh sửa', icon: <Settings size={14} />, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
+    { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
     { type: 'divider' },
-    { key: 'delete', label: 'Xóa Project', icon: <Trash2 size={14} />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },
+    { key: 'delete', label: 'Xóa Project', icon: <Trash2 size="0.938rem" />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },
   ]
 
   return (
     <div 
       onClick={onOpen}
       className="project-row"
-      style={{ 
-        display: 'flex', 
-        flexDirection: 'column',
-        padding: '16px', 
-        background: 'var(--bg-elevated)', 
-        border: '1px solid var(--border-default)', 
-        borderTop: `4px solid ${project.color || 'var(--accent-primary)'}`,
-        borderRadius: 8,
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        position: 'relative',
-        height: '100%',
-        justifyContent: 'space-between'
-      }}
+      style={{ '--project-color': pColor }}
     >
-      {/* Row 1: Logo, Name & Desc, Options */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 8, background: `${project.color || '#6c63ff'}22`, color: project.color || '#6c63ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <IconComponent size={20} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem', marginBottom: '1.25rem' }}>
+        <div style={{ 
+          width: '2.75rem', height: '2.75rem', borderRadius: '0.625rem', 
+          background: `color-mix(in srgb, ${pColor} 15%, transparent)`, 
+          color: pColor, display: 'flex', alignItems: 'center', justifyContent: 'center', 
+          flexShrink: 0, border: `1px solid color-mix(in srgb, ${pColor} 30%, transparent)`
+        }}>
+          <IconComponent size="1.375rem" strokeWidth={2} />
         </div>
         
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2, marginTop: -2 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           <Tooltip title={project.name} placement="top" mouseEnterDelay={0.5}>
-            <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {project.name}
             </h3>
           </Tooltip>
           <Tooltip title={project.description || 'Chưa có mô tả'} placement="top" mouseEnterDelay={0.5}>
-            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {project.description || 'Chưa có mô tả'}
             </p>
           </Tooltip>
@@ -429,25 +411,25 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
         <Dropdown menu={{ items }} trigger={['click']}>
           <Button 
             type="text" 
-            icon={<MoreVertical size={16} />} 
+            icon={<MoreVertical size="1.125rem" />} 
             onClick={e => e.stopPropagation()}
             className="project-menu-btn"
-            style={{ padding: 4, height: 'auto', color: 'var(--text-muted)' }}
+            style={{ color: 'var(--text-muted)' }}
           />
         </Dropdown>
       </div>
 
-      {/* Row 2: Time, WF Count, Status */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.75rem', borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> {formatDate(project.updated_at || project.created_at)}</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Workflow size={12} /> {project.workflow_count || 0} WF</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', borderTop: '1px solid var(--border-default)', paddingTop: '0.875rem' }}>
+        <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Clock size="0.812rem" /> {formatDate(project.updated_at || project.created_at)}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Workflow size="0.812rem" /> {project.workflow_count || 0}</span>
         </div>
         
-        <Tag color={statusColor} style={{ margin: 0, border: 'none', padding: '0 6px', fontSize: '0.65rem', lineHeight: '18px' }}>
+        <Tag color={statusColor} style={{ margin: 0, borderRadius: '0.375rem', border: 'none', padding: '0.125rem 0.5rem', fontSize: '0.75rem', fontWeight: 500 }}>
           {statusText}
         </Tag>
       </div>
     </div>
   )
 }
+
