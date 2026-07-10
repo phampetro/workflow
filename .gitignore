@@ -9,3 +9,7 @@ __pycache__/
 backend/data/
 *.log
 backend_log.txt
+
+# Skill data files (heavy CSV)
+.agents/skills/ui-ux-pro-max/data/
+.agents/skills/ui-ux-pro-max/scripts/
