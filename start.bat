@@ -17,10 +17,26 @@ for /f "tokens=5" %%a in ('netstat -a -n -o ^| findstr :5173') do (
 echo Da giai phong cong.
 echo.
 
-echo [2/3] Khoi dong Backend (port 8000)...
-start /B "" cmd /c "cd /d "%~dp0backend" && .venv\Scripts\python main.py > "%~dp0backend_log.txt" 2>&1"
+echo [2/4] Kiem tra va khoi phuc moi truong Ao (Virtual Environment)...
+cd /d "%~dp0backend"
 
-echo [3/4] Doi backend san sang...
+:: Kiem tra xem .venv co hoat dong khong (do loi copy sang may khac)
+.venv\Scripts\python -c "import sys" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Phat hien .venv bi loi hoac chua ton tai (co the do copy sang may khac).
+    echo Dang tao lai moi truong ao va cai dat thu vien...
+    if exist .venv rmdir /s /q .venv
+    python -m venv .venv
+    .venv\Scripts\python -m pip install --upgrade pip
+    .venv\Scripts\python -m pip install -r requirements.txt
+    echo Cai dat hoan tat!
+)
+
+echo [3/4] Khoi dong Backend (port 8000)...
+start /B "" cmd /c ".venv\Scripts\python main.py > "%~dp0backend_log.txt" 2>&1"
+cd /d "%~dp0"
+
+echo [4/4] Doi backend san sang va mo browser...
 timeout /t 3 /nobreak >nul
 
 echo [4/4] Mo browser...
@@ -35,4 +51,8 @@ echo =============================================
 echo.
 
 cd /d "%~dp0frontend"
+if not exist "node_modules\" (
+    echo [4/5] Cai dat thu vien Frontend (lan dau hoac do copy sang may khac)...
+    npm install
+)
 npm run dev
