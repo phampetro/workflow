@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { getWorkflowFiles, getFileColumns, getFileColumnValues } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database } from 'lucide-react'
-import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, message, Radio, Switch, Table } from 'antd'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react'
+import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, message, Radio, Switch, Table, Tooltip } from 'antd'
 import useStore from '../store/useStore'
 
 const { Text } = Typography
@@ -96,6 +96,326 @@ const DEFAULT_SQL_QUERY = `-- Nhập câu lệnh SQL của bạn tại đây
 SELECT * FROM my_table;
 `
 
+// ─── Action definitions ──────────────────────────────────────────────────────
+
+const BROWSER_ACTIONS = [
+  { group: '🌐 Điều hướng', actions: [
+    { value: 'navigate',      label: 'Mở URL',            params: ['url'], needsSelector: false },
+    { value: 'go_back',       label: 'Quay lại',          params: [], needsSelector: false },
+    { value: 'go_forward',    label: 'Tiến tới',          params: [], needsSelector: false },
+    { value: 'reload',        label: 'Tải lại trang',     params: [], needsSelector: false },
+    { value: 'wait_for_load', label: 'Chờ trang tải',     params: [], needsSelector: false },
+  ]},
+  { group: '🖱️ Tương tác', actions: [
+    { value: 'click',         label: 'Click',             params: [], needsSelector: true },
+    { value: 'double_click',  label: 'Double Click',      params: [], needsSelector: true },
+    { value: 'right_click',   label: 'Right Click',       params: [], needsSelector: true },
+    { value: 'hover',         label: 'Hover',             params: [], needsSelector: true },
+    { value: 'scroll_to',     label: 'Cuộn đến phần tử', params: [], needsSelector: true },
+    { value: 'scroll_page',   label: 'Cuộn trang',        params: ['direction'], needsSelector: false },
+  ]},
+  { group: '⌨️ Nhập liệu', actions: [
+    { value: 'fill',          label: 'Nhập văn bản',      params: ['text'], needsSelector: true },
+    { value: 'type_slowly',   label: 'Gõ từng ký tự',    params: ['text'], needsSelector: true },
+    { value: 'clear',         label: 'Xóa nội dung',      params: [], needsSelector: true },
+    { value: 'press_key',     label: 'Nhấn phím',         params: ['key'], needsSelector: false },
+  ]},
+  { group: '📋 Form & Select', actions: [
+    { value: 'select_option', label: 'Chọn dropdown',     params: ['option'], needsSelector: true },
+    { value: 'check',         label: 'Tick checkbox',     params: [], needsSelector: true },
+    { value: 'uncheck',       label: 'Bỏ tick checkbox',  params: [], needsSelector: true },
+  ]},
+  { group: '📥 Tải xuống', actions: [
+    { value: 'click_and_download', label: 'Click & Tải file', params: ['key_name'], needsSelector: true },
+  ]},
+  { group: '🪟 Modal & Dialog', actions: [
+    { value: 'wait_for_selector', label: 'Chờ phần tử', params: [], needsSelector: true },
+    { value: 'accept_dialog', label: 'Chấp nhận Dialog', params: [], needsSelector: false },
+    { value: 'dismiss_dialog',label: 'Đóng Dialog',      params: [], needsSelector: false },
+  ]},
+  { group: '📝 Lấy dữ liệu', actions: [
+    { value: 'get_text',      label: 'Lấy Text',          params: ['key_name'], needsSelector: true },
+    { value: 'get_attribute', label: 'Lấy Attribute',     params: ['attribute', 'key_name'], needsSelector: true },
+    { value: 'get_all_text',  label: 'Lấy tất cả Text',  params: ['key_name'], needsSelector: true },
+    { value: 'get_url',       label: 'Lấy URL hiện tại', params: ['key_name'], needsSelector: false },
+    { value: 'screenshot',    label: 'Chụp màn hình',     params: ['key_name'], needsSelector: false },
+    { value: 'evaluate_js',   label: 'Chạy JavaScript',  params: ['js_code', 'key_name'], needsSelector: false },
+  ]},
+  { group: '⏱️ Chờ đợi', actions: [
+    { value: 'wait',          label: 'Dừng chờ (giây)',  params: ['seconds'], needsSelector: false },
+    { value: 'wait_for_url',  label: 'Chờ URL thay đổi', params: ['url_pattern'], needsSelector: false },
+  ]},
+]
+
+const ACTION_MAP = {}
+BROWSER_ACTIONS.forEach(g => g.actions.forEach(a => { ACTION_MAP[a.value] = a }))
+
+const SCROLL_DIR_OPTIONS = ['down', 'up', 'bottom', 'top']
+const KEY_OPTIONS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F5']
+
+const STEP_COLORS = {
+  navigate: '#0ea5e9', go_back: '#0ea5e9', go_forward: '#0ea5e9', reload: '#0ea5e9', wait_for_load: '#0ea5e9',
+  click: '#8b5cf6', double_click: '#8b5cf6', right_click: '#8b5cf6', hover: '#8b5cf6', scroll_to: '#8b5cf6', scroll_page: '#8b5cf6',
+  fill: '#10b981', type_slowly: '#10b981', clear: '#10b981', press_key: '#10b981',
+  select_option: '#f59e0b', check: '#f59e0b', uncheck: '#f59e0b',
+  click_and_download: '#0ea5e9',
+  wait_for_selector: '#ec4899', accept_dialog: '#ec4899', dismiss_dialog: '#ec4899',
+  get_text: '#06b6d4', get_attribute: '#06b6d4', get_all_text: '#06b6d4', get_url: '#06b6d4', screenshot: '#06b6d4', evaluate_js: '#06b6d4',
+  wait: '#f97316', wait_for_url: '#f97316',
+}
+
+const BrowserStepEditorPanel = ({ steps, onChange }) => {
+  const [expandedIdx, setExpandedIdx] = useState(null)
+
+  const dragItem = React.useRef(null)
+  const dragOverItem = React.useRef(null)
+
+  const addStep = () => {
+    const newStep = { action: 'navigate', selector: '', value: '', key_name: 'result', note: '', continue_on_error: false }
+    onChange([...steps, newStep])
+    setExpandedIdx(steps.length)
+  }
+
+  const removeStep = (i) => {
+    const newSteps = steps.filter((_, idx) => idx !== i)
+    onChange(newSteps)
+    if (expandedIdx === i) setExpandedIdx(null)
+  }
+
+  const updateStep = (i, field, val) => {
+    const newSteps = steps.map((s, idx) => idx === i ? { ...s, [field]: val } : s)
+    onChange(newSteps)
+  }
+
+  const handleDragStart = (e, index) => {
+    dragItem.current = index
+    e.dataTransfer.effectAllowed = 'move'
+    // Ẩn nội dung khi đang kéo cho gọn
+    if (expandedIdx === index) setExpandedIdx(null)
+  }
+
+  const handleDragEnter = (e, index) => {
+    e.preventDefault()
+    dragOverItem.current = index
+  }
+
+  const handleDragEnd = () => {
+    if (dragItem.current === null || dragOverItem.current === null) return
+    if (dragItem.current !== dragOverItem.current) {
+      const newSteps = [...steps]
+      const draggedContent = newSteps[dragItem.current]
+      newSteps.splice(dragItem.current, 1)
+      newSteps.splice(dragOverItem.current, 0, draggedContent)
+      onChange(newSteps)
+      setExpandedIdx(null)
+    }
+    dragItem.current = null
+    dragOverItem.current = null
+  }
+
+  const inputStyle = { width: '100%', fontSize: '0.8rem', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-default)', background: 'var(--bg-base)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'var(--font-mono)' }
+  const labelStyle = { fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2, display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)', overflow: 'hidden', minHeight: 0 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Globe size={16} color="#0ea5e9" />
+          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+            Danh sách bước ({steps.length})
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={addStep}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
+        >
+          <Plus size={14} /> Thêm bước
+        </button>
+      </div>
+
+      {/* Steps list */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {steps.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-muted)' }}>
+            <Globe size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
+            <div style={{ fontSize: '0.9rem', marginBottom: 6 }}>Chưa có bước nào</div>
+            <div style={{ fontSize: '0.8rem' }}>Nhấn <strong>+ Thêm bước</strong> để bắt đầu</div>
+          </div>
+        )}
+
+        {steps.map((step, i) => {
+          const actionDef = ACTION_MAP[step.action] || {}
+          const isExpanded = expandedIdx === i
+          const accentColor = STEP_COLORS[step.action] || '#6c63ff'
+          const actionLabel = actionDef.label || step.action
+
+          return (
+            <div 
+              key={i} 
+              draggable
+              onDragStart={(e) => handleDragStart(e, i)}
+              onDragEnter={(e) => handleDragEnter(e, i)}
+              onDragOver={(e) => e.preventDefault()}
+              onDragEnd={handleDragEnd}
+              style={{ flexShrink: 0, borderRadius: 10, border: `1px solid ${isExpanded ? accentColor : 'var(--border-default)'}`, background: 'var(--bg-surface)', overflow: 'hidden', transition: 'border-color 0.2s', boxShadow: isExpanded ? `0 0 0 2px ${accentColor}22` : 'none', cursor: isExpanded ? 'default' : 'grab' }}
+            >
+              {/* Step header */}
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: isExpanded ? `color-mix(in srgb, ${accentColor} 8%, transparent)` : 'transparent', userSelect: 'none' }}
+                onClick={() => setExpandedIdx(isExpanded ? null : i)}
+              >
+                <div style={{ width: 20, height: 20, borderRadius: '50%', background: accentColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: accentColor }}>{actionLabel}</span>
+                    {step.selector && <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.72rem', background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{step.selector}</span>}
+                    {step.value && <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>= "{step.value}"</span>}
+                  </div>
+                  {step.note && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 1 }}>{step.note}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStep(i) }} style={{ width: 22, height: 22, border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }} title="Xóa bước"><Trash2 size={12} /></button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, cursor: 'grab', color: 'var(--text-muted)' }} title="Kéo thả để sắp xếp"><GripVertical size={14} /></div>
+                </div>
+              </div>
+
+              {/* Step body */}
+              {isExpanded && (
+                <div style={{ padding: '12px', borderTop: `1px solid ${accentColor}33`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {/* Action type */}
+                  <div>
+                    <label style={labelStyle}>Loại hành động</label>
+                    <select value={step.action} onChange={e => updateStep(i, 'action', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                      {BROWSER_ACTIONS.map(g => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.actions.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Selector */}
+                  {actionDef.needsSelector && (
+                    <div>
+                      <label style={labelStyle}>Selector (CSS / XPath / text=...)</label>
+                      <input style={inputStyle} placeholder="VD: #login-btn, .submit, text=Đăng nhập" value={step.selector || ''} onChange={e => updateStep(i, 'selector', e.target.value)} />
+                    </div>
+                  )}
+
+                  {/* Value / URL / Text */}
+                  {['navigate', 'go_to', 'wait_for_url'].includes(step.action) && (
+                    <div>
+                      <label style={labelStyle}>URL</label>
+                      <input style={inputStyle} placeholder="https://example.com" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                    </div>
+                  )}
+
+                  {['fill', 'type_slowly'].includes(step.action) && (
+                    <div>
+                      <label style={labelStyle}>Nội dung nhập (hỗ trợ {'{{key}}'})</label>
+                      <input style={inputStyle} placeholder="VD: hello world hoặc {{username}}" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                    </div>
+                  )}
+
+                  {step.action === 'press_key' && (
+                    <div>
+                      <label style={labelStyle}>Phím</label>
+                      <select value={step.value || 'Enter'} onChange={e => updateStep(i, 'value', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        {KEY_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {step.action === 'select_option' && (
+                    <div>
+                      <label style={labelStyle}>Giá trị / Label option</label>
+                      <input style={inputStyle} placeholder="VD: Hà Nội hoặc 0 (chỉ số)" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                    </div>
+                  )}
+
+                  {step.action === 'scroll_page' && (
+                    <div>
+                      <label style={labelStyle}>Hướng cuộn</label>
+                      <select value={step.value || 'down'} onChange={e => updateStep(i, 'value', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        {SCROLL_DIR_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                        <option value="500">500px</option>
+                        <option value="1000">1000px</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {step.action === 'wait' && (
+                    <div>
+                      <label style={labelStyle}>Thời gian (giây)</label>
+                      <input type="number" style={inputStyle} placeholder="VD: 2" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} min="0.1" step="0.5" />
+                    </div>
+                  )}
+
+                  {step.action === 'get_attribute' && (
+                    <div>
+                      <label style={labelStyle}>Tên attribute</label>
+                      <input style={inputStyle} placeholder="VD: href, value, src, data-id" value={step.attribute || ''} onChange={e => updateStep(i, 'attribute', e.target.value)} />
+                    </div>
+                  )}
+
+                  {step.action === 'evaluate_js' && (
+                    <div>
+                      <label style={labelStyle}>JavaScript expression</label>
+                      <textarea style={{ ...inputStyle, height: 64, resize: 'vertical', fontFamily: 'monospace' }} placeholder="VD: document.title" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                    </div>
+                  )}
+
+                  {step.action === 'click_and_download' && (
+                    <div>
+                      <label style={labelStyle}>Tên file lưu lại (Tùy chọn)</label>
+                      <input style={inputStyle} placeholder="VD: bao_cao_thang (Hệ thống sẽ tự động thêm đuôi file gốc)" value={step.file_name || ''} onChange={e => updateStep(i, 'file_name', e.target.value)} />
+                    </div>
+                  )}
+
+                  {/* Key name for data collection */}
+                  {['get_text', 'get_attribute', 'get_all_text', 'get_url', 'screenshot', 'evaluate_js', 'click_and_download'].includes(step.action) && (
+                    <div>
+                      <label style={labelStyle}>Lưu vào key (output_data key)</label>
+                      <input style={inputStyle} placeholder="VD: title, url, content" value={step.key_name || 'result'} onChange={e => updateStep(i, 'key_name', e.target.value)} />
+                    </div>
+                  )}
+
+                  {/* Timeout */}
+                  {actionDef.needsSelector && (
+                    <div>
+                      <label style={labelStyle}>Timeout (ms, mặc định 10000)</label>
+                      <input type="number" style={inputStyle} placeholder="10000" value={step.timeout || ''} onChange={e => updateStep(i, 'timeout', e.target.value)} min="1000" step="1000" />
+                    </div>
+                  )}
+
+                  {/* Note */}
+                  <div>
+                    <label style={labelStyle}>Ghi chú (hiển thị trong log)</label>
+                    <input style={inputStyle} placeholder="VD: Click nút Đăng nhập" value={step.note || ''} onChange={e => updateStep(i, 'note', e.target.value)} />
+                  </div>
+
+                  {/* Continue on error */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="checkbox" id={`coe-${i}`} checked={step.continue_on_error || false} onChange={e => updateStep(i, 'continue_on_error', e.target.checked)} style={{ cursor: 'pointer' }} />
+                    <label htmlFor={`coe-${i}`} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>Bỏ qua lỗi và tiếp tục (continue_on_error)</label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Footer hint */}
+      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border-default)', background: 'var(--bg-elevated)', fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+        💡 Dùng <code style={{ background: 'rgba(14,165,233,0.12)', padding: '1px 5px', borderRadius: 4, color: '#0ea5e9' }}>{'{{key}}'}</code> trong trường value để chèn dữ liệu từ <code>input_data</code>
+      </div>
+    </div>
+  )
+}
+
 const PositionSelector = ({ value, onChange }) => {
   const btnStyle = (pos) => ({
     width: 48,
@@ -143,6 +463,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const [mergeAllInput, setMergeAllInput] = useState(node.data.mergeAllInput !== false) // default ON
   const [mergeFileSource, setMergeFileSource] = useState(node.data.mergeFileSource || 'input') // 'input' | 'output'
   
+  const telegramParseMode = Form.useWatch('telegramParseMode', form)
   const pivotInputFiles = Form.useWatch('pivotInputFiles', form)
   const pivotInputFile = pivotInputFiles?.[0] || ''
   const pivotHeaderRow = Form.useWatch('pivotHeaderRow', form)
@@ -169,9 +490,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const isSqlToExcel = node.data.type === 'sql_to_excel'
   const isMergeExcel = node.data.type === 'merge_excel'
   const isPivotExcel = node.data.type === 'pivot_excel'
+  const isBrowser = node.data.type === 'browser'
+
+  // Browser steps state
+  const [browserSteps, setBrowserSteps] = useState(node.data.steps || [])
+  const [expandedStep, setExpandedStep] = useState(null)
 
   const hasCodeEditor = isPython || isSqlToExcel
-  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isDatabase
+  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isDatabase || isTelegram || isBrowser
 
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
@@ -284,7 +610,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
         ...values,
         ...(isPython ? { code } : {}),
         ...(isSqlToExcel ? { sqlQuery: sqlCode } : {}),
-        ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {})
+        ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
+        ...(isBrowser ? { steps: browserSteps } : {}),
       })
       message.success('Đã lưu cấu hình khối!')
     } catch (e) {
@@ -299,7 +626,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
 
   return (
     <Drawer
-      title={<Space><Code2 size="1.125rem" color="var(--accent-primary)" /> Chỉnh sửa Block</Space>}
+      title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
       width={hasRightPanel ? '75vw' : 360}
       onClose={onClose}
       open={true}
@@ -317,7 +644,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       <Form
         form={form}
         layout="vertical"
-        style={{ display: 'flex', width: '100%', height: '100%', background: 'var(--bg-base)' }}
+        style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%', height: '100%', background: 'var(--bg-base)' }}
         initialValues={{
             label: node.data.label || '',
             description: node.data.description || '',
@@ -362,9 +689,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
             pivotSortCustom: node.data.pivotSortCustom || [],
             inPosition: node.data.inPosition || 'left',
             outPosition: node.data.outPosition || 'right',
+            debugMode: node.data.debugMode || false,
           }}
         >
-          <div style={{ width: hasRightPanel ? 360 : '100%', padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
+          <div style={{ width: hasRightPanel ? 360 : '100%', height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
             <Form.Item name="inPosition" label="Cổng vào (IN)" style={{ marginBottom: 0 }}>
               <PositionSelector />
@@ -532,7 +860,26 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
           )}
         
 
-        {isPython && (
+          {isBrowser && (
+            <>
+              <Divider style={{ margin: '16px 0' }} />
+              <Form.Item name="debugMode" label="Chế độ Debug" valuePropName="checked"
+                extra="Bật để hiển thị cửa sổ trình duyệt khi chạy">
+                <Switch checkedChildren="🔍 Headed" unCheckedChildren="🤖 Headless" />
+              </Form.Item>
+              <div style={{ background: 'color-mix(in srgb, #0ea5e9 10%, transparent)', borderRadius: 8, padding: '10px 12px', border: '1px solid color-mix(in srgb, #0ea5e9 30%, transparent)', marginBottom: 8 }}>
+                <div style={{ fontSize: '0.8rem', color: '#0ea5e9', fontWeight: 600, marginBottom: 4 }}>ℹ️ Hướng dẫn Selector</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  • CSS: <code>#login-btn</code>, <code>.btn-submit</code><br />
+                  • XPath: <code>//button[@type='submit']</code><br />
+                  • Text: <code>text=Đăng nhập</code><br />
+                  • Label: <code>label=Tên đăng nhập</code>
+                </div>
+              </div>
+            </>
+          )}
+
+          {isPython && (
           <>
             <Divider style={{ margin: '16px 0' }} />
             <div style={{ marginBottom: 16 }}>
@@ -580,9 +927,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       </div>
 
       {/* Code Editor Panel or Email/Pivot/Database Right Panel */}
-      {hasRightPanel && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: theme === 'light' ? '#fff' : '#1e1e1e', overflowY: 'auto' }}>
-          {isDatabase ? (
+        {hasRightPanel && (
+          <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)', minWidth: 0, minHeight: 0, overflowY: isBrowser ? 'hidden' : 'auto' }}>
+            {isDatabase ? (
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                 <Database size="1.5rem" color="var(--accent-primary)" />
@@ -630,6 +977,58 @@ server_part = f"{server},{port}" if port else server
 conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID={user};PWD={{{password}}};TrustServerCertificate=yes;"
 `}</code>
                 </pre>
+              </div>
+            </div>
+          ) : isTelegram ? (
+            <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                <MessageCircle size="1.5rem" color="var(--accent-primary)" />
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>Hướng dẫn Định dạng Telegram ({telegramParseMode || 'HTML'})</h2>
+              </div>
+              
+              <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24, overflowX: 'auto' }}>
+                {(!telegramParseMode || telegramParseMode === 'None') ? (
+                  <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    Chế độ định dạng đang tắt. Tin nhắn sẽ hiển thị văn bản thuần túy (Raw Text).<br/>
+                    Hãy chọn HTML hoặc MarkdownV2 để sử dụng các tính năng in đậm, in nghiêng, chèn link,...
+                  </div>
+                ) : (
+                  <Table
+                    size="small"
+                    pagination={false}
+                    columns={[
+                      { title: 'Chức năng', dataIndex: 'func', key: 'func', width: '22%' },
+                      { title: telegramParseMode === 'MarkdownV2' ? 'Cú pháp MarkdownV2' : 'Cú pháp thẻ HTML', dataIndex: 'syntax', key: 'syntax', render: t => <code style={{ color: 'var(--accent-primary)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{t}</code> },
+                      { title: 'Kết quả hiển thị', dataIndex: 'result', key: 'result', width: '38%' }
+                    ]}
+                    dataSource={telegramParseMode === 'MarkdownV2' ? [
+                      { key: 1, func: 'In đậm (Bold)', syntax: '*chữ in đậm*', result: <strong style={{ fontWeight: 'bold' }}>chữ in đậm</strong> },
+                      { key: 2, func: 'In nghiêng (Italic)', syntax: '_chữ in nghiêng_', result: <em style={{ fontStyle: 'italic' }}>chữ in nghiêng</em> },
+                      { key: 3, func: 'Gạch chân (Underline)', syntax: '__chữ gạch chân__', result: <u style={{ textDecoration: 'underline' }}>chữ gạch chân</u> },
+                      { key: 4, func: 'Gạch ngang (Strikethrough)', syntax: '~gạch ngang~', result: <del style={{ textDecoration: 'line-through' }}>gạch ngang</del> },
+                      { key: 5, func: 'Chèn link ẩn (Hyperlink)', syntax: '[Tên link](http://example.com/)', result: <a href="#">Tên link (Click được)</a> },
+                      { key: 6, func: 'Link tài khoản (Mention)', syntax: '[Tên User](tg://user?id=123456789)', result: <a href="#">Click vào mở profile user</a> },
+                      { key: 7, func: 'Code một dòng', syntax: '`đoạn code ngắn`', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>đoạn code ngắn (Copy nhanh)</code> },
+                      { key: 8, func: 'Khối Code', syntax: '```\nkhối code nhiều dòng\n```', result: 'Khối code nền xám tách biệt' },
+                      { key: 9, func: 'Khối Code ngôn ngữ', syntax: '```python\nprint("Hello")\n```', result: 'Khối code highlight' },
+                      { key: 10, func: 'Trích dẫn', syntax: '>đoạn trích dẫn', result: 'Hiển thị dạng thanh dọc thụt lề' },
+                      { key: 11, func: 'Giấu nội dung', syntax: '||nội dung bí mật||', result: 'Bị mờ đi, bấm vào mới hiện chữ' },
+                    ] : [
+                      { key: 1, func: 'In đậm (Bold)', syntax: '<b>chữ in đậm</b>', result: <strong style={{ fontWeight: 'bold' }}>chữ in đậm</strong> },
+                      { key: 2, func: 'In nghiêng (Italic)', syntax: '<i>chữ in nghiêng</i>', result: <em style={{ fontStyle: 'italic' }}>chữ in nghiêng</em> },
+                      { key: 3, func: 'Gạch chân (Underline)', syntax: '<u>chữ gạch chân</u>', result: <u style={{ textDecoration: 'underline' }}>chữ gạch chân</u> },
+                      { key: 4, func: 'Gạch ngang (Strikethrough)', syntax: '<s>gạch ngang</s>', result: <del style={{ textDecoration: 'line-through' }}>gạch ngang</del> },
+                      { key: 5, func: 'In đậm + In nghiêng', syntax: '<b><i>chữ đậm nghiêng</i></b>', result: <strong><em>chữ đậm nghiêng</em></strong> },
+                      { key: 6, func: 'Chèn link ẩn (Hyperlink)', syntax: '<a href="http://example.com/">Tên link</a>', result: <a href="#">Tên link (Click được)</a> },
+                      { key: 7, func: 'Link tài khoản (Mention)', syntax: '<a href="tg://user?id=123456789">Tên User</a>', result: <a href="#">Click vào mở profile user</a> },
+                      { key: 8, func: 'Code một dòng', syntax: '<code>đoạn code ngắn</code>', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>đoạn code ngắn (Copy nhanh)</code> },
+                      { key: 9, func: 'Khối Code', syntax: '<pre>khối code nhiều dòng</pre>', result: 'Khối code nền xám tách biệt' },
+                      { key: 10, func: 'Khối Code ngôn ngữ', syntax: '<pre><code class="language-python">print("Hello")</code></pre>', result: 'Khối code highlight' },
+                      { key: 11, func: 'Trích dẫn', syntax: '<blockquote>đoạn trích dẫn</blockquote>', result: 'Hiển thị dạng thanh dọc thụt lề' },
+                      { key: 12, func: 'Giấu nội dung', syntax: '<tg-spoiler>bí mật</tg-spoiler>', result: 'Bị mờ đi, bấm vào mới hiện chữ' },
+                    ]}
+                  />
+                )}
               </div>
             </div>
           ) : isEmail ? (
@@ -842,6 +1241,8 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                 </div>
               )}
             </div>
+          ) : isBrowser ? (
+            <BrowserStepEditorPanel steps={browserSteps} onChange={setBrowserSteps} />
           ) : (
             <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>

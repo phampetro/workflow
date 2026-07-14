@@ -84,8 +84,8 @@ export const deleteSchedule    = (id)         => api.delete(`/api/schedules/${id
 export const toggleSchedule    = (id)         => api.patch(`/api/schedules/${id}/toggle`)
 
 // ── SSE Log Streaming ─────────────────────────────────────
-export const createLogStream = (runId, onMessage, onError) => {
-  const url = `http://localhost:8000/api/runs/${runId}/logs/stream`
+export const createLogStream = (runId, onMessage, onError, offset = 0) => {
+  const url = `${api.defaults.baseURL}/api/runs/${runId}/logs/stream?offset=${offset}`
   const es = new EventSource(url)
   es.onmessage = (e) => {
     try {

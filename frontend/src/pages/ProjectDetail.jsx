@@ -6,6 +6,7 @@ import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortab
 import SortableCard from '../components/SortableCard'
 import { Modal, Form, Input, Button, Tabs, Table, Tag, Popconfirm, Typography, Divider, Space, Card, Alert, Tooltip, Spin, Empty, Dropdown } from 'antd'
 import toast from 'react-hot-toast'
+import useStore from '../store/useStore'
 
 const COLORS = ['#6c63ff','#00d4aa','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
 
@@ -38,23 +39,59 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
   const [editingWf, setEditingWf] = useState(null)
   
   const [deletingWf, setDeletingWf] = useState(null)
-  const [runningWf, setRunningWf] = useState(null)
   const [initingVenv, setInitingVenv] = useState(false)
+
+  // Đọc trạng thái đang chạy từ Zustand (nguồn sự thật duy nhất)
+  const activeRuns = useStore((s) => s.activeRuns)
+  // Chỉ dùng Zustand, không dùng running_count từ server (có thể stale)
+  const isWfRunning = (wfId) => !!activeRuns[wfId]
 
   const proj = project || {}
 
   const loadWorkflows = useCallback(async () => {
     if (!proj.id) return
-    setLoading(true)
     try {
       const res = await getWorkflows(proj.id)
-      setWorkflows(res.data || [])
+      const wfList = res.data || []
+      setWorkflows(wfList)
+
+      // Đồng bộ Zustand từ server:
+      // - Nếu server nói wf đang chạy nhưng Zustand chưa biết → gọn lại run history để lấy run_id
+      // - Nếu Zustand nói đang chạy nhưng server nói không → clear Zustand
+      const store = useStore.getState()
+      for (const wf of wfList) {
+        const isActiveInZustand = !!store.activeRuns[wf.id]
+        const isRunningOnServer = wf.running_count > 0
+
+        if (isRunningOnServer && !isActiveInZustand) {
+          // Server đang chạy nhưng Zustand chưa biết → lấy run_id mới nhất
+          getRunHistory(wf.id, 1).then(r => {
+            const latest = r.data?.[0]
+            if (latest && latest.status === 'running') {
+              store.setActiveRun(wf.id, latest.id)
+            }
+          }).catch(() => {})
+        } else if (!isRunningOnServer && isActiveInZustand) {
+          // Server đã kết thúc nhưng Zustand vẫn giữ → clear
+          store.clearActiveRun(wf.id)
+        }
+      }
     } catch (e) {
       toast.error('Lỗi tải workflows: ' + e.message)
     } finally {
       setLoading(false)
     }
   }, [proj.id])
+
+  // Auto-refresh khi có wf đang chạy (theo Zustand hoặc server)
+  useEffect(() => {
+    const hasRunning = Object.keys(activeRuns).length > 0 || workflows.some(w => w.running_count > 0)
+    if (!hasRunning) return
+    const timer = setInterval(() => {
+      loadWorkflows()
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [workflows, activeRuns, loadWorkflows])
 
   const loadPackages = useCallback(async () => {
     if (!proj.id) return
@@ -185,18 +222,22 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
 
   const handleRunWorkflow = async (wf, e) => {
     e.stopPropagation()
+    if (isWfRunning(wf.id)) return // chặn double-click
     if (!wf.graph_json) {
       toast.warning('Workflow chưa có nội dung. Vui lòng thêm blocks trước khi chạy.')
       return
     }
-    setRunningWf(wf.id)
     try {
-      await runWorkflow(wf.id)
+      const res = await runWorkflow(wf.id)
+      const run_id = res.data?.run_id
+      if (run_id) {
+        useStore.getState().clearLogs(run_id)
+        useStore.getState().setActiveRun(wf.id, run_id)
+      }
       toast.success(`Đã kích hoạt chạy ${wf.name}`)
-      setTimeout(() => setRunningWf(null), 3000)
     } catch (err) {
       toast.error('Lỗi chạy workflow: ' + err.message)
-      setRunningWf(null)
+      useStore.getState().clearActiveRun(wf.id)
     }
   }
 
@@ -262,10 +303,19 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
   }
 
   const pkgColumns = [
-    { title: 'STT', key: 'index', width: 60, align: 'center', render: (_, __, index) => index + 1 },
-    { title: 'Package', dataIndex: 'name', key: 'name', render: text => <strong style={{color: 'var(--accent-secondary)'}}>{text}</strong> },
-    { title: 'Version', dataIndex: 'version', key: 'version', width: 150, align: 'center', render: text => <Tag>{text}</Tag> },
-    { title: 'Hành động', key: 'action', width: 120, align: 'center', render: (_, record) => (
+    { title: 'STT', key: 'index', width: 50, align: 'center', render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{index + 1}</span> },
+    { title: 'Package', dataIndex: 'name', key: 'name', render: text => <strong style={{ color: 'var(--accent-secondary)', fontSize: '0.85rem' }}>{text}</strong> },
+    {
+      title: 'Version', dataIndex: 'version', key: 'version', width: 150, align: 'center',
+      render: text => (
+        <span style={{
+          display: 'inline-block', padding: '1px 8px', borderRadius: 4,
+          background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)',
+          color: '#c4b5fd', fontSize: '0.78rem', fontFamily: 'var(--font-mono)'
+        }}>{text || '-'}</span>
+      )
+    },
+    { title: 'Hành động', key: 'action', width: 90, align: 'center', render: (_, record) => (
       <Popconfirm title="Gỡ package này?" onConfirm={() => handleUninstall(record.name)}>
         <Button size="small" type="text" danger icon={<Trash2 size="0.875rem" />} />
       </Popconfirm>
@@ -273,14 +323,29 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
   ]
 
   const historyColumns = [
-    { title: 'STT', key: 'index', width: 60, align: 'center', render: (_, __, index) => index + 1 },
-    { title: 'Workflow', key: 'workflow', render: (_, r) => <strong style={{color: 'var(--accent-secondary)'}}>{workflows.find(w => w.id === r.workflow_id)?.name || r.workflow_id}</strong> },
-    { title: 'Trạng thái', dataIndex: 'status', key: 'status', align: 'center', render: s => <Tag color={STATUS_CONFIG[s]?.color || 'default'}>{STATUS_CONFIG[s]?.label || s}</Tag> },
-    { title: 'Kích hoạt bởi', key: 'trigger', align: 'center', render: (_, r) => {
-      const type = r.triggered_by?.startsWith('schedule:') ? 'Lịch hẹn' : 'Thủ công'
-      return <span style={{ fontSize: '0.85rem' }}>{type}: {formatDate(r.started_at)}</span>
-    } },
-    { title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration', align: 'center', render: ms => formatDuration(ms) },
+    { title: 'STT', key: 'index', width: 50, align: 'center', render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{index + 1}</span> },
+    { title: 'Workflow', key: 'workflow', render: (_, r) => <strong style={{ color: 'var(--accent-secondary)', fontSize: '0.85rem' }}>{workflows.find(w => w.id === r.workflow_id)?.name || r.workflow_id}</strong> },
+    {
+      title: 'Trạng thái', dataIndex: 'status', key: 'status', align: 'center',
+      render: s => {
+        const cls = s === 'running' ? 'running' : s === 'success' ? 'success' : s === 'error' ? 'error' : s === 'scheduled' ? 'scheduled' : 'idle'
+        const label = STATUS_CONFIG[s]?.label || s
+        return (
+          <div className={`status-pill ${cls}`} style={{ display: 'inline-flex', margin: '0 auto' }}>
+            {s === 'running' && <span className="pulse-dot" />}
+            {label}
+          </div>
+        )
+      }
+    },
+    {
+      title: 'Kích hoạt bởi', key: 'trigger', align: 'center',
+      render: (_, r) => {
+        const type = r.triggered_by?.startsWith('schedule:') ? 'Lịch hẹn' : 'Thủ công'
+        return <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{type}: {formatDate(r.started_at)}</span>
+      }
+    },
+    { title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration', align: 'center', render: ms => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatDuration(ms)}</span> },
   ]
 
   return (
@@ -391,13 +456,13 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
                           </div>
                           
                           <Button 
-                            type={runningWf === wf.id ? 'default' : 'primary'} 
-                            icon={runningWf === wf.id ? <Loader size="0.875rem" className="spinning"/> : <Play size="0.875rem" />}
+                            type={isWfRunning(wf.id) ? 'default' : 'primary'} 
+                            icon={isWfRunning(wf.id) ? <Loader size="0.875rem" className="spinning"/> : <Play size="0.875rem" />}
                             onClick={(e) => handleRunWorkflow(wf, e)}
-                            disabled={deletingWf === wf.id}
+                            disabled={deletingWf === wf.id || isWfRunning(wf.id)}
                             style={{ borderRadius: 6, fontWeight: 500 }}
                           >
-                            {runningWf === wf.id ? 'Đang chạy' : 'Chạy'}
+                            {isWfRunning(wf.id) ? 'Đang chạy' : 'Chạy'}
                           </Button>
                         </div>
                       </div>
@@ -437,7 +502,6 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
                     rowKey="name" 
                     loading={pkgLoading}
                     pagination={{ pageSize: 10, size: 'small' }}
-                    bordered
                     size="small"
                   />
                 </div>
@@ -458,7 +522,6 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
                     rowKey="id" 
                     loading={histLoading}
                     pagination={{ pageSize: 10, size: 'small' }}
-                    bordered
                     size="small"
                   />
                 </div>
@@ -516,10 +579,6 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
         </Form>
       </Modal>
 
-      <style>{`
-        .spinning { animation:spin .8s linear infinite; }
-        @keyframes spin { 100% { transform:rotate(360deg); } }
-      `}</style>
     </div>
   )
 }

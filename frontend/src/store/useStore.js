@@ -64,12 +64,20 @@ const useStore = create((set, get) => ({
   runLogs: {},
   activeRuns: {},
 
-  appendLog: (runId, line) => set((state) => ({
-    runLogs: {
-      ...state.runLogs,
-      [runId]: [...(state.runLogs[runId] || []), line],
-    },
-  })),
+  appendLog: (runId, line) => set((state) => {
+    const existing = state.runLogs[runId] || []
+    // Dedup: kiểm tra dòng cuối xem giống hoàn toàn chưa
+    const last = existing[existing.length - 1]
+    if (last && last.time === line.time && last.msg === line.msg) {
+      return state // không thêm dòng trung
+    }
+    return {
+      runLogs: {
+        ...state.runLogs,
+        [runId]: [...existing, line],
+      }
+    }
+  }),
 
   clearLogs: (runId) => set((state) => {
     const next = { ...state.runLogs }

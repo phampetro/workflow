@@ -120,6 +120,11 @@ export default function App() {
     setShowUserPicker(false)
     setNoUsersExist(false)
     setRefreshTick((t) => t + 1)
+    
+    // Reset view to dashboard when switching users
+    setSelectedProject(null)
+    setSelectedWorkflow(null)
+    setView(VIEWS.DASHBOARD)
   }
 
   const handleNavRefresh = () => {
@@ -171,7 +176,8 @@ export default function App() {
           controlItemBgActive: theme === 'dark' ? '#52525b' : '#e4e4e7',
           colorBorder: theme === 'dark' ? '#27272a' : '#e4e4e7',
           colorText: theme === 'dark' ? '#f4f4f5' : '#09090b',
-          colorTextSecondary: theme === 'dark' ? '#a1a1aa' : '#52525b',
+          colorTextSecondary: theme === 'dark' ? '#d4d4d8' : '#3f3f46',
+          colorTextTertiary: theme === 'dark' ? '#a1a1aa' : '#71717a',
         },
         components: {
           Button: {

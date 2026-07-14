@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties } from 'lucide-react'
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe } from 'lucide-react'
 
 const BLOCK_TYPES = {
   start: {
@@ -80,6 +80,13 @@ const BLOCK_TYPES = {
     gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
     description: 'Tổng hợp dữ liệu (Pivot)',
   },
+  browser: {
+    label: 'Trình Duyệt',
+    icon: <Globe size="0.875rem" />,
+    color: '#0ea5e9',
+    gradient: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
+    description: 'Tự động hóa trình duyệt web',
+  },
 }
 
 const STATUS_STYLES = {
@@ -141,12 +148,16 @@ const BlockNode = memo(({ data, selected }) => {
             Dừng chờ {data.delaySeconds || 3} giây
           </div>
         ) : data.type === 'sql_to_excel' ? (
-          <div className="block-desc" style={{ color: '#059669', fontWeight: 600 }}>
+          <div className="block-desc" style={{ color: 'var(--accent-success)', fontWeight: 600 }}>
             {data.excelFileName || 'export.xlsx'}
           </div>
         ) : data.type === 'merge_excel' ? (
-          <div className="block-desc" style={{ color: '#8b5cf6', fontWeight: 600 }}>
+          <div className="block-desc" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
             {data.excelFileName || 'merged.xlsx'}
+          </div>
+        ) : data.type === 'browser' ? (
+          <div className="block-desc" style={{ color: '#0ea5e9', fontWeight: 600 }}>
+            {data.debugMode ? '🔍 Debug Mode' : '🤖'} {data.steps?.length || 0} bước
           </div>
         ) : (
           <div className="block-desc">

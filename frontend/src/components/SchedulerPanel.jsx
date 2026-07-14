@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar, Trash2, Clock, Edit2 } from 'lucide-react'
 import { getSchedules, createSchedule, updateSchedule, deleteSchedule as apiDeleteSchedule, toggleSchedule as apiToggleSchedule } from '../api/client'
-import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table } from 'antd'
+import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber } from 'antd'
 import toast from 'react-hot-toast'
 import dayjs from 'dayjs'
 
@@ -22,9 +22,14 @@ function parseCron(cron) {
   try {
     if (cron && typeof cron === 'string' && cron.startsWith('{')) {
       const config = JSON.parse(cron)
-      const days = config.days && config.days.length > 0 ? config.days.map(d => DAY_MAP[d] || d).join(', ') : 'Hàng ngày'
       const time = config.hour && config.minute ? `${config.hour.padStart(2, '0')}:${config.minute.padStart(2, '0')}` : 'mỗi giờ'
-      let str = `Lặp lại ${days} lúc ${time}`
+      let str = ''
+      if (config.schedule_type === 'month') {
+        str = `Lặp lại ngày ${config.day_of_month || 1} hàng tháng lúc ${time}`
+      } else {
+        const days = config.days && config.days.length > 0 ? config.days.map(d => DAY_MAP[d] || d).join(', ') : 'Hàng ngày'
+        str = `Lặp lại ${days} lúc ${time}`
+      }
       if (config.start_date) str += ` (từ ${config.start_date})`
       if (config.end_date) str += ` (đến ${config.end_date})`
       return str
@@ -47,6 +52,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
   const [creating, setCreating] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState(null)
   const [form] = Form.useForm()
+  const scheduleType = Form.useWatch('schedule_type', form)
 
   useEffect(() => {
     if (workflow?.id) {
@@ -62,6 +68,8 @@ export default function SchedulerPanel({ workflow, onClose }) {
       if (schedule.cron_expr && schedule.cron_expr.startsWith('{')) {
         const config = JSON.parse(schedule.cron_expr)
         form.setFieldsValue({
+          schedule_type: config.schedule_type || 'week',
+          day_of_month: config.day_of_month || 1,
           time: dayjs(`${config.hour}:${config.minute}`, 'HH:mm'),
           days: config.days,
           dateRange: config.start_date && config.end_date ? [dayjs(config.start_date), dayjs(config.end_date)] : undefined,
@@ -80,6 +88,8 @@ export default function SchedulerPanel({ workflow, onClose }) {
     const time = values.time.format('HH:mm')
     const [hour, minute] = time.split(':')
     const cronPayload = JSON.stringify({
+      schedule_type: values.schedule_type,
+      day_of_month: values.day_of_month,
       hour,
       minute,
       days: values.days,
@@ -228,18 +238,31 @@ export default function SchedulerPanel({ workflow, onClose }) {
             form={form}
             layout="vertical"
             onFinish={handleSubmit}
-            initialValues={{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], time: dayjs('08:00', 'HH:mm') }}
+            initialValues={{ schedule_type: 'week', day_of_month: 1, days: ['mon', 'tue', 'wed', 'thu', 'fri'], time: dayjs('08:00', 'HH:mm') }}
             style={{ background: 'var(--bg-elevated)', padding: 24, borderRadius: 8, border: '1px solid var(--border-default)' }}
           >
             <h4 style={{ margin: '0 0 16px 0' }}>{editingSchedule ? 'Chỉnh sửa lịch hẹn' : 'Thêm lịch mới'}</h4>
             
+            <Form.Item name="schedule_type" label="Kiểu lặp lại">
+              <Radio.Group optionType="button" buttonStyle="solid">
+                <Radio.Button value="week">Theo tuần</Radio.Button>
+                <Radio.Button value="month">Theo tháng</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+
             <Form.Item name="time" label="Giờ chạy" rules={[{ required: true, message: 'Vui lòng chọn giờ chạy' }]}>
               <TimePicker format="HH:mm" style={{ width: '100%' }} />
             </Form.Item>
 
-            <Form.Item name="days" label="Lặp lại vào các ngày" rules={[{ required: true, message: 'Chọn ít nhất 1 ngày' }]}>
-              <Select mode="multiple" options={DAY_OPTIONS} placeholder="Chọn ngày lặp lại" />
-            </Form.Item>
+            {scheduleType === 'month' ? (
+              <Form.Item name="day_of_month" label="Vào ngày" rules={[{ required: true, message: 'Nhập ngày' }]}>
+                <InputNumber min={1} max={31} style={{ width: '100%' }} placeholder="VD: 1 (Ngày 1 hàng tháng)" />
+              </Form.Item>
+            ) : (
+              <Form.Item name="days" label="Lặp lại vào các ngày" rules={[{ required: true, message: 'Chọn ít nhất 1 ngày' }]}>
+                <Select mode="multiple" options={DAY_OPTIONS} placeholder="Chọn ngày lặp lại" />
+              </Form.Item>
+            )}
 
             <Form.Item name="dateRange" label="Thời gian áp dụng" rules={[{ required: true, message: 'Vui lòng chọn thời gian áp dụng' }]}>
               <DatePicker.RangePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder={['Ngày bắt đầu', 'Ngày kết thúc']} />

@@ -63,23 +63,20 @@ export default function WorkflowHistoryPanel({ workflowId }) {
       key: 'status',
       render: (s) => {
         const c = STATUS_CONFIG[s] || { label: s, color: 'default' }
+        const cls = s === 'running' ? 'running' : s === 'success' ? 'success' : s === 'error' ? 'error' : s === 'scheduled' ? 'scheduled' : 'idle'
         return (
-          <Tag color={c.color} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {c.icon} {c.label}
-          </Tag>
+          <div className={`status-pill ${cls}`} style={{ display: 'inline-flex' }}>
+            {s === 'running' && <span className="pulse-dot" />}
+            {c.label}
+          </div>
         )
       }
     },
     {
-      title: 'Thời gian chạy',
-      dataIndex: 'duration_ms',
-      key: 'duration_ms',
-      render: (d) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{formatDuration(d)}</span>
+      title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration_ms', render: (d) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatDuration(d)}</span>
     },
     {
-      title: 'Kích hoạt bởi',
-      dataIndex: 'triggered_by',
-      key: 'triggered_by',
+      title: 'Kích hoạt bởi', dataIndex: 'triggered_by', key: 'triggered_by',
       render: (t) => {
         if (!t || t === 'manual') return <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Thủ công</span>
         if (t.startsWith('schedule:')) return <span style={{ fontSize: '0.8rem', color: 'var(--accent-warning)' }}>Lịch hẹn</span>
@@ -107,10 +104,6 @@ export default function WorkflowHistoryPanel({ workflowId }) {
           locale={{ emptyText: <Empty description="Chưa có lượt chạy nào" /> }}
         />
       </div>
-      <style>{`
-        .spinning { animation: spin 1s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-      `}</style>
     </div>
   )
 }

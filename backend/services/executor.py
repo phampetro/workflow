@@ -24,6 +24,7 @@ from typing import Optional, Callable, AsyncGenerator
 from pathlib import Path
 
 from services.venv_manager import get_python_path, venv_exists, create_venv
+from services.browser_executor import run_browser_block
 
 # Template wrapper để chạy code của user an toàn
 RUNNER_TEMPLATE = """
@@ -279,6 +280,38 @@ async def execute_workflow(
                 break
 
             current_input = result.output
+
+        elif block_type == "browser":
+            steps = block_data.get("steps", [])
+            headless = not block_data.get("debugMode", False)
+
+            if not steps:
+                if log_callback:
+                    await log_callback(block_id, "warning", f"⚠ Block [{label}] không có bước nào, bỏ qua")
+                continue
+
+            browser_result = await run_browser_block(
+                block_id=block_id,
+                workflow_id=workflow_id,
+                steps=steps,
+                input_data=current_input,
+                headless=headless,
+                log_callback=log_callback,
+            )
+            block_results.append({
+                "block_id": block_id,
+                "label": label,
+                "success": browser_result["success"],
+                "error": browser_result.get("error"),
+                "duration_ms": 0,
+            })
+
+            if not browser_result["success"]:
+                final_status = "error"
+                break
+
+            if browser_result["output_data"] is not None:
+                current_input = browser_result["output_data"]
 
         elif block_type == "condition":
             condition = block_data.get("condition", "True")

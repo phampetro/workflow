@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { Button, Drawer, Space, Input, message } from 'antd'
 import toast from 'react-hot-toast'
-import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput } from '../api/client'
+import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory } from '../api/client'
 import useStore from '../store/useStore'
 
 const nodeTypes = { block: BlockNode }
@@ -28,6 +28,7 @@ const BLOCK_GROUPS = [
   { title: 'Bắt đầu - Kết thúc', items: ['start', 'end'] },
   { title: 'Rẽ nhánh', items: ['condition', 'delay'] },
   { title: 'Python Code', items: ['python'] },
+  { title: 'Tự động hóa Web', items: ['browser'] },
   { title: 'Xử lý Dữ liệu', items: ['merge_excel', 'pivot_excel'] },
   { title: 'Cơ sở dữ liệu', items: ['database', 'sql_to_excel'] },
   { title: 'Gửi tin nhắn', items: ['telegram', 'email'] }
@@ -58,13 +59,16 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const [inputKeys, setInputKeys] = useState([])
   const [saveStatus, setSaveStatus] = useState('saved')
 
-  const activeRuns = useStore((s) => s.activeRuns)
-  const setActiveRun = useStore((s) => s.setActiveRun)
-  const clearActiveRun = useStore((s) => s.clearActiveRun)
-  const clearLogs = useStore((s) => s.clearLogs)
-
-  const currentRunId = activeRuns[workflow?.id] || null
+  const currentRunId = useStore((s) => s.activeRuns[workflow?.id] || null)
   const isRunning = !!currentRunId
+  const [viewingRunId, setViewingRunId] = useState(null)
+
+  useEffect(() => {
+    if (currentRunId) {
+      setViewingRunId(currentRunId)
+    }
+  }, [currentRunId])
+
   const [wfData, setWfData] = useState(workflow)
   const saveTimer = useRef(null)
   const reactFlowWrapper = useRef(null)
@@ -103,6 +107,20 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     getWorkflowInput(workflow.id).then((res) => {
       setInputData(res.data)
       setInputKeys(Object.keys(res.data || {}))
+    }).catch(() => {})
+
+    // Khôi phục trạng thái đang chạy hoặc xem log cũ (khi user vào màn hình)
+    getRunHistory(workflow.id, 1).then(res => {
+      const latestRun = res.data?.[0]
+      if (latestRun) {
+        setViewingRunId(latestRun.id) // Luôn giữ ID để có thể xem lại log
+        if (latestRun.status === 'running') {
+          useStore.getState().setActiveRun(workflow.id, latestRun.id)
+          setShowLogs(true) // Tự động mở bảng Log
+        } else {
+          useStore.getState().clearActiveRun(workflow.id)
+        }
+      }
     }).catch(() => {})
   }, [workflow?.id])
 
@@ -220,26 +238,26 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     try {
       const res = await runWorkflow(wfData.id)
       const run_id = res.data.run_id
-      clearLogs(run_id)
-      setActiveRun(wfData.id, run_id)
+      useStore.getState().clearLogs(run_id)
+      useStore.getState().setActiveRun(wfData.id, run_id)
       toast.success('Đã kích hoạt chạy workflow!')
     } catch (e) {
       toast.error('Lỗi chạy workflow: ' + e.message)
-      clearActiveRun(wfData.id)
+      useStore.getState().clearActiveRun(wfData.id)
     }
   }
 
   const handleStop = async () => {
     if (wfData?.id) {
       await stopWorkflow(wfData.id).catch(() => {})
-      clearActiveRun(wfData.id)
+      useStore.getState().clearActiveRun(wfData.id)
     }
   }
 
   const handleRunFinished = useCallback(() => {
-    if (wfData?.id) clearActiveRun(wfData.id)
+    if (wfData?.id) useStore.getState().clearActiveRun(wfData.id)
     message.success('Chạy Workflow hoàn tất!')
-  }, [wfData?.id, clearActiveRun])
+  }, [wfData?.id])
 
   // Drag and drop support
   const onDragStart = (event, nodeType) => {
@@ -280,6 +298,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           dbType: type === 'database' ? 'postgresql' : undefined,
           dbHost: type === 'database' ? 'localhost' : undefined,
           dbPort: type === 'database' ? 5432 : undefined,
+          steps: type === 'browser' ? [] : undefined,
+          debugMode: type === 'browser' ? false : undefined,
         },
       }
 
@@ -333,7 +353,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             <Button icon={<Database size="0.875rem" />} onClick={() => setShowInputModal(true)}>Dữ liệu Workflow</Button>
             <Button icon={<History size="0.875rem" />} onClick={() => setShowHistory(true)}>Lịch sử</Button>
             <Button icon={<Calendar size="0.875rem" />} onClick={() => setShowScheduler(true)}>Lịch chạy</Button>
-            <Button icon={<Terminal size="0.875rem" />} onClick={() => setShowLogs(!showLogs)} type={showLogs ? 'primary' : 'default'} ghost={showLogs}>Logs</Button>
+            <Button
+              icon={<Terminal size="0.875rem" />}
+              onClick={() => setShowLogs(!showLogs)}
+              style={showLogs ? {
+                background: 'var(--accent-primary)',
+                color: '#fff',
+                borderColor: 'var(--accent-primary)',
+              } : {}}
+            >Logs</Button>
             <Button icon={<Save size="0.875rem" />} onClick={handleManualSave} disabled={saveStatus === 'saving'}>Lưu</Button>
             {isRunning ? (
               <Button danger icon={<Square size="0.875rem" />} onClick={handleStop}>Dừng</Button>
@@ -426,7 +454,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
         {showLogs && (
           <LogViewer
-            runId={currentRunId}
+            runId={viewingRunId}
             isRunning={isRunning}
             onClose={() => setShowLogs(false)}
             onFinished={handleRunFinished}

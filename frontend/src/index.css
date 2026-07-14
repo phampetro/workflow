@@ -24,8 +24,8 @@
 
   /* Text */
   --text-primary: #f4f4f5;     /* Zinc 100 */
-  --text-secondary: #a1a1aa;   /* Zinc 400 */
-  --text-muted: #71717a;       /* Zinc 500 */
+  --text-secondary: #d4d4d8;   /* Zinc 300 (WCAG AAA) */
+  --text-muted: #a1a1aa;       /* Zinc 400 (WCAG AA) */
 
   /* Border */
   --border-default: #27272a;   /* Zinc 800 */
@@ -78,9 +78,9 @@
   --bg-overlay: rgba(255, 255, 255, 0.8);
   --bg-hover: #f4f4f5;
 
-  --text-primary: #09090b;
-  --text-secondary: #52525b;
-  --text-muted: #a1a1aa;
+  --text-primary: #09090b;      /* Zinc 950 */
+  --text-secondary: #3f3f46;    /* Zinc 700 (WCAG AAA) */
+  --text-muted: #71717a;        /* Zinc 500 (WCAG AA) */
 
   --border-default: #e4e4e7;
   --border-subtle: #f4f4f5;
@@ -191,21 +191,80 @@ h4 { font-size: 1rem; font-weight: 600; }
   50% { opacity: 0.5; transform: scale(0.8); }
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.fade-in { animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
 
+.fade-in { animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.spinning { animation: spin 0.8s linear infinite !important; }
+
+/* Status dots */
 .status-dot {
   display: inline-block;
   width: 8px; height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 .status-dot.running { background: var(--accent-success); animation: pulse-dot 1.5s ease-in-out infinite; box-shadow: 0 0 8px var(--accent-success); }
 .status-dot.idle { background: var(--text-muted); }
 .status-dot.error { background: var(--accent-danger); box-shadow: 0 0 8px var(--accent-danger); }
+
+/* Status pills — consistent across all components */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.status-pill.running {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+.status-pill.success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+.status-pill.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+.status-pill.idle {
+  background: rgba(161, 161, 170, 0.1);
+  border: 1px solid rgba(161, 161, 170, 0.2);
+  color: var(--text-muted);
+}
+.status-pill.scheduled {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+.status-pill .pulse-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
 
 /* --- Glassmorphism --- */
 .glass-panel {

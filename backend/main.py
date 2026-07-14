@@ -55,6 +55,8 @@ scheduler = BackgroundScheduler()
 # WebSocket log clients (run_id -> list of queues)
 _log_clients: dict = {}
 _active_runs: dict = {}  # run_id -> stop_event
+_active_procs: dict = {}  # run_id -> subprocess.Popen (for force-kill)
+_workflow_run_ids: dict = {}  # workflow_id -> set of run_ids
 _run_logs_cache: dict = {} # run_id -> list of historical logs
 
 
@@ -365,8 +367,8 @@ def get_workflow_dir(project_id: str, workflow_id: str) -> Path:
         name = row[0] if row else "unknown"
     return get_project_dir(project_id) / f"wf_{slugify(name)}"
 
-def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None):
-    """Chạy 1 block Python synchronously"""
+def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None):
+    """Chạy 1 block Python synchronously, có thể bị ngắt bởi stop_event"""
     if not venv_exists(project_id):
         create_venv_sync(project_id)
 
@@ -397,18 +399,78 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
         log_fn(block_id, "info", f"▶  Chạy block [{label or block_id}]")
 
     start = datetime.now()
+    run_id_for_proc = None
+    # Tìm run_id tương ứng dựa vào stop_event
+    for rid, ev in list(_active_runs.items()):
+        if ev is stop_event:
+            run_id_for_proc = rid
+            break
+
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [python_exe, "-u", str(block_path)],
-            input=input_json.encode("utf-8"),
-            capture_output=True, timeout=timeout,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
+        # Đăng ký proc để có thể force-kill
+        if run_id_for_proc:
+            _active_procs[run_id_for_proc] = proc
+
+        try:
+            proc.stdin.write(input_json.encode("utf-8"))
+            proc.stdin.close()
+        except Exception:
+            pass
+
+        # Chờ proc và check stop_event định kỳ
+        deadline = datetime.now().timestamp() + timeout
+        while True:
+            # Chờ tối đa 0.5s mỗi lần
+            try:
+                proc.wait(timeout=0.5)
+                break  # proc kết thúc
+            except subprocess.TimeoutExpired:
+                pass
+
+            # Kiểm tra stop_event
+            if stop_event and stop_event.is_set():
+                import signal
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                duration = int((datetime.now() - start).total_seconds() * 1000)
+                if log_fn:
+                    log_fn(block_id, "warning", f"⏹ Block đã bị dừng ({duration}ms)")
+                if run_id_for_proc:
+                    _active_procs.pop(run_id_for_proc, None)
+                return False, None, "stopped", duration
+
+            # Kiểm tra timeout
+            if datetime.now().timestamp() > deadline:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                duration = int((datetime.now() - start).total_seconds() * 1000)
+                msg = f"⏰ Timeout sau {timeout}s"
+                if log_fn:
+                    log_fn(block_id, "error", msg)
+                if run_id_for_proc:
+                    _active_procs.pop(run_id_for_proc, None)
+                return False, None, msg, duration
+
+        if run_id_for_proc:
+            _active_procs.pop(run_id_for_proc, None)
+
         duration = int((datetime.now() - start).total_seconds() * 1000)
         output_data = None
 
-        stdout_str = proc.stdout.decode("utf-8", errors="replace")
-        stderr_str = proc.stderr.decode("utf-8", errors="replace")
+        stdout_bytes, stderr_bytes = proc.stdout.read(), proc.stderr.read()
+        stdout_str = stdout_bytes.decode("utf-8", errors="replace")
+        stderr_str = stderr_bytes.decode("utf-8", errors="replace")
 
         for line in stdout_str.splitlines():
             if line.startswith("__OUTPUT__:"):
@@ -434,13 +496,9 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
             log_fn(block_id, "success", f"✓ Block hoàn thành ({duration}ms)")
         return True, output_data, None, duration
 
-    except subprocess.TimeoutExpired:
-        duration = int((datetime.now() - start).total_seconds() * 1000)
-        msg = f"⏰ Timeout sau {timeout}s"
-        if log_fn:
-            log_fn(block_id, "error", msg)
-        return False, None, msg, duration
     except Exception as e:
+        if run_id_for_proc:
+            _active_procs.pop(run_id_for_proc, None)
         duration = int((datetime.now() - start).total_seconds() * 1000)
         if log_fn:
             log_fn(block_id, "error", f"✗ Lỗi: {e}")
@@ -725,6 +783,51 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 
                 if log_fn:
                     log_fn(bid, "success", f"✅ [Database] {label} - Đã tạo cấu hình kết nối {db_type.upper()}")
+            elif btype == "browser":
+                steps = bdata.get("steps", [])
+                headless = not bdata.get("debugMode", False)
+                if not steps:
+                    if log_fn:
+                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có bước nào, bỏ qua")
+                    continue_branch = False
+                else:
+                    if log_fn:
+                        log_fn(bid, "info", f"🌐 Đang chạy Browser: {label}...")
+                    
+                    import asyncio
+                    from services.browser_executor import run_browser_block
+                    
+                    # Wrap sync log_fn to async
+                    async def async_log_cb(b_id, lvl, msg):
+                        if log_fn:
+                            log_fn(b_id, lvl, msg)
+                            
+                    start_b = datetime.now()
+                    try:
+                        output_dir = wf_dir / "output"
+                        output_dir.mkdir(exist_ok=True)
+                        b_result = asyncio.run(run_browser_block(
+                            block_id=bid,
+                            workflow_id=workflow_id,
+                            steps=steps,
+                            input_data=current_input,
+                            headless=headless,
+                            log_callback=async_log_cb,
+                            output_dir=str(output_dir).replace('\\', '/'),
+                        ))
+                        if not b_result.get("success"):
+                            if log_fn:
+                                log_fn("system", "error", f"❌ Workflow thất bại (Browser lỗi)")
+                            _finish_run(run_id, "error", start, error=b_result.get("error"))
+                            return
+                        else:
+                            if b_result.get("output_data") is not None:
+                                current_input = b_result["output_data"]
+                    except Exception as e:
+                        if log_fn:
+                            log_fn("system", "error", f"❌ Lỗi ngoại lệ Browser: {e}")
+                        _finish_run(run_id, "error", start, error=str(e))
+                        return
             elif btype == "python":
                 code = bdata.get("code", "").strip()
                 if not code:
@@ -736,9 +839,13 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         log_fn(bid, "info", f"⚡ Đang chạy: {label}...")
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
-                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir)
+                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                        stop_event=stop_event
                     )
                     if not success:
+                        if error == "stopped":
+                            final_status = "stopped"
+                            break
                         _finish_run(run_id, "error", start, error=error)
                         if log_fn:
                             log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
@@ -1163,6 +1270,12 @@ def _finish_run(run_id, status, start, error=None):
             (status, finished.isoformat(), duration, error, run_id)
         )
     _active_runs.pop(run_id, None)
+    _active_procs.pop(run_id, None)
+    # Xóa run_id khỏi workflow mapping
+    for wf_id, run_set in list(_workflow_run_ids.items()):
+        run_set.discard(run_id)
+        if not run_set:
+            _workflow_run_ids.pop(wf_id, None)
     
     # Gửi None để đóng luồng stream
     queues = _log_clients.get(run_id, [])
@@ -1279,8 +1392,13 @@ def _cron_kwargs(expr: str) -> dict:
         kwargs = {
             "hour": config.get("hour", "*"),
             "minute": config.get("minute", "*"),
-            "day_of_week": ",".join(config.get("days", [])) or "*",
         }
+        
+        if config.get("schedule_type") == "month":
+            kwargs["day"] = str(config.get("day_of_month", "1"))
+        else:
+            kwargs["day_of_week"] = ",".join(config.get("days", [])) or "*"
+
         if config.get("start_date"):
             kwargs["start_date"] = config.get("start_date")
         if config.get("end_date"):
@@ -1529,9 +1647,13 @@ def init_venv(project_id):
 @app.route("/api/projects/<project_id>/workflows", methods=["GET"])
 def list_workflows(project_id):
     db = get_db()
-    rows = db.execute(
-        "SELECT * FROM workflow WHERE project_id=? ORDER BY sort_order ASC, created_at DESC", (project_id,)
-    ).fetchall()
+    rows = db.execute('''
+        SELECT w.*, 
+               (SELECT COUNT(1) FROM workflow_run r WHERE r.workflow_id = w.id AND r.status = 'running') as running_count
+        FROM workflow w 
+        WHERE w.project_id=? 
+        ORDER BY w.sort_order ASC, w.created_at DESC
+    ''', (project_id,)).fetchall()
     return jsonify([dict(r) for r in rows])
 
 
@@ -2085,6 +2207,8 @@ def run_workflow(workflow_id):
 
     stop_event = threading.Event()
     _active_runs[run_id] = stop_event
+    # Đăng ký run_id vào workflow_id mapping
+    _workflow_run_ids.setdefault(workflow_id, set()).add(run_id)
     log_fn = make_log_fn(run_id)
 
     start_time = datetime.now()
@@ -2101,10 +2225,45 @@ def run_workflow(workflow_id):
 @app.route("/api/workflows/<workflow_id>/stop", methods=["POST"])
 def stop_workflow(workflow_id):
     stopped = False
-    for run_id, stop_event in list(_active_runs.items()):
-        stop_event.set()
-        stopped = True
-    return jsonify({"stopped": stopped})
+    # Lấy tất cả run_id đang chạy của workflow này
+    run_ids = list(_workflow_run_ids.get(workflow_id, set()))
+    if not run_ids:
+        # Fallback: dò DB để tìm run đang chạy
+        try:
+            with sqlite3.connect(str(DB_PATH)) as conn:
+                rows = conn.execute(
+                    "SELECT id FROM workflow_run WHERE workflow_id=? AND status='running'",
+                    (workflow_id,)
+                ).fetchall()
+                run_ids = [r[0] for r in rows]
+        except Exception:
+            run_ids = list(_active_runs.keys())
+
+    for run_id in run_ids:
+        # Cập nhật DB ngay lập tức — không chờ thread xử lý
+        try:
+            with sqlite3.connect(str(DB_PATH)) as conn:
+                conn.execute(
+                    "UPDATE workflow_run SET status='stopped', finished_at=? WHERE id=? AND status='running'",
+                    (datetime.now().isoformat(), run_id)
+                )
+        except Exception:
+            pass
+
+        stop_event = _active_runs.pop(run_id, None)
+        if stop_event:
+            stop_event.set()
+            stopped = True
+        # Force kill subprocess nếu có
+        proc = _active_procs.pop(run_id, None)
+        if proc:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+    _workflow_run_ids.pop(workflow_id, None)
+    return jsonify({"stopped": stopped, "run_ids": run_ids})
 
 
 @app.route("/api/workflows/<workflow_id>/runs", methods=["GET"])
@@ -2133,7 +2292,18 @@ def get_run(run_id):
 def stream_logs(run_id):
     """Server-Sent Events stream cho logs realtime"""
     import queue as Q
-    q = Q.Queue(maxsize=500)
+    q = Q.Queue(maxsize=1000)
+    
+    offset = request.args.get("offset", 0, type=int)
+    
+    # Nạp toàn bộ lịch sử log hiện có vào hàng đợi cho client mới
+    cached_logs = _run_logs_cache.get(run_id, [])
+    for msg in cached_logs[offset:]:
+        try:
+            q.put_nowait(msg)
+        except Q.Full:
+            pass
+
     if run_id not in _log_clients:
         _log_clients[run_id] = []
     _log_clients[run_id].append(q)
