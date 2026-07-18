@@ -31,8 +31,8 @@ if errorlevel 1 (
 )
 echo    [OK]
 
-echo [3/4] Cai dat trinh duyet cho Playwright (khoi "Trinh duyet")...
-"%ROOT%\backend\.venv\Scripts\python.exe" -m playwright install
+echo [3/4] Cai dat Chromium cho Playwright (khoi "Trinh duyet")...
+"%ROOT%\backend\.venv\Scripts\python.exe" -m playwright install chromium
 if errorlevel 1 (
     echo [Canh bao] Cai Playwright that bai - khoi "Trinh duyet" se khong hoat dong. Co the bo qua neu khong dung khoi nay.
 )
