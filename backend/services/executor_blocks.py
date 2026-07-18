@@ -1584,14 +1584,9 @@ output_data = {{"status": "success", "file_path": out_path}}
                 mode = bdata.get("loopMode", "count")
                 delay = float(bdata.get("loopDelay") or 0)
                 
-                # Check run count for delay
+                # Check run count
                 state = loop_states.setdefault(bid, {"runs": 0})
-                
-                if state["runs"] > 0 and delay > 0:
-                    if log_fn:
-                        log_fn(bid, "info", f"⏳ [Loop] Chờ {delay}s...")
-                    time.sleep(delay)
-                    
+
                 state["runs"] += 1
                 
                 if mode == "count":
@@ -1601,7 +1596,7 @@ output_data = {{"status": "success", "file_path": out_path}}
                     # "< " chứ không phải "<=": ở lần lặp thứ max_count, phải dừng NGAY (không
                     # ra lệnh chạy lại khối trước Loop thêm 1 lần thừa) - cùng lỗi off-by-one
                     # như chế độ điều kiện.
-                    cond_branch_taken = "loop" if state["runs"] < max_count else "done"
+                    cond_branch_taken = "loop" if state["runs"] < max_count else "endloop"
                     if log_fn:
                         log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
                 else: # condition
@@ -1665,14 +1660,14 @@ output_data = {{"status": "success", "file_path": out_path}}
                             final_result = all(results)
 
                         if final_result:
-                            # Điều kiện ĐÚNG -> dừng (done), bất kể đã lặp bao nhiêu lần.
-                            cond_branch_taken = "done"
+                            # Điều kiện ĐÚNG -> true
+                            cond_branch_taken = "true"
                         elif max_count and state["runs"] > max_count:
                             # loopMaxCount = số lần được PHÉP quay lại nhánh Loop (retry),
                             # KHÔNG tính lần chạy đầu tiên. VD max=2: lượt 1 và lượt 2 vẫn
                             # được phép "loop" (đúng 2 lần quay lại), chỉ lượt 3 mới bị chặn
                             # -> tổng số lần chạy khối trước Loop = max_count + 1.
-                            cond_branch_taken = "done"
+                            cond_branch_taken = "endloop"
                             if log_fn:
                                 log_fn(bid, "warning", f"⚠️ [Loop] Đã dùng hết {max_count} lần quay lại cho phép - dừng dù điều kiện chưa đúng")
                         else:
@@ -1687,6 +1682,13 @@ output_data = {{"status": "success", "file_path": out_path}}
                         break
 
             if continue_branch and final_status != "error":
+                if btype == "loop" and cond_branch_taken == "loop":
+                    delay = float(bdata.get("loopDelay") or 0)
+                    if delay > 0:
+                        if log_fn:
+                            log_fn(bid, "info", f"⏳ [Loop] Nghỉ {delay}s trước khi lặp lại...")
+                        time.sleep(delay)
+
                 out_edges = edges_from.get(node_id, [])
                 for e in out_edges:
                     target_id = e["target"]

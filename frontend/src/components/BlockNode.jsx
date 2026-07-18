@@ -305,19 +305,31 @@ const BlockNode = memo(({ id, data, selected }) => {
                 id="loop"
                 style={{
                   ...(isLoopVertical ? { left: '30%' } : { top: '30%' }),
-                  background: '#ec4899'
+                  background: '#f59e0b'
                 }}
                 className="block-handle block-handle-source"
+                title="Lặp lại (LOOP)"
+              />
+              <Handle
+                type="source"
+                position={outPos}
+                id="true"
+                style={{
+                  background: '#22c55e'
+                }}
+                className="block-handle block-handle-source"
+                title="Đúng điều kiện (TRUE)"
               />
               <Handle
                 type="source"
                 position={donePos}
-                id="done"
+                id="endloop"
                 style={{
                   ...(isDoneVertical ? { left: '70%' } : { top: '70%' }),
-                  background: '#64748b'
+                  background: '#ef4444'
                 }}
                 className="block-handle block-handle-source"
+                title="Kết thúc lặp (ENDLOOP)"
               />
             </>
           )}

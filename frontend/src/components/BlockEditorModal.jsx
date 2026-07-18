@@ -5,6 +5,7 @@ import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
+import { BLOCK_TYPES } from './BlockNode'
 
 const { Text, Title } = Typography
 
@@ -789,14 +790,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             pivotSortCustom: node.data.pivotSortCustom || [],
             inPosition: node.data.inPosition || 'left',
             outPosition: node.data.outPosition || 'right',
-            loopPosition: node.data.loopPosition || 'right',
-            donePosition: node.data.donePosition || 'right',
+            loopPosition: node.data.loopPosition || (isLoop ? 'bottom' : 'right'),
+            donePosition: node.data.donePosition || (isLoop ? 'bottom' : 'right'),
             debugMode: node.data.debugMode || false,
           }}
         >
           <div style={{ width: hasRightPanel ? '33.333%' : '100%', height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            <Form.Item name="inPosition" label="Cổng vào (IN)" style={{ marginBottom: 0 }}>
+            <Form.Item name="inPosition" label={<span>Cổng vào (IN) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
               <PositionSelector />
             </Form.Item>
             
@@ -806,12 +807,26 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               </Form.Item>
             )}
 
-            {(isLoop || isCondition) && (
+            {isCondition && (
               <>
-                <Form.Item name="loopPosition" label={isLoop ? "Cổng Loop" : "Cổng True"} style={{ marginBottom: 0 }}>
+                <Form.Item name="loopPosition" label={<span>Cổng True <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#22c55e', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
-                <Form.Item name="donePosition" label={isLoop ? "Cổng Done" : "Cổng False"} style={{ marginBottom: 0 }}>
+                <Form.Item name="donePosition" label={<span>Cổng False <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#ef4444', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                  <PositionSelector />
+                </Form.Item>
+              </>
+            )}
+
+            {isLoop && (
+              <>
+                <Form.Item name="outPosition" label={<span>Cổng Đúng (TRUE) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#22c55e', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                  <PositionSelector />
+                </Form.Item>
+                <Form.Item name="loopPosition" label={<span>Cổng Lặp (LOOP) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#f59e0b', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                  <PositionSelector />
+                </Form.Item>
+                <Form.Item name="donePosition" label={<span>Cổng Kết thúc (ENDLOOP) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#ef4444', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
               </>
@@ -829,7 +844,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           {isLoop && (
             <>
               <Alert 
-                message="Điều kiện ĐÚNG sẽ thoát (rẽ nhánh Done). Điều kiện SAI sẽ lặp (rẽ nhánh Loop)." 
+                message="Điều kiện ĐÚNG sẽ thoát (rẽ nhánh TRUE). Điều kiện SAI sẽ lặp (rẽ nhánh LOOP). Hết lượt cho phép (rẽ nhánh ENDLOOP)." 
                 type="info" 
                 showIcon 
                 style={{ marginBottom: 16 }} 
@@ -849,7 +864,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <Form.Item
                   name="loopMaxCount"
                   label="Số lần lặp tối đa"
-                  tooltip="Giới hạn an toàn - nếu điều kiện mãi không đúng, vòng lặp sẽ tự dừng (đi nhánh Done) sau đúng số lần này, tránh lặp vô hạn."
+                  tooltip="Giới hạn an toàn - nếu điều kiện mãi không đúng, vòng lặp sẽ tự dừng (đi nhánh ENDLOOP) sau đúng số lần này, tránh lặp vô hạn."
                   rules={[{ required: true, message: 'Nhập số lần lặp tối đa' }]}
                 >
                   <InputNumber min={1} max={5000} style={{ width: '100%' }} placeholder="Ví dụ: 50" />
