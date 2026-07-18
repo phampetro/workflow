@@ -112,33 +112,35 @@ export default function Navbar({
           <div className="navbar-stats">
             <Tooltip title="Số dự án">
               <div className="stat-chip">
-                <FolderOpen size="0.875rem" className="text-accent" />
-                <span className="stat-val">{stats.total_projects ?? 0}</span>
+                <FolderOpen size="0.875rem" style={{ color: '#f97316' }} />
+                <span className="stat-val" style={{ color: '#f97316' }}>{stats.total_projects ?? 0}</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title="Tổng workflows">
               <div className="stat-chip">
-                <Workflow size="0.875rem" className="text-secondary" />
-                <span className="stat-val">{stats.total_workflows ?? 0}</span>
+                <Workflow size="0.875rem" style={{ color: 'var(--accent-secondary)' }} />
+                <span className="stat-val" style={{ color: 'var(--accent-secondary)' }}>{stats.total_workflows ?? 0}</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title="Đang chạy">
               <div className={`stat-chip ${stats.running > 0 ? 'stat-running' : ''}`}>
-                <Clock size="0.875rem" className={stats.running > 0 ? 'spinning text-success' : 'text-muted'} />
-                <span className="stat-val" style={{ color: stats.running > 0 ? 'var(--accent-success)' : undefined }}>
+                <Clock size="0.875rem" className={stats.running > 0 ? 'spinning' : ''} style={{ color: '#52c41a' }} />
+                <span className="stat-val" style={{ color: '#52c41a' }}>
                   {stats.running ?? 0}
                 </span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
-            <Tooltip title="Lịch hẹn hôm nay (đã chạy / tổng)">
+            <Tooltip title="Hôm nay (của bạn): Lỗi + Dừng / Thành công / Tất cả">
               <div className="stat-chip">
-                <CalendarCheck size="0.875rem" className="text-warning" />
-                <span className="stat-val">
-                  {stats.today_executed ?? 0}/{stats.today_total ?? 0}
-                </span>
+                <CalendarCheck size="0.875rem" style={{ color: '#eab308' }} />
+                <span className="stat-val" style={{ color: '#ff4d4f' }}>{(stats.failed_today || 0) + (stats.stopped_today || 0)}</span>
+                <span style={{ color: 'var(--text-muted)' }}>/</span>
+                <span className="stat-val" style={{ color: '#52c41a' }}>{stats.success_today ?? 0}</span>
+                <span style={{ color: 'var(--text-muted)' }}>/</span>
+                <span className="stat-val" style={{ color: '#1890ff' }}>{stats.total_today ?? 0}</span>
               </div>
             </Tooltip>
           </div>

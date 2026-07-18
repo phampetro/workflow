@@ -26,12 +26,13 @@ const edgeTypes = { custom: DeleteEdge }
 
 const BLOCK_GROUPS = [
   { title: 'Bắt đầu - Kết thúc', items: ['start', 'end'] },
-  { title: 'Rẽ nhánh', items: ['condition', 'delay'] },
+  { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay'] },
   { title: 'Python Code', items: ['python'] },
   { title: 'Tự động hóa Web', items: ['browser'] },
   { title: 'Xử lý Dữ liệu', items: ['merge_excel', 'pivot_excel'] },
   { title: 'Cơ sở dữ liệu', items: ['database', 'sql_to_excel'] },
-  { title: 'Gửi tin nhắn', items: ['telegram', 'telegram_listener', 'email'] }
+  { title: 'Gửi tin nhắn', items: ['telegram', 'telegram_listener', 'email'] },
+  { title: 'Hệ thống', items: ['delete_files'] }
 ];
 
 const DEFAULT_GRAPH = {
@@ -74,7 +75,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const [checkingStatus, setCheckingStatus] = useState(true)
   const saveTimer = useRef(null)
   const reactFlowWrapper = useRef(null)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, fitView } = useReactFlow()
 
   const proj  = project  || { name: 'Project', color: '#6c63ff' }
 
@@ -119,6 +120,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           })
           setNodes(uniqueNodes)
           setEdges(uniqueEdges)
+          setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100)
         } catch { setNodesFromDefault() }
       } else {
         setNodesFromDefault()
@@ -160,6 +162,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const setNodesFromDefault = () => {
     setNodes(DEFAULT_GRAPH.nodes)
     setEdges(DEFAULT_GRAPH.edges)
+    setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100)
   }
 
   const triggerAutoSave = useCallback((newNodes, newEdges) => {

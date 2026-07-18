@@ -1,6 +1,6 @@
 import React, { memo, useState, useEffect } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy } from 'lucide-react'
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat } from 'lucide-react'
 
 const BLOCK_TYPES = {
   start: {
@@ -23,6 +23,13 @@ const BLOCK_TYPES = {
     color: '#f59e0b',
     gradient: 'linear-gradient(135deg, #f59e0b, #ef4444)',
     description: 'Rẽ nhánh theo điều kiện',
+  },
+  loop: {
+    label: 'Vòng Lặp',
+    icon: <Repeat size="0.875rem" />,
+    color: '#ec4899',
+    gradient: 'linear-gradient(135deg, #ec4899, #be185d)',
+    description: 'Lặp lại theo số lần/điều kiện',
   },
   delay: {
     label: 'Delay',
@@ -94,6 +101,13 @@ const BLOCK_TYPES = {
     gradient: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
     description: 'Tự động hóa trình duyệt web',
   },
+  delete_files: {
+    label: 'Xóa Tập Tin',
+    icon: <Trash2 size="0.875rem" />,
+    color: '#f43f5e',
+    gradient: 'linear-gradient(135deg, #f43f5e, #e11d48)',
+    description: 'Xóa tập tin Input/Output',
+  },
 }
 
 const STATUS_STYLES = {
@@ -113,7 +127,11 @@ const BlockNode = memo(({ id, data, selected }) => {
 
   const inPos = data.inPosition || 'left'
   const outPos = data.outPosition || 'right'
+  const loopPos = data.loopPosition || 'right'
+  const donePos = data.donePosition || 'right'
   const isOutVertical = outPos === 'top' || outPos === 'bottom'
+  const isLoopVertical = loopPos === 'top' || loopPos === 'bottom'
+  const isDoneVertical = donePos === 'top' || donePos === 'bottom'
 
   // React Flow cache vị trí handle theo lần đo đầu tiên; khi số lượng/vị trí
   // handle đổi (đổi cổng IN/OUT, đổi loại block) phải báo lại để nó đo lại,
@@ -199,6 +217,22 @@ const BlockNode = memo(({ id, data, selected }) => {
             </code>
           </div>
         )}
+
+        {data.type === 'loop' && (
+          <div className="block-condition" style={{ borderColor: 'rgba(236, 72, 153, 0.2)' }}>
+            <span className="condition-label" style={{ color: '#ec4899' }}>loop</span>
+            <code style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', borderColor: 'rgba(236, 72, 153, 0.2)' }}>
+              {(() => {
+                const mode = data.loopMode || 'count';
+                if (mode === 'count') return `${data.loopCount || 0} lần`;
+                const conds = data.conditions || [];
+                if (!conds[0]?.condVariable) return '? == ?';
+                if (conds.length === 1) return `${conds[0].condVariable} ${conds[0].condOperator} ${conds[0].condValue}`;
+                return `${conds.length} conditions (${data.logicalOperator || 'AND'})`;
+              })()}
+            </code>
+          </div>
+        )}
       </div>
 
       {/* Actions - always visible */}
@@ -230,7 +264,7 @@ const BlockNode = memo(({ id, data, selected }) => {
       {/* Source Handle */}
       {hasSource && (
         <>
-          {data.type !== 'condition' && (
+          {data.type !== 'condition' && data.type !== 'loop' && (
             <Handle
               type="source"
               position={outPos}
@@ -243,21 +277,45 @@ const BlockNode = memo(({ id, data, selected }) => {
             <>
               <Handle
                 type="source"
-                position={outPos}
+                position={loopPos}
                 id="true"
                 style={{
-                  ...(isOutVertical ? { left: '30%' } : { top: '30%' }),
+                  ...(isLoopVertical ? { left: '30%' } : { top: '30%' }),
                   background: '#22c55e'
                 }}
                 className="block-handle block-handle-source"
               />
               <Handle
                 type="source"
-                position={outPos}
+                position={donePos}
                 id="false"
                 style={{
-                  ...(isOutVertical ? { left: '70%' } : { top: '70%' }),
+                  ...(isDoneVertical ? { left: '70%' } : { top: '70%' }),
                   background: '#ef4444'
+                }}
+                className="block-handle block-handle-source"
+              />
+            </>
+          )}
+          {data.type === 'loop' && (
+            <>
+              <Handle
+                type="source"
+                position={loopPos}
+                id="loop"
+                style={{
+                  ...(isLoopVertical ? { left: '30%' } : { top: '30%' }),
+                  background: '#ec4899'
+                }}
+                className="block-handle block-handle-source"
+              />
+              <Handle
+                type="source"
+                position={donePos}
+                id="done"
+                style={{
+                  ...(isDoneVertical ? { left: '70%' } : { top: '70%' }),
+                  background: '#64748b'
                 }}
                 className="block-handle block-handle-source"
               />

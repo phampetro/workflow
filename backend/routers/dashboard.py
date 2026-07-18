@@ -44,13 +44,18 @@ async def get_dashboard_stats(request: Request, session: AsyncSession = Depends(
     today = date.today()
     completed_today = 0
     failed_today = 0
+    stopped_today = 0
+    total_today = 0
 
     for r in runs:
         if r.started_at and r.started_at.date() == today:
+            total_today += 1
             if r.status == "success":
                 completed_today += 1
             elif r.status == "error":
                 failed_today += 1
+            elif r.status == "stopped":
+                stopped_today += 1
 
     # Jobs hôm nay - lọc theo workflows của user nếu có user_id
     jobs = scheduler.get_jobs()
@@ -72,6 +77,9 @@ async def get_dashboard_stats(request: Request, session: AsyncSession = Depends(
             "running": running_count,
             "today_executed": completed_today,
             "today_total": completed_today + today_remaining,
+            "success_today": completed_today,
             "failed_today": failed_today,
+            "stopped_today": stopped_today,
+            "total_today": total_today,
         }
     }

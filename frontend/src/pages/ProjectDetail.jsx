@@ -753,8 +753,8 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
                 <Statistic
                   title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tổng lần chạy</span>}
                   value={runHistory.length}
-                  styles={{ content: { fontSize: '1.5rem', color: 'var(--text-primary)' } }}
-                  prefix={<History size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                  styles={{ content: { fontSize: '1.5rem', color: '#1890ff' } }}
+                  prefix={<History size="1rem" style={{ marginRight: 8, opacity: 0.6, color: '#1890ff' }} />}
                 />
               </div>
             </Col>

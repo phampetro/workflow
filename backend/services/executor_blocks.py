@@ -504,8 +504,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         if log_fn:
             log_fn("system", "info", f"🚀 Bắt đầu workflow (Dynamic Routing)")
 
+        import collections
         final_status = "success"
-        visited = set()
+        run_counts = collections.Counter()
+        loop_states = {}
 
         while queue:
             if stop_event and stop_event.is_set():
@@ -514,9 +516,12 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 break
 
             node_id, current_input = queue.popleft()
-            if node_id in visited:
-                continue
-            visited.add(node_id)
+            if run_counts[node_id] > 2000:
+                if log_fn:
+                    log_fn("system", "error", f"❌ Phát hiện lặp vô hạn ở Node {node_id} (>2000 lần). Dừng luồng.")
+                final_status = "error"
+                break
+            run_counts[node_id] += 1
 
             node = nodes_dict.get(node_id)
             if not node:
@@ -1034,6 +1039,42 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 
                 if log_fn:
                     log_fn(bid, "success", f"✅ [Database] {label} - Đã tạo cấu hình kết nối {db_type.upper()}")
+            elif btype == "delete_files":
+                import shutil
+                delete_input = bdata.get("delete_input", False)
+                delete_output = bdata.get("delete_output", False)
+
+                if delete_input:
+                    try:
+                        if input_dir.exists():
+                            for item in input_dir.iterdir():
+                                if item.name == "input.json":
+                                    continue
+                                if item.is_file():
+                                    item.unlink()
+                                elif item.is_dir():
+                                    shutil.rmtree(item)
+                        if log_fn:
+                            log_fn(bid, "success", f"✅ [Xóa] Đã dọn dẹp thư mục Input.")
+                    except Exception as e:
+                        if log_fn:
+                            log_fn(bid, "error", f"❌ [Xóa] Lỗi xóa Input: {e}")
+                
+                if delete_output:
+                    try:
+                        out_dir = wf_dir / "output"
+                        if out_dir.exists():
+                            for item in out_dir.iterdir():
+                                if item.is_file():
+                                    item.unlink()
+                                elif item.is_dir():
+                                    shutil.rmtree(item)
+                        if log_fn:
+                            log_fn(bid, "success", f"✅ [Xóa] Đã dọn dẹp thư mục Output.")
+                    except Exception as e:
+                        if log_fn:
+                            log_fn(bid, "error", f"❌ [Xóa] Lỗi xóa Output: {e}")
+                            
             elif btype == "browser":
                 steps = bdata.get("steps", [])
                 headless = not bdata.get("debugMode", False)
@@ -1057,16 +1098,31 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     try:
                         output_dir = wf_dir / "output"
                         output_dir.mkdir(exist_ok=True)
+                        # bdata_interpolated ở trên chỉ nội suy field string cấp cao nhất
+                        # của block, không đi sâu vào từng step - nên {{key}} trong value
+                        # của mỗi step (VD: khối Nhập văn bản) chưa đọc được input.json.
+                        # Nội suy lại đây để mọi field string trong step cũng dùng được
+                        # biến từ Dữ liệu Workflow, giống các khối khác.
+                        steps_interpolated = [
+                            {k: (interpolate(v) if isinstance(v, str) else v) for k, v in step.items()}
+                            for step in steps
+                        ]
                         b_result = asyncio.run(run_browser_block(
                             block_id=bid,
                             workflow_id=workflow_id,
-                            steps=steps,
+                            steps=steps_interpolated,
                             input_data=current_input,
                             headless=headless,
                             log_callback=async_log_cb,
                             output_dir=str(output_dir).replace('\\', '/'),
+                            stop_event=stop_event,
                         ))
                         if not b_result.get("success"):
+                            if b_result.get("stopped"):
+                                # Không finish_run trực tiếp - để rơi xuống cuối vòng lặp,
+                                # nơi đã có sẵn log "⏹ Đã dừng sau Xms" cho final_status=stopped.
+                                final_status = "stopped"
+                                break
                             if log_fn:
                                 log_fn("system", "error", f"❌ Workflow thất bại (Browser lỗi)")
                             _finish_run(run_id, "error", start, error=b_result.get("error"))
@@ -1524,6 +1580,111 @@ output_data = {{"status": "success", "file_path": out_path}}
                         log_fn(bid, "error", f"❌ Lỗi so sánh: {e}")
                     final_status = "error"
                     break
+            elif btype == "loop":
+                mode = bdata.get("loopMode", "count")
+                delay = float(bdata.get("loopDelay") or 0)
+                
+                # Check run count for delay
+                state = loop_states.setdefault(bid, {"runs": 0})
+                
+                if state["runs"] > 0 and delay > 0:
+                    if log_fn:
+                        log_fn(bid, "info", f"⏳ [Loop] Chờ {delay}s...")
+                    time.sleep(delay)
+                    
+                state["runs"] += 1
+                
+                if mode == "count":
+                    max_count = int(bdata.get("loopCount", 0))
+                    if log_fn:
+                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']} / {max_count}")
+                    # "< " chứ không phải "<=": ở lần lặp thứ max_count, phải dừng NGAY (không
+                    # ra lệnh chạy lại khối trước Loop thêm 1 lần thừa) - cùng lỗi off-by-one
+                    # như chế độ điều kiện.
+                    cond_branch_taken = "loop" if state["runs"] < max_count else "done"
+                    if log_fn:
+                        log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
+                else: # condition
+                    logical_op = bdata.get("logicalOperator", "AND").upper()
+                    conditions = bdata.get("conditions")
+                    max_count = int(bdata.get("loopMaxCount") or 0)
+
+                    if not conditions:
+                        if log_fn:
+                            log_fn(bid, "warning", f"⚠️ Block [{label}] không có điều kiện nào")
+                        continue_branch = False
+                        continue
+
+                    if log_fn:
+                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']}/{max_count or '∞'} - Kiểm tra {len(conditions)} điều kiện ({logical_op})")
+
+                    try:
+                        results = []
+                        for idx, cond in enumerate(conditions):
+                            cond_var = cond.get("condVariable", "").strip()
+                            cond_op = cond.get("condOperator", "==")
+                            cond_val = cond.get("condValue", "").strip()
+
+                            actual_val = None
+                            if isinstance(current_input, dict):
+                                actual_val = current_input.get(cond_var)
+
+                            result = False
+                            cmp_val = cond_val
+                            if isinstance(actual_val, int):
+                                try: cmp_val = int(cond_val)
+                                except: pass
+                            elif isinstance(actual_val, float):
+                                try: cmp_val = float(cond_val)
+                                except: pass
+                            elif isinstance(actual_val, bool):
+                                cmp_val = str(cond_val).lower() == 'true'
+
+                            if cond_op == "==":
+                                result = (actual_val == cmp_val) or (str(actual_val) == str(cmp_val))
+                            elif cond_op == "!=":
+                                result = (actual_val != cmp_val) and (str(actual_val) != str(cmp_val))
+                            elif cond_op == ">":
+                                result = float(actual_val) > float(cmp_val)
+                            elif cond_op == "<":
+                                result = float(actual_val) < float(cmp_val)
+                            elif cond_op == ">=":
+                                result = float(actual_val) >= float(cmp_val)
+                            elif cond_op == "<=":
+                                result = float(actual_val) <= float(cmp_val)
+                            elif cond_op == "contains":
+                                result = str(cmp_val) in str(actual_val)
+
+                            results.append(result)
+                            if log_fn:
+                                log_fn(bid, "info", f"   [{idx+1}] {cond_var} ({actual_val}) {cond_op} {cmp_val} ➜ {result}")
+
+                        if logical_op == "OR":
+                            final_result = any(results)
+                        else: # AND
+                            final_result = all(results)
+
+                        if final_result:
+                            # Điều kiện ĐÚNG -> dừng (done), bất kể đã lặp bao nhiêu lần.
+                            cond_branch_taken = "done"
+                        elif max_count and state["runs"] > max_count:
+                            # loopMaxCount = số lần được PHÉP quay lại nhánh Loop (retry),
+                            # KHÔNG tính lần chạy đầu tiên. VD max=2: lượt 1 và lượt 2 vẫn
+                            # được phép "loop" (đúng 2 lần quay lại), chỉ lượt 3 mới bị chặn
+                            # -> tổng số lần chạy khối trước Loop = max_count + 1.
+                            cond_branch_taken = "done"
+                            if log_fn:
+                                log_fn(bid, "warning", f"⚠️ [Loop] Đã dùng hết {max_count} lần quay lại cho phép - dừng dù điều kiện chưa đúng")
+                        else:
+                            cond_branch_taken = "loop"
+
+                        if log_fn:
+                            log_fn(bid, "success", f"✅ [Loop] Kết quả chung: {final_result} -> {cond_branch_taken}")
+                    except Exception as e:
+                        if log_fn:
+                            log_fn(bid, "error", f"❌ Lỗi so sánh vòng lặp: {e}")
+                        final_status = "error"
+                        break
 
             if continue_branch and final_status != "error":
                 out_edges = edges_from.get(node_id, [])
@@ -1531,8 +1692,8 @@ output_data = {{"status": "success", "file_path": out_path}}
                     target_id = e["target"]
                     source_handle = e.get("sourceHandle")
                     
-                    # Xử lý rẽ nhánh điều kiện
-                    if btype == "condition":
+                    # Xử lý rẽ nhánh điều kiện và vòng lặp
+                    if btype in ("condition", "loop"):
                         if source_handle == cond_branch_taken:
                             queue.append((target_id, current_input))
                     else:

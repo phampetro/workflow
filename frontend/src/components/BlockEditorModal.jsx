@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus } from '../api/client'
 import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag } from 'lucide-react'
-import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip } from 'antd'
+import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
 
-const { Text } = Typography
+const { Text, Title } = Typography
 
 const FileSelectionTable = ({ value = [], onChange, files = [], loading = false }) => {
   return (
@@ -354,6 +354,18 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
                     </div>
                   )}
 
+                  {step.action === 'wait_for_selector' && (
+                    <div>
+                      <label style={labelStyle}>Chờ phần tử...</label>
+                      <select value={step.state || 'visible'} onChange={e => updateStep(i, 'state', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        <option value="visible">Xuất hiện (VD: dữ liệu/kết quả đã load xong)</option>
+                        <option value="hidden">Biến mất (VD: spinner/loading tắt đi)</option>
+                        <option value="attached">Được thêm vào DOM</option>
+                        <option value="detached">Bị xóa khỏi DOM</option>
+                      </select>
+                    </div>
+                  )}
+
                   {step.action === 'get_attribute' && (
                     <div>
                       <label style={labelStyle}>Tên attribute</label>
@@ -410,9 +422,12 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
       </div>
 
       {/* Footer hint */}
-      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border-default)', background: 'var(--bg-elevated)', fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-        💡 Dùng <code style={{ background: 'rgba(14,165,233,0.12)', padding: '1px 5px', borderRadius: 4, color: '#0ea5e9' }}>{'{{key}}'}</code> trong trường value để chèn dữ liệu từ <code>input_data</code>
-      </div>
+      <Alert
+        message={<span>Dùng <Text code>{'{{key}}'}</Text> trong trường value để chèn dữ liệu từ <Text code>input_data</Text></span>}
+        type="info"
+        showIcon
+        style={{ margin: '8px 16px', borderRadius: 8 }}
+      />
     </div>
   )
 }
@@ -479,6 +494,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   
   const pivotIndex = Form.useWatch('pivotIndex', form) || []
   const pivotColumns = Form.useWatch('pivotColumns', form) || []
+  const loopMode = Form.useWatch('loopMode', form)
   const sortableColumns = [...new Set([...pivotColumns])]
   
   const [availableColumns, setAvailableColumns] = useState([])
@@ -490,6 +506,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isPython = node.data.type === 'python'
   const isCondition = node.data.type === 'condition'
   const isDelay = node.data.type === 'delay'
+  const isLoop = node.data.type === 'loop'
   const isEnd = node.data.type === 'end'
   const isTelegram = node.data.type === 'telegram'
   const isTelegramListener = node.data.type === 'telegram_listener'
@@ -499,6 +516,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isMergeExcel = node.data.type === 'merge_excel'
   const isPivotExcel = node.data.type === 'pivot_excel'
   const isBrowser = node.data.type === 'browser'
+  const isDeleteFiles = node.data.type === 'delete_files'
 
   // Browser steps state
   const [browserSteps, setBrowserSteps] = useState(node.data.steps || [])
@@ -674,10 +692,20 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     setActiveTemplate(key)
   }
 
+  const getDrawerWidth = () => {
+    const type = node.data.type
+    // Mẫu 1: 1/3 màn hình
+    if (['start', 'end', 'condition', 'loop', 'delay', 'delete_files'].includes(type)) return '33vw'
+    // Mẫu 2: 1/2 màn hình (dự phòng)
+    // if (['some_future_type'].includes(type)) return '50vw'
+    // Mẫu 3: 3/4 màn hình
+    return '75vw'
+  }
+
   return (
     <Drawer
       title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
-      width="50vw"
+      width={getDrawerWidth()}
       onClose={onClose}
       open={true}
       mask={{ closable: false }}
@@ -694,11 +722,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       <Form
         form={form}
         layout="vertical"
+        autoComplete="off"
         style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%', height: '100%', background: 'var(--bg-base)' }}
         initialValues={{
             label: node.data.label || '',
             description: node.data.description || '',
-            ...(node.data.type === 'condition' ? (() => {
+            ...((node.data.type === 'condition' || node.data.type === 'loop') ? (() => {
               let logicalOp = node.data.logicalOperator || 'AND';
               let conditions = node.data.conditions;
               if (!conditions || conditions.length === 0) {
@@ -715,6 +744,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 condValue: node.data.condValue || '',
             }),
             delaySeconds: node.data.delaySeconds || 3,
+            loopMode: node.data.loopMode || 'count',
+            loopCount: node.data.loopCount || 5,
+            loopMaxCount: node.data.loopMaxCount || 50,
+            loopDelay: node.data.loopDelay ?? 0,
             telegramBotToken: node.data.telegramBotToken || '',
             telegramChatId: node.data.telegramChatId || '',
             telegramMessage: node.data.telegramMessage || '',
@@ -756,18 +789,33 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             pivotSortCustom: node.data.pivotSortCustom || [],
             inPosition: node.data.inPosition || 'left',
             outPosition: node.data.outPosition || 'right',
+            loopPosition: node.data.loopPosition || 'right',
+            donePosition: node.data.donePosition || 'right',
             debugMode: node.data.debugMode || false,
           }}
         >
-          <div style={{ width: hasRightPanel ? 360 : '100%', height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ width: hasRightPanel ? '33.333%' : '100%', height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
             <Form.Item name="inPosition" label="Cổng vào (IN)" style={{ marginBottom: 0 }}>
               <PositionSelector />
             </Form.Item>
             
-            <Form.Item name="outPosition" label="Cổng ra (OUT)" style={{ marginBottom: 0 }}>
-              <PositionSelector />
-            </Form.Item>
+            {!isLoop && !isCondition && (
+              <Form.Item name="outPosition" label="Cổng ra (OUT)" style={{ marginBottom: 0 }}>
+                <PositionSelector />
+              </Form.Item>
+            )}
+
+            {(isLoop || isCondition) && (
+              <>
+                <Form.Item name="loopPosition" label={isLoop ? "Cổng Loop" : "Cổng True"} style={{ marginBottom: 0 }}>
+                  <PositionSelector />
+                </Form.Item>
+                <Form.Item name="donePosition" label={isLoop ? "Cổng Done" : "Cổng False"} style={{ marginBottom: 0 }}>
+                  <PositionSelector />
+                </Form.Item>
+              </>
+            )}
           </div>
 
           <Form.Item name="label" label="Tên Block" rules={[{ required: true, message: 'Nhập tên block' }]}>
@@ -778,7 +826,42 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <Input.TextArea placeholder="Mô tả ngắn về block này" rows={2} />
           </Form.Item>
 
-          {isCondition && (
+          {isLoop && (
+            <>
+              <Alert 
+                message="Điều kiện ĐÚNG sẽ thoát (rẽ nhánh Done). Điều kiện SAI sẽ lặp (rẽ nhánh Loop)." 
+                type="info" 
+                showIcon 
+                style={{ marginBottom: 16 }} 
+              />
+              <Form.Item name="loopMode" label="Chế độ lặp">
+                <Select>
+                  <Select.Option value="count">Lặp theo số lần cố định</Select.Option>
+                  <Select.Option value="condition">Lặp theo điều kiện biến</Select.Option>
+                </Select>
+              </Form.Item>
+              {loopMode === 'count' && (
+                <Form.Item name="loopCount" label="Số lần lặp" rules={[{ required: true, message: 'Nhập số lần lặp' }]}>
+                  <InputNumber min={1} max={2000} style={{ width: '100%' }} placeholder="Ví dụ: 5" />
+                </Form.Item>
+              )}
+              {loopMode === 'condition' && (
+                <Form.Item
+                  name="loopMaxCount"
+                  label="Số lần lặp tối đa"
+                  tooltip="Giới hạn an toàn - nếu điều kiện mãi không đúng, vòng lặp sẽ tự dừng (đi nhánh Done) sau đúng số lần này, tránh lặp vô hạn."
+                  rules={[{ required: true, message: 'Nhập số lần lặp tối đa' }]}
+                >
+                  <InputNumber min={1} max={5000} style={{ width: '100%' }} placeholder="Ví dụ: 50" />
+                </Form.Item>
+              )}
+              <Form.Item name="loopDelay" label="Thời gian chờ mỗi lần lặp (giây)">
+                <InputNumber min={0} step={0.5} style={{ width: '100%' }} placeholder="Ví dụ: 1" />
+              </Form.Item>
+            </>
+          )}
+
+          {(isCondition || (isLoop && loopMode === 'condition')) && (
             <>
               <Form.Item name="logicalOperator" label="Toán tử Logic" tooltip="Cách kết hợp khi có nhiều điều kiện">
                 <Select>
@@ -842,10 +925,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   </>
                 )}
               </Form.List>
-              <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 24, border: '1px solid var(--border-default)' }}>
-                <Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
-                Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.
-              </div>
+              <Alert message={<span>Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.</span>} type="info" showIcon style={{ marginBottom: 24 }} />
             </>
           )}
 
@@ -856,10 +936,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           )}
 
           {isEnd && (
-            <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)' }}>
-              <Flag size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
-              Khi workflow chạy đến khối này, nó sẽ kết thúc.
-            </div>
+            <Alert message="Khi workflow chạy đến khối này, nó sẽ kết thúc." type="info" showIcon style={{ marginBottom: 16 }} />
           )}
 
           {isTelegram && (
@@ -897,13 +974,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <Divider style={{ margin: '16px 0 12px' }}>
                     <Space><Paperclip size="0.875rem" /> Đính kèm tập tin</Space>
                   </Divider>
-                  <Form.Item label="Đính kèm File" name="telegramAttachments" extra="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter.">
+                  <Form.Item label="Đính kèm File" name="telegramAttachments">
                     <Select mode="tags" loading={loadingTelegramFiles} placeholder="Chọn file có sẵn hoặc gõ tên file và Enter" style={{ width: '100%' }}>
                       {telegramFiles.map(f => (
                         <Select.Option key={f.name || f} value={f.name || f}>{f.name || f}</Select.Option>
                       ))}
                     </Select>
                   </Form.Item>
+                  <Alert message="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter." type="info" showIcon style={{ marginBottom: 16 }} />
                 </>
               )}
             </>
@@ -914,10 +992,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Bot Token" name="telegramListenerToken" rules={[{ required: true, message: 'Nhập Bot Token' }]}>
                 <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
               </Form.Item>
-              <div style={{ background: 'var(--bg-card)', padding: '10px 14px', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)', lineHeight: 1.6 }}>
-                <RadioIcon size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
-                Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe.
-              </div>
+              <Alert message="Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe." type="info" showIcon style={{ marginBottom: 16 }} />
             </>
           )}
 
@@ -951,13 +1026,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
           {isSqlToExcel && (
             <>
-              <div style={{ background: '#fffbe6', padding: '10px 14px', borderRadius: 8, fontSize: '0.85rem', color: '#d48806', marginBottom: 16, border: '1px solid #ffe58f', lineHeight: 1.6 }}>
-                <Info size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
-                <b>Yêu cầu:</b> Khối này phải được nối phía sau khối <b>Cơ sở dữ liệu</b> để nhận cấu hình kết nối tự động.
-              </div>
               <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
                 <Input placeholder="VD: bao_cao_thang.xlsx" />
               </Form.Item>
+              <Alert message={<span><b>Yêu cầu:</b> Khối này phải được nối phía sau khối <b>Cơ sở dữ liệu</b> để nhận cấu hình kết nối tự động.</span>} type="warning" showIcon style={{ marginTop: 16 }} />
             </>
           )}
 
@@ -981,9 +1053,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   ))}
                 </Select>
               </Form.Item>
-              <Form.Item name="pivotHeaderRow" label="Dòng chứa Tiêu đề (Header)" rules={[{ required: true, message: 'Nhập vị trí dòng tiêu đề' }]} extra="Gõ 1 nếu tiêu đề nằm ở dòng đầu tiên.">
+              <Form.Item name="pivotHeaderRow" label="Dòng chứa Tiêu đề (Header)" rules={[{ required: true, message: 'Nhập vị trí dòng tiêu đề' }]}>
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="VD: 1" />
               </Form.Item>
+              <Alert message="Gõ 1 nếu tiêu đề nằm ở dòng đầu tiên." type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
                 <Input placeholder="VD: pivot_result.xlsx" />
               </Form.Item>
@@ -1013,56 +1086,60 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Port" name="mailPort" rules={[{ required: true, message: 'Vui lòng nhập Port' }]}>
                 <InputNumber style={{ width: '100%' }} placeholder="VD: 465 hoặc 587" />
               </Form.Item>
+              {/* Dummy fields chống Chrome autofill */}
+              <input type="email" style={{ width: 0, height: 0, padding: 0, margin: 0, border: 0, position: 'absolute' }} tabIndex={-1} autoComplete="off" />
+              <input type="password" style={{ width: 0, height: 0, padding: 0, margin: 0, border: 0, position: 'absolute' }} tabIndex={-1} autoComplete="new-password" />
               <Form.Item label="Tài khoản (Email gửi)" name="mailUser" rules={[{ required: true, message: 'Vui lòng nhập Email' }]}>
-                <Input placeholder="Nhập Email người gửi" />
+                <Input placeholder="Nhập Email người gửi" autoComplete="new-password" />
               </Form.Item>
               <Form.Item label="Mật khẩu Ứng dụng" name="mailPass" rules={[{ required: true, message: 'Vui lòng nhập Mật khẩu' }]}>
-                <Input.Password placeholder="Nhập mật khẩu ứng dụng (App Password)" />
+                <Input.Password placeholder="Nhập mật khẩu ứng dụng (App Password)" autoComplete="new-password" />
               </Form.Item>
             </>
           )}
         
 
+          {isDeleteFiles && (
+            <>
+              <Divider style={{ margin: '24px 0' }} />
+              <Form.Item name="delete_input" valuePropName="checked" label="Thư mục Input">
+                <Switch checkedChildren="Xóa" unCheckedChildren="Giữ lại" />
+              </Form.Item>
+              <Alert message="Xóa toàn bộ tập tin trong thư mục dữ liệu đầu vào (Không xóa file input.json)" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Form.Item name="delete_output" valuePropName="checked" label="Thư mục Output">
+                <Switch checkedChildren="Xóa" unCheckedChildren="Giữ lại" />
+              </Form.Item>
+              <Alert message="Xóa toàn bộ tập tin trong thư mục kết quả đầu ra" type="info" showIcon style={{ marginBottom: 16 }} />
+            </>
+          )}
+
           {isBrowser && (
             <>
-              <Divider style={{ margin: '16px 0' }} />
-              <Form.Item name="debugMode" label="Chế độ Debug" valuePropName="checked"
-                extra="Bật để hiển thị cửa sổ trình duyệt khi chạy">
-                <Switch checkedChildren="🔍 Headed" unCheckedChildren="🤖 Headless" />
+              <Divider style={{ margin: '24px 0' }} />
+              <Form.Item name="debugMode" label="Chế độ Debug" valuePropName="checked">
+                <Switch checkedChildren="Headed" unCheckedChildren="Headless" />
               </Form.Item>
-              <div style={{ background: 'color-mix(in srgb, #0ea5e9 10%, transparent)', borderRadius: 8, padding: '10px 12px', border: '1px solid color-mix(in srgb, #0ea5e9 30%, transparent)', marginBottom: 8 }}>
-                <div style={{ fontSize: '0.8rem', color: '#0ea5e9', fontWeight: 600, marginBottom: 4 }}>ℹ️ Hướng dẫn Selector</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  • CSS: <code>#login-btn</code>, <code>.btn-submit</code><br />
-                  • XPath: <code>//button[@type='submit']</code><br />
-                  • Text: <code>text=Đăng nhập</code><br />
-                  • Label: <code>label=Tên đăng nhập</code>
-                </div>
-              </div>
+              <Alert message="Bật để hiển thị cửa sổ trình duyệt khi chạy" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert
+                message="Hướng dẫn Selector"
+                description={
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                    <Text>• CSS: <Text code>#login-btn</Text>, <Text code>.btn-submit</Text></Text>
+                    <Text>• XPath: <Text code>//button[@type='submit']</Text></Text>
+                    <Text>• Text: <Text code>text=Đăng nhập</Text></Text>
+                    <Text>• Label: <Text code>label=Tên đăng nhập</Text></Text>
+                  </div>
+                }
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
             </>
           )}
 
           {isPython && (
           <>
-            <Divider style={{ margin: '16px 0' }} />
-            <div style={{ marginBottom: 16 }}>
-              <Text strong style={{ display: 'block', marginBottom: 8 }}>Templates</Text>
-              <Space wrap size={[8, 8]}>
-                {TEMPLATE_OPTIONS.map(t => (
-                  <Button 
-                    key={t.key} 
-                    size="small" 
-                    type={activeTemplate === t.key ? 'primary' : 'default'}
-                    ghost={activeTemplate === t.key}
-                    onClick={() => applyTemplate(t.key)}
-                  >
-                    {t.label}
-                  </Button>
-                ))}
-              </Space>
-            </div>
-
-            <Divider style={{ margin: '16px 0' }} />
+            <Divider style={{ margin: '24px 0' }} />
             
             <div>
               <Text strong style={{ display: 'block', marginBottom: 12 }}><Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }}/> Biến có sẵn</Text>
@@ -1096,13 +1173,13 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                 <Database size="1.5rem" color="var(--accent-primary)" />
-                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>Tài liệu Khối Database</h2>
+                <Title level={4} style={{ margin: 0 }}>Tài liệu Khối Database</Title>
               </div>
               
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24 }}>
-                <h3 style={{ margin: '0 0 12px 0', fontSize: '1.05rem', color: 'var(--text-primary)' }}>Mô tả Output (Dữ liệu trả về)</h3>
+                <Title level={5} style={{ margin: '0 0 12px 0' }}>Mô tả Output (Dữ liệu trả về)</Title>
                 <p style={{ margin: '0 0 16px 0', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  Khi khối này chạy thành công, nó sẽ cung cấp các biến cấu hình kết nối (được mã hóa bảo mật) sang khối tiếp theo thông qua biến hệ thống <code>input_data</code>.
+                  Khi khối này chạy thành công, nó sẽ cung cấp các biến cấu hình kết nối (được mã hóa bảo mật) sang khối tiếp theo thông qua biến hệ thống <Text code>input_data</Text>.
                 </p>
                 
                 <Table
@@ -1125,9 +1202,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 />
               </div>
               
-              <div style={{ background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)', borderRadius: 8, padding: 16, border: '1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)' }}>
-                <h3 style={{ margin: '0 0 12px 0', fontSize: '1.05rem', color: 'var(--accent-primary)' }}>💡 Cách kết nối ở khối Python kế tiếp</h3>
-                <pre style={{ margin: 0, background: '#1e1e1e', padding: 12, borderRadius: 6, fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.1)', overflowX: 'auto' }}>
+              <Alert
+                message="Cách kết nối ở khối Python kế tiếp"
+                description={
+                  <pre style={{ margin: '8px 0 0 0', background: '#1e1e1e', padding: 12, borderRadius: 6, fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.1)', overflowX: 'auto' }}>
 <code style={{ color: '#d4d4d4' }}>{`# Lấy thông tin cấu hình từ khối Database truyền sang
 server = input_data.get("host")
 port = input_data.get("port")
@@ -1139,8 +1217,12 @@ password = input_data.get("password")
 server_part = f"{server},{port}" if port else server
 conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID={user};PWD={{{password}}};TrustServerCertificate=yes;"
 `}</code>
-                </pre>
-              </div>
+                  </pre>
+                }
+                type="info"
+                showIcon
+                style={{ marginTop: 24 }}
+              />
             </div>
           ) : isTelegramListener ? (
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
@@ -1148,7 +1230,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <RadioIcon size="1.25rem" color="var(--accent-primary)" />
-                  <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Danh sách lệnh</h2>
+                  <Title level={4} style={{ margin: 0 }}>Danh sách lệnh</Title>
                 </div>
                 <div style={{
                   background: listenerRunning ? '#10b98120' : 'var(--bg-elevated)',
@@ -1210,14 +1292,21 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                 Thêm lệnh
               </Button>
 
-              <Divider />
-              <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', lineHeight: 1.6, marginBottom: 16 }}>
-                <b>Hướng dẫn cơ bản:</b><br />
-                • <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <code>/</code> (vd: <code>/start</code>). Nhập <code>*</code> hoặc để trống để bắt <b>mọi tin nhắn</b>.<br />
-                • <b>Reply</b>: Bot trả lời ngay, không chạy workflow<br />
-                • <b>WF</b>: Bot trả lời + chạy các block phía sau<br />
-                • Dữ liệu truyền vào workflow: <code>{'{command}'}</code>, <code>{'{from_name}'}</code>, <code>{'{chat_id}'}</code>, <code>{'{message_id}'}</code>, <code>{'{text}'}</code>
-              </div>
+              <Divider style={{ margin: '24px 0' }} />
+              <Alert
+                message="Hướng dẫn cơ bản"
+                description={
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                    <Text>• <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <Text code>/</Text> (vd: <Text code>/start</Text>). Nhập <Text code>*</Text> hoặc để trống để bắt <b>mọi tin nhắn</b>.</Text>
+                    <Text>• <b>Reply</b>: Bot trả lời ngay, không chạy workflow</Text>
+                    <Text>• <b>WF</b>: Bot trả lời + chạy các block phía sau</Text>
+                    <Text>• Dữ liệu truyền vào workflow: <Text code>{'{command}'}</Text>, <Text code>{'{from_name}'}</Text>, <Text code>{'{chat_id}'}</Text>, <Text code>{'{message_id}'}</Text>, <Text code>{'{text}'}</Text></Text>
+                  </div>
+                }
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
 
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', overflowX: 'auto' }}>
                 <div style={{ marginBottom: 12, fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Cú pháp HTML cho mẫu Reply:</div>
@@ -1247,15 +1336,23 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                 <MessageCircle size="1.5rem" color="var(--accent-primary)" />
-                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>Hướng dẫn Định dạng Telegram ({telegramParseMode || 'HTML'})</h2>
+                <Title level={4} style={{ margin: 0 }}>Hướng dẫn Định dạng Telegram ({telegramParseMode || 'HTML'})</Title>
               </div>
               
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24, overflowX: 'auto' }}>
                 {(!telegramParseMode || telegramParseMode === 'None') ? (
-                  <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                    Chế độ định dạng đang tắt. Tin nhắn sẽ hiển thị văn bản thuần túy (Raw Text).<br/>
-                    Hãy chọn HTML hoặc MarkdownV2 để sử dụng các tính năng in đậm, in nghiêng, chèn link,...
-                  </div>
+                  <Alert
+                    message="Chế độ định dạng đang tắt"
+                    description={
+                      <Text>
+                        Tin nhắn sẽ hiển thị văn bản thuần túy (Raw Text).<br/>
+                        Hãy chọn HTML hoặc MarkdownV2 để sử dụng các tính năng in đậm, in nghiêng, chèn link,...
+                      </Text>
+                    }
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
                 ) : (
                   <Table
                     size="small"
@@ -1299,42 +1396,42 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
             <div style={{ padding: 24, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
                 <Mail size="1.25rem" color="var(--accent-primary)" />
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Nội dung Email</h3>
+                <Title level={5} style={{ margin: 0 }}>Nội dung Email</Title>
               </div>
               <Form.Item
                 label="Người nhận (To)"
                 name="mailTo"
                 rules={[{ required: true, message: 'Vui lòng nhập Email người nhận' }]}
-                extra="Gõ Email (hoặc biến {email}) rồi bấm Enter để thêm - có thể thêm nhiều người nhận"
               >
                 <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email rồi bấm Enter..." />
               </Form.Item>
+              <Alert message="Gõ Email (hoặc biến {email}) rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item
                 label="Người nhận (CC)"
                 name="mailCc"
-                extra="Gõ Email rồi bấm Enter để thêm - có thể thêm nhiều người nhận"
               >
                 <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email CC rồi bấm Enter..." />
               </Form.Item>
+              <Alert message="Gõ Email rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item label="Tiêu đề Email (Subject)" name="mailSubject" rules={[{ required: true, message: 'Vui lòng nhập Tiêu đề' }]}>
                 <Input placeholder="Nhập tiêu đề (Hỗ trợ định dạng biến {name})" />
               </Form.Item>
               <Form.Item label="Nội dung Email (Body)" name="mailBody">
                 <Input.TextArea rows={12} placeholder="Nhập nội dung thư (Hỗ trợ định dạng biến {name})" style={{ fontFamily: 'var(--font-mono)' }} />
               </Form.Item>
-              <Form.Item label="Đính kèm File" name="mailAttachments" extra="Mẹo: Gõ tên file bất kỳ (VD: merged.xlsx, bao_cao.pdf) và bấm phím Enter. Hệ thống sẽ tự động tìm file đó ở thư mục Đầu vào hoặc Đầu ra khi chạy.">
+              <Form.Item label="Đính kèm File" name="mailAttachments">
                 <Select mode="tags" loading={loadingFiles} placeholder="Chọn file có sẵn hoặc gõ tên file / {biến} và Enter" style={{ width: '100%' }}>
                   {availableFiles.map(f => (
                     <Select.Option key={f.name} value={f.name}>{f.name}</Select.Option>
                   ))}
                 </Select>
               </Form.Item>
+              <Alert message="Mẹo: Gõ tên file bất kỳ (VD: merged.xlsx, bao_cao.pdf) và bấm phím Enter. Hệ thống sẽ tự động tìm file đó ở thư mục Đầu vào hoặc Đầu ra khi chạy." type="info" showIcon style={{ marginBottom: 16 }} />
             </div>
           ) : isMergeExcel ? (
             <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                <span style={{ fontSize: 20 }}>📂</span>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Chọn file cần ghép</h3>
+                <Title level={5} style={{ margin: 0 }}>Chọn file cần ghép</Title>
               </div>
 
               {/* Toggle chọn tất cả Input */}
@@ -1359,38 +1456,22 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               {/* Nếu tắt → Hiện 2 tab chọn nguồn */}
               {!mergeAllInput && (
                 <>
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                    <button
-                      type="button"
-                      onClick={() => setMergeFileSource('input')}
-                      style={{
-                        flex: 1, padding: '8px 0', borderRadius: 8, border: `2px solid ${mergeFileSource === 'input' ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                        background: mergeFileSource === 'input' ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'var(--bg-card)',
-                        color: mergeFileSource === 'input' ? 'var(--accent-primary)' : 'var(--text-primary)',
-                        fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', transition: 'all 0.2s'
-                      }}
-                    >
-                      📬 File Đầu vào (Input)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMergeFileSource('output')}
-                      style={{
-                        flex: 1, padding: '8px 0', borderRadius: 8, border: `2px solid ${mergeFileSource === 'output' ? '#f59e0b' : 'var(--border-default)'}`,
-                        background: mergeFileSource === 'output' ? 'color-mix(in srgb, #f59e0b 12%, transparent)' : 'var(--bg-card)',
-                        color: mergeFileSource === 'output' ? '#f59e0b' : 'var(--text-primary)',
-                        fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', transition: 'all 0.2s'
-                      }}
-                    >
-                      📤 File Đầu ra (Output)
-                    </button>
-                  </div>
+                  <Radio.Group 
+                    value={mergeFileSource} 
+                    onChange={e => setMergeFileSource(e.target.value)} 
+                    style={{ display: 'flex', marginBottom: 14 }}
+                    buttonStyle="solid"
+                  >
+                    <Radio.Button value="input" style={{ flex: 1, textAlign: 'center' }}>File Đầu vào (Input)</Radio.Button>
+                    <Radio.Button value="output" style={{ flex: 1, textAlign: 'center' }}>File Đầu ra (Output)</Radio.Button>
+                  </Radio.Group>
+
+                  <Alert message={<span><b>Ghi chú:</b> File đầu tiên được chọn sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau sẽ bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16 }} />
 
                   <Form.Item
                     name="selectedFiles"
                     label="Thứ tự các file cần ghép"
                     rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}
-                    extra="File đầu tiên được chọn sẽ giữ nguyên tiêu đề"
                   >
                     <FileSelectionTable
                       files={availableFiles.filter(f => f.type === mergeFileSource)}
@@ -1402,19 +1483,24 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
 
               {/* Khi bật all input → chỉ preview */}
               {mergeAllInput && (
-                <div style={{ marginTop: 4, padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-default)' }}>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8 }}>File sẽ được ghép (tất cả Input):</div>
+                <div style={{ marginTop: 16 }}>
                   {loadingFiles ? (
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Đang tải...</div>
+                    <Alert message="Đang tải..." type="info" showIcon />
                   ) : availableFiles.filter(f => f.type === 'input').length === 0 ? (
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Chưa có file nào trong thư mục Input.</div>
+                    <Alert message="Chưa có file nào trong thư mục Input." type="warning" showIcon />
                   ) : (
-                    availableFiles.filter(f => f.type === 'input').map((f, i) => (
-                      <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border-default)' }}>
-                        <span style={{ color: 'var(--accent-primary)', fontWeight: 700, width: 20, textAlign: 'center' }}>{i + 1}</span>
-                        <span style={{ fontSize: '0.9rem' }}>{f.name}</span>
-                      </div>
-                    ))
+                    <Alert
+                      message="File sẽ được ghép (tất cả Input):"
+                      description={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                          {availableFiles.filter(f => f.type === 'input').map((f, i) => (
+                            <Text key={f.name}><Text strong style={{ color: 'var(--accent-primary)', display: 'inline-block', width: 24 }}>{i + 1}.</Text> {f.name}</Text>
+                          ))}
+                        </div>
+                      }
+                      type="info"
+                      showIcon
+                    />
                   )}
                 </div>
               )}
@@ -1423,22 +1509,21 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
             <div style={{ padding: 24, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
                 <TableProperties size="1.25rem" color="var(--accent-primary)" />
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Cấu hình PivotTable</h3>
+                <Title level={5} style={{ margin: 0 }}>Cấu hình PivotTable</Title>
               </div>
 
               {columnError && (
-                <div style={{ marginBottom: 16, padding: '8px 12px', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, color: '#d48806', fontSize: '0.9rem' }}>
-                  {columnError}
-                </div>
+                <Alert message={columnError} type="warning" showIcon style={{ marginBottom: 16 }} />
               )}
               
-              <Form.Item label="Trường Dòng (Rows)" name="pivotIndex" extra="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Khu Vực, A, B)">
+              <Form.Item label="Trường Dòng (Rows)" name="pivotIndex">
                 <Select mode="tags" loading={loadingColumns} placeholder="Click để chọn cột hoặc gõ chữ cái A, B, C... và Enter">
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
+              <Alert message="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Khu Vực, A, B)" type="info" showIcon style={{ marginBottom: 16 }} />
               
-              <Form.Item label="Trường Cột (Columns)" name="pivotColumns" extra="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Nhóm Hàng, C)">
+              <Form.Item label="Trường Cột (Columns)" name="pivotColumns">
                 <Select 
                   mode="tags" 
                   loading={loadingColumns} 
@@ -1453,12 +1538,14 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
+              <Alert message="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Nhóm Hàng, C)" type="info" showIcon style={{ marginBottom: 16 }} />
               
-              <Form.Item label="Trường Giá trị (Values)" name="pivotValues" rules={[{ required: true, message: 'Nhập ít nhất 1 trường Giá trị' }]} extra="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Sản Lượng, D)">
+              <Form.Item label="Trường Giá trị (Values)" name="pivotValues" rules={[{ required: true, message: 'Nhập ít nhất 1 trường Giá trị' }]}>
                 <Select mode="tags" loading={loadingColumns} placeholder="Click để chọn cột hoặc gõ chữ cái A, B, C... và Enter">
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
+              <Alert message="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Sản Lượng, D)" type="info" showIcon style={{ marginBottom: 16 }} />
 
               <Form.Item label="Phép tính (AggFunc)" name="pivotAgg">
                 <Select>
@@ -1479,9 +1566,9 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                 </Form.Item>
               </div>
 
-              <Divider style={{ margin: '16px 0' }} />
+              <Divider style={{ margin: '24px 0' }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>Cấu hình Sắp xếp (Nâng cao)</h3>
+                <Title level={5} style={{ margin: 0 }}>Cấu hình Sắp xếp (Nâng cao)</Title>
                 <Form.Item name="pivotEnableSort" valuePropName="checked" style={{ margin: 0 }}>
                   <Switch size="small" />
                 </Form.Item>
@@ -1505,11 +1592,14 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                   </div>
                   
                   {pivotSortOrder === 'custom' && (
-                    <Form.Item label="Thứ tự Tùy chỉnh (Kéo thả hoặc nhập tay)" name="pivotSortCustom" extra="Hệ thống tự quét dữ liệu trong file. Bạn có thể xóa/sắp xếp lại các thẻ để định hình thứ tự.">
-                      <Select mode="tags" loading={loadingCustomSort} placeholder={loadingCustomSort ? "Đang quét dữ liệu..." : "Nhập hoặc kéo thả thứ tự..."}>
-                        {customSortValues.map(v => <Select.Option key={v} value={v}>{v}</Select.Option>)}
-                      </Select>
-                    </Form.Item>
+                    <>
+                      <Form.Item label="Thứ tự Tùy chỉnh (Kéo thả hoặc nhập tay)" name="pivotSortCustom">
+                        <Select mode="tags" loading={loadingCustomSort} placeholder={loadingCustomSort ? "Đang quét dữ liệu..." : "Nhập hoặc kéo thả thứ tự..."}>
+                          {customSortValues.map(v => <Select.Option key={v} value={v}>{v}</Select.Option>)}
+                        </Select>
+                      </Form.Item>
+                      <Alert message="Hệ thống tự quét dữ liệu trong file. Bạn có thể xóa/sắp xếp lại các thẻ để định hình thứ tự." type="info" showIcon style={{ marginBottom: 16 }} />
+                    </>
                   )}
                 </div>
               )}

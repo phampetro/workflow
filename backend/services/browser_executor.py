@@ -15,6 +15,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import traceback
 from typing import Optional, Callable
 
@@ -63,13 +64,14 @@ ACTION_LABELS = {
 
 
 class BrowserStepResult:
-    def __init__(self, success: bool, output=None, error: str = None):
+    def __init__(self, success: bool, output=None, error: str = None, stopped: bool = False):
         self.success = success
         self.output = output
         self.error = error
+        self.stopped = stopped
 
 
-async def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "") -> BrowserStepResult:
+async def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None) -> BrowserStepResult:
     """Thực thi một bước browser action."""
     action = step.get("action", "")
     selector = step.get("selector", "")
@@ -103,7 +105,11 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
             await log("info", "OK")
 
         elif action == "wait_for_load":
-            await page.wait_for_load_state("networkidle", timeout=timeout)
+            # "networkidle" không đáng tin cho web hiện đại - trang gần như luôn có
+            # kết nối nền (analytics, websocket, ads...) nên hiếm khi thực sự idle,
+            # dẫn tới chờ hết timeout dù trang đã tải xong. "load" (sự kiện window.onload
+            # - HTML + toàn bộ tài nguyên đã tải) là tín hiệu ổn định hơn nhiều.
+            await page.wait_for_load_state("load", timeout=timeout)
             await log("info", "Trang đã tải xong")
 
         # ── Tương tác ─────────────────────────────────────────────────────
@@ -178,6 +184,8 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
             # Sử dụng tên gốc của file hoặc tên tự đặt
             custom_file_name = step.get("file_name", "").strip()
             if custom_file_name:
+                # Thay thế các ký tự đặc biệt (có thể gây lỗi như /, \) thành _
+                custom_file_name = re.sub(r'[\\/*?:"<>|]', '_', custom_file_name)
                 _, ext = os.path.splitext(download.suggested_filename)
                 if not custom_file_name.lower().endswith(ext.lower()):
                     original_filename = f"{custom_file_name}{ext}"
@@ -216,8 +224,14 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
 
         # ── Modal & Dialog ────────────────────────────────────────────────
         elif action == "wait_for_selector":
-            await page.locator(selector).first.wait_for(state="visible", timeout=timeout)
-            await log("info", f"'{selector}' đã xuất hiện ✓")
+            # state="hidden" dùng để chờ 1 loading spinner biến mất (dấu hiệu tin cậy
+            # cho việc dữ liệu AJAX/SPA đã tải xong), thay vì chỉ chờ phần tử xuất hiện.
+            wait_state = step.get("state", "visible")
+            if wait_state not in ("visible", "hidden", "attached", "detached"):
+                wait_state = "visible"
+            await page.locator(selector).first.wait_for(state=wait_state, timeout=timeout)
+            state_label = {"visible": "đã xuất hiện", "hidden": "đã biến mất", "attached": "đã được thêm vào DOM", "detached": "đã bị xóa khỏi DOM"}[wait_state]
+            await log("info", f"'{selector}' {state_label} ✓")
 
         elif action == "accept_dialog":
             page.once("dialog", lambda d: asyncio.ensure_future(d.accept()))
@@ -267,7 +281,17 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
         elif action == "wait":
             seconds = float(value) if value else 1
             await log("info", f"Chờ {seconds}s...")
-            await asyncio.sleep(seconds)
+            # Chia nhỏ để kiểm tra dừng định kỳ - nếu không, "wait" dài (VD: 300s)
+            # sẽ không bị ngắt được khi người dùng bấm Dừng workflow.
+            waited = 0.0
+            interval = 0.3
+            while waited < seconds:
+                if stop_event and stop_event.is_set():
+                    await log("warning", "⏹ Bị dừng theo yêu cầu người dùng")
+                    return BrowserStepResult(success=False, error="stopped", stopped=True)
+                sleep_time = min(interval, seconds - waited)
+                await asyncio.sleep(sleep_time)
+                waited += sleep_time
             await log("info", "Done ✓")
 
         elif action == "wait_for_url":
@@ -293,6 +317,7 @@ async def run_browser_block(
     headless: bool = True,
     log_callback: Optional[Callable] = None,
     output_dir: str = "",
+    stop_event=None,
 ) -> dict:
     """
     Chạy một block Browser với Playwright.
@@ -304,12 +329,15 @@ async def run_browser_block(
         input_data:   Dữ liệu từ block trước (dùng để fill form v.v.)
         headless:     True = chạy ngầm, False = hiện cửa sổ browser (debug mode)
         log_callback: Hàm ghi log async (block_id, level, message)
+        stop_event:   Đối tượng có .is_set() - kiểm tra giữa mỗi bước để có thể
+                      ngắt block khi người dùng bấm Dừng workflow.
 
     Returns:
         {
             "success": bool,
             "output_data": dict | None,
             "error": str | None,
+            "stopped": bool,
         }
     """
     async def log(level, msg):
@@ -324,67 +352,94 @@ async def run_browser_block(
         from playwright.async_api import async_playwright
 
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(
-                headless=headless,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
-            )
-
-            context = await browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
+            browser = None
+            context = None
+            page = None
+            try:
+                browser = await pw.chromium.launch(
+                    headless=headless,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"]
                 )
-            )
 
-            page = await context.new_page()
+                context = await browser.new_context(
+                    viewport={"width": 1280, "height": 800},
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    )
+                )
 
-            step_count = len(steps)
-            for i, step in enumerate(steps, 1):
-                if not step.get("action"):
-                    continue
+                page = await context.new_page()
 
-                action = step.get("action", "")
-                label = ACTION_LABELS.get(action, action)
-                note_str = f" — {step['note']}" if step.get("note") else ""
-                await log("info", f"   [{i}/{step_count}] {label}{note_str}")
-
-                # Thay thế {{key}} trong value bằng input_data
-                raw_value = step.get("value", "")
-                if isinstance(raw_value, str) and "{{" in raw_value:
-                    if input_data and isinstance(input_data, dict):
-                        for k, v in input_data.items():
-                            raw_value = raw_value.replace(f"{{{{{k}}}}}", str(v))
-                    step = {**step, "value": raw_value}
-
-                result = await execute_step(page, step, collected_data, log_callback, block_id, output_dir)
-
-                if not result.success:
-                    if step.get("continue_on_error", False):
-                        await log("warning", f"   ⚠ Bước {i} lỗi — bỏ qua (continue_on_error=true)")
-                    else:
-                        await log("error", f"   ✗ Dừng do bước {i} thất bại")
-                        await page.close()
-                        await context.close()
-                        await browser.close()
+                step_count = len(steps)
+                for i, step in enumerate(steps, 1):
+                    # Kiểm tra dừng TRƯỚC mỗi bước - nếu không, chuỗi nhiều bước ngắn
+                    # cộng dồn (hoặc 1 bước đang chạy) sẽ không phản hồi nút Dừng.
+                    if stop_event and stop_event.is_set():
+                        await log("warning", "⏹ Đã dừng theo yêu cầu người dùng")
                         return {
                             "success": False,
                             "output_data": collected_data if collected_data else None,
-                            "error": result.error,
+                            "error": "stopped",
+                            "stopped": True,
                         }
 
-            await page.close()
-            await context.close()
-            await browser.close()
+                    if not step.get("action"):
+                        continue
 
-            out = collected_data if collected_data else None
-            await log("success", f"✓ Browser Block hoàn thành — {len(collected_data)} dữ liệu thu thập")
-            return {
-                "success": True,
-                "output_data": out,
-                "error": None,
-            }
+                    action = step.get("action", "")
+                    label = ACTION_LABELS.get(action, action)
+                    note_str = f" — {step['note']}" if step.get("note") else ""
+                    await log("info", f"   [{i}/{step_count}] {label}{note_str}")
+
+                    # Thay thế {{key}} trong tất cả các trường của step bằng input_data
+                    new_step = {**step}
+                    if input_data and isinstance(input_data, dict):
+                        for step_key, step_val in new_step.items():
+                            if isinstance(step_val, str) and "{{" in step_val:
+                                for k, v in input_data.items():
+                                    step_val = step_val.replace(f"{{{{{k}}}}}", str(v))
+                                new_step[step_key] = step_val
+                    step = new_step
+
+                    result = await execute_step(page, step, collected_data, log_callback, block_id, output_dir, stop_event=stop_event)
+
+                    if not result.success:
+                        if getattr(result, "stopped", False):
+                            return {
+                                "success": False,
+                                "output_data": collected_data if collected_data else None,
+                                "error": "stopped",
+                                "stopped": True,
+                            }
+                        if step.get("continue_on_error", False):
+                            await log("warning", f"   ⚠ Bước {i} lỗi — bỏ qua (continue_on_error=true)")
+                        else:
+                            await log("error", f"   ✗ Dừng do bước {i} thất bại")
+                            return {
+                                "success": False,
+                                "output_data": collected_data if collected_data else None,
+                                "error": result.error,
+                            }
+
+                out = collected_data if collected_data else None
+                await log("success", f"✓ Browser Block hoàn thành — {len(collected_data)} dữ liệu thu thập")
+                return {
+                    "success": True,
+                    "output_data": out,
+                    "error": None,
+                }
+            finally:
+                # Luôn đóng page/context/browser dù thành công, step lỗi, hay exception
+                # bất ngờ (VD: launch/new_context thất bại giữa chừng) - nếu không, tiến
+                # trình Chromium bị rò rỉ (không giải phóng RAM/CPU) khi qua khối tiếp theo.
+                for resource in (page, context, browser):
+                    if resource is not None:
+                        try:
+                            await resource.close()
+                        except Exception:
+                            pass
 
     except Exception as e:
         err = traceback.format_exc()
