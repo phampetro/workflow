@@ -11,6 +11,59 @@ _active_listeners: Dict[str, asyncio.Task] = {}
 # Lưu trữ cờ dừng (workflow_id -> Event)
 _stop_events: Dict[str, asyncio.Event] = {}
 
+async def _send_telegram_reply(client: httpx.AsyncClient, bot_token: str, chat_id, text: str):
+    """Gửi tin nhắn trả lời trực tiếp (dùng cho lệnh không bật runWorkflow).
+
+    Hỗ trợ định dạng HTML của Telegram (in đậm <b>, in nghiêng <i>, link <a>...),
+    giống hệt khối Telegram gửi tin thường. Nếu nội dung HTML không hợp lệ,
+    Telegram trả lỗi 400 -> tự động gửi lại dạng văn bản thuần để không mất tin nhắn.
+    """
+    if not text or chat_id is None:
+        return
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    try:
+        resp = await client.post(url, data={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
+        data = resp.json()
+        if not data.get("ok"):
+            logger.warning(f"Gửi reply HTML thất bại ({data.get('description')}), thử lại dạng văn bản thuần")
+            await client.post(url, data={"chat_id": chat_id, "text": text})
+    except Exception as e:
+        logger.error(f"Lỗi gửi reply Telegram: {e}")
+
+
+async def _set_bot_commands(client: httpx.AsyncClient, bot_token: str, commands: list):
+    """Đăng ký danh sách lệnh "/" với Telegram (menu gõ lệnh của bot).
+
+    Gọi setMyCommands sẽ THAY THẾ HOÀN TOÀN danh sách lệnh cũ đã đăng ký trước đó
+    (theo đúng cơ chế của Telegram Bot API), không cộng dồn.
+    Chỉ những dòng lệnh hợp lệ (bắt đầu bằng "/", có mô tả) mới được đăng ký -
+    dòng để trống/"*" (khớp mọi tin nhắn) chỉ dùng nội bộ, Telegram không cho đăng ký kiểu này.
+    """
+    telegram_commands = []
+    for entry in commands:
+        cmd = (entry.get("command") or "").strip()
+        desc = (entry.get("description") or "").strip()
+        if not cmd or cmd == "*" or not cmd.startswith("/") or not desc:
+            continue
+        cmd_name = cmd[1:].lower()
+        if not cmd_name:
+            continue
+        telegram_commands.append({"command": cmd_name, "description": desc[:256]})
+
+    try:
+        resp = await client.post(
+            f"https://api.telegram.org/bot{bot_token}/setMyCommands",
+            json={"commands": telegram_commands}
+        )
+        data = resp.json()
+        if not data.get("ok"):
+            logger.warning(f"setMyCommands thất bại: {data.get('description')}")
+        else:
+            logger.info(f"✅ Đã đăng ký {len(telegram_commands)} lệnh với Telegram: {[c['command'] for c in telegram_commands]}")
+    except Exception as e:
+        logger.error(f"Lỗi khi đăng ký lệnh Telegram: {e}")
+
+
 async def _telegram_listener_loop(
     project_id: str,
     workflow_id: str,
@@ -23,7 +76,10 @@ async def _telegram_listener_loop(
     """
     Vòng lặp long-polling để nhận tin nhắn Telegram.
     Sử dụng httpx để gọi API getUpdates.
-    Filter theo danh sách commands (nếu có).
+
+    commands: list các dict {"command": str, "reply": str, "runWorkflow": bool}.
+    - runWorkflow=True  -> chạy tiếp workflow từ khối Listener (có _initial_input).
+    - runWorkflow=False -> chỉ gửi lại "reply" cho người dùng, không chạy workflow.
     """
     url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
     offset = 0
@@ -33,6 +89,8 @@ async def _telegram_listener_loop(
     logger.info(f"   Commands: {commands}")
 
     async with httpx.AsyncClient(timeout=timeout + 5) as client:
+        await _set_bot_commands(client, bot_token, commands)
+
         while not stop_event.is_set():
             try:
                 response = await client.get(url, params={"offset": offset, "timeout": timeout})
@@ -48,28 +106,29 @@ async def _telegram_listener_loop(
                         message = update.get("message") or update.get("channel_post")
                         if message:
                             text = message.get("text", "") or ""
-                            # Check if this message matches any command
-                            should_process = False
+                            # Tìm lệnh khớp với tin nhắn (nếu không cấu hình lệnh nào -> khớp tất cả)
+                            matched = None
                             if commands:
-                                for cmd in commands:
-                                    cmd = cmd.strip()
-                                    if cmd == "*" or cmd == "":
-                                        # Match all messages
-                                        should_process = True
-                                        break
-                                    elif text.startswith(cmd):
-                                        should_process = True
+                                for entry in commands:
+                                    cmd = (entry.get("command") or "").strip()
+                                    if cmd == "*" or cmd == "" or text.startswith(cmd):
+                                        matched = entry
                                         break
                             else:
-                                # No commands configured, match all
-                                should_process = True
-                            
-                            if not should_process:
+                                matched = {"command": "*", "reply": "", "runWorkflow": True}
+
+                            if not matched:
                                 logger.debug(f"   Bỏ qua tin nhắn không khớp lệnh: {text[:50]}")
                                 continue
-                                
-                            logger.info(f"📩 Nhận tin nhắn mới từ Telegram (Update ID: {update['update_id']})")
-                            
+
+                            logger.info(f"📩 Nhận tin nhắn khớp lệnh '{matched.get('command')}' (Update ID: {update['update_id']})")
+
+                            if not matched.get("runWorkflow"):
+                                # Lệnh không bật "Chạy workflow" -> chỉ trả lời mặc định, không chạy workflow
+                                chat_id = message.get("chat", {}).get("id")
+                                await _send_telegram_reply(client, bot_token, chat_id, matched.get("reply", ""))
+                                continue
+
                             # Cấu trúc initial_input để truyền vào workflow
                             initial_input = {
                                 "chat_id": message.get("chat", {}).get("id"),

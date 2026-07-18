@@ -66,6 +66,7 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
       title: 'STT',
       key: 'stt',
       width: 50,
+      align: 'center',
       render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{index + 1}</span>
     },
     {
@@ -80,6 +81,7 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
       dataIndex: 'status',
       key: 'status',
       width: 120,
+      align: 'center',
       render: (s) => {
         const c = STATUS_CONFIG[s] || { label: s, color: 'default' }
         return <Tag color={c.color} bordered={false} style={{ margin: 0 }}>{c.label}</Tag>
@@ -90,6 +92,7 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
       dataIndex: 'duration_ms',
       key: 'duration_ms',
       width: 100,
+      align: 'center',
       render: (d) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatDuration(d)}</span>
     },
     {
@@ -97,12 +100,13 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
       dataIndex: 'triggered_by',
       key: 'triggered_by',
       width: 100,
+      align: 'center',
       render: getTriggerLabel
     },
     {
       title: 'Thao tác',
       key: 'action',
-      align: 'right',
+      align: 'center',
       width: 90,
       render: (_, record) => (
         <Button size="small" type="link" onClick={() => onViewLog?.(record.id)}>

@@ -9,7 +9,7 @@ from sqlalchemy import select, delete
 
 from database import get_session
 from models import Project, Workflow, WorkflowRun
-from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir
+from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir, slugify
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -61,6 +61,8 @@ async def list_projects(request: Request, session: AsyncSession = Depends(get_se
     for p in projects:
         d = p.to_dict()
         d["last_run_status"] = last_status_map.get(p.id)
+        # Đếm tổng số workflow của project này
+        d["workflow_count"] = sum(1 for pid in wf_project_map.values() if pid == p.id)
         # Đếm workflow đang chạy của project này
         running_count = sum(
             1 for wf_id, pid in wf_project_map.items()
@@ -74,9 +76,21 @@ async def list_projects(request: Request, session: AsyncSession = Depends(get_se
 @router.post("", status_code=201)
 async def create_project(request: Request, body: dict, session: AsyncSession = Depends(get_session)):
     user_id = request.headers.get("X-User-Id", "default")
+    name = body.get("name", "Untitled Project").strip()
+
+    # So sánh theo slug (không phải chuỗi thô) vì tên project quyết định luôn tên
+    # thư mục dữ liệu (data/pj_{slug}/) - hai tên khác nhau nhưng cùng slug sẽ
+    # vô tình dùng chung 1 thư mục, gây lẫn dữ liệu.
+    new_slug = slugify(name)
+    same_user_projects = (await session.execute(
+        select(Project).where(Project.user_id == user_id)
+    )).scalars().all()
+    if any(slugify(p.name) == new_slug for p in same_user_projects):
+        raise HTTPException(400, f"Project '{name}' đã tồn tại")
+
     project = Project(
         id=str(uuid.uuid4()),
-        name=body.get("name", "Untitled Project"),
+        name=name,
         description=body.get("description"),
         icon=body.get("icon", "Box"),
         color=body.get("color", "#6c63ff"),
@@ -133,6 +147,15 @@ async def update_project(project_id: str, body: dict, session: AsyncSession = De
     if not proj:
         raise HTTPException(404, "Project không tồn tại")
 
+    if "name" in body:
+        new_name = body["name"].strip()
+        new_slug = slugify(new_name)
+        same_user_projects = (await session.execute(
+            select(Project).where(Project.user_id == proj.user_id, Project.id != project_id)
+        )).scalars().all()
+        if any(slugify(p.name) == new_slug for p in same_user_projects):
+            raise HTTPException(400, f"Project '{new_name}' đã tồn tại")
+
     for field in ["name", "description", "color", "icon"]:
         if field in body:
             setattr(proj, field, body[field])
@@ -159,28 +182,6 @@ async def reorder_projects(request: Request, session: AsyncSession = Depends(get
     await session.commit()
     return {"status": "ok"}
 
-
-@router.post("/{project_id}/duplicate", status_code=201)
-async def duplicate_project(project_id: str, session: AsyncSession = Depends(get_session)):
-    proj = await session.get(Project, project_id)
-    if not proj:
-        raise HTTPException(404, "Project không tồn tại")
-        
-    new_proj = Project(
-        id=str(uuid.uuid4()),
-        name=proj.name + " (Copy)",
-        description=proj.description,
-        icon=proj.icon,
-        color=proj.color,
-        user_id=proj.user_id,
-        sort_order=proj.sort_order,
-        created_at=datetime.now(),
-        updated_at=datetime.now()
-    )
-    session.add(new_proj)
-    await session.commit()
-    await session.refresh(new_proj)
-    return new_proj.to_dict()
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -268,6 +269,8 @@ async def import_project(request: Request, session: AsyncSession = Depends(get_s
     from services.export_import import import_project_from_zip
     try:
         new_proj = await import_project_from_zip(zip_data, user_id, session)
+        # Tạo venv trong nền, giống hệt lúc tạo project mới thủ công
+        asyncio.create_task(_init_venv_bg(new_proj["id"]))
         return new_proj
     except Exception as e:
         raise HTTPException(400, f"Lỗi import: {str(e)}")

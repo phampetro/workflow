@@ -191,6 +191,7 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       title: '',
       key: 'action',
       width: 120,
+      align: 'center',
       render: (_, record) => (
         <Space size={4}>
           <Button type="text" size="small" icon={<Eye size={14} />} onClick={() => handleView(record.name, isOutput)} />

@@ -245,6 +245,9 @@ body {
 .ant-pagination-item {
   font-size: var(--text-sm) !important;
 }
+.ant-table-thead > tr > th {
+  text-align: center !important;
+}
 .ant-alert {
   font-size: var(--text-base) !important;
 }

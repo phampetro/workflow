@@ -139,7 +139,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
   }
 
   const formatNextRun = (iso) => {
-    if (!iso) return <Text type="secondary">Chưa xếp lịch</Text>
+    if (!iso) return <Text type="secondary" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Chưa xếp lịch</Text>
     const d = new Date(iso)
     return <Text style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
       {d.toLocaleString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -151,6 +151,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
       title: 'STT',
       key: 'stt',
       width: 50,
+      align: 'center',
       render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{index + 1}</span>
     },
     {
@@ -169,12 +170,14 @@ export default function SchedulerPanel({ workflow, onClose }) {
       dataIndex: 'next_run_at',
       key: 'next_run_at',
       width: 130,
+      align: 'center',
       render: formatNextRun
     },
     {
       title: 'Bật',
       key: 'status',
       width: 70,
+      align: 'center',
       render: (_, record) => (
         <Switch size="small" checked={record.enabled} onChange={(checked) => toggleSchedule(record.id, checked)} />
       )
@@ -183,6 +186,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
       title: 'Thao tác',
       key: 'action',
       width: 90,
+      align: 'center',
       render: (_, record) => (
         <Space size={4}>
           <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} />

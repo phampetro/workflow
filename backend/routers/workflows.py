@@ -9,7 +9,7 @@ from sqlalchemy import select, delete
 from database import get_session, AsyncSessionLocal
 from models import Workflow, WorkflowRun, RunStatus, Project
 from services.executor import execute_workflow
-from services.venv_manager import delete_workflow_dir
+from services.venv_manager import delete_workflow_dir, slugify
 from ws.log_socket import make_log_callback
 
 router = APIRouter(tags=["workflows"])
@@ -174,9 +174,20 @@ async def create_workflow(project_id: str, body: dict, session: AsyncSession = D
     if not proj:
         raise HTTPException(404, "Project không tồn tại")
 
+    name = body.get("name", "Untitled Workflow").strip()
+
+    # So sánh theo slug vì tên workflow quyết định tên thư mục con
+    # (data/pj_{slug}/wf_{slug}/) trong cùng project.
+    new_slug = slugify(name)
+    siblings = (await session.execute(
+        select(Workflow).where(Workflow.project_id == project_id)
+    )).scalars().all()
+    if any(slugify(w.name) == new_slug for w in siblings):
+        raise HTTPException(400, f"Workflow '{name}' đã tồn tại trong project này")
+
     wf = Workflow(
         id=str(uuid.uuid4()),
-        name=body.get("name", "Untitled Workflow"),
+        name=name,
         description=body.get("description"),
         project_id=project_id,
         color=body.get("color", "#6c63ff"),
@@ -199,25 +210,11 @@ async def get_workflow(workflow_id: str, session: AsyncSession = Depends(get_ses
 
 @router.post("/api/workflows/{workflow_id}/duplicate", status_code=201)
 async def duplicate_workflow(workflow_id: str, session: AsyncSession = Depends(get_session)):
-    wf = await session.get(Workflow, workflow_id)
-    if not wf:
-        raise HTTPException(404, "Workflow không tồn tại")
-    
-    new_wf = Workflow(
-        id=str(uuid.uuid4()),
-        name=wf.name + " (Copy)",
-        description=wf.description,
-        project_id=wf.project_id,
-        graph_json=wf.graph_json,
-        color=wf.color,
-        sort_order=wf.sort_order,
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-    )
-    session.add(new_wf)
-    await session.commit()
-    await session.refresh(new_wf)
-    return new_wf.to_dict()
+    from services.export_import import duplicate_workflow_in_place
+    try:
+        return await duplicate_workflow_in_place(workflow_id, session)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
 
 from fastapi.responses import StreamingResponse
@@ -242,6 +239,15 @@ async def update_workflow(workflow_id: str, body: dict, session: AsyncSession = 
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
+
+    if "name" in body and body["name"].strip() != wf.name:
+        new_name = body["name"].strip()
+        new_slug = slugify(new_name)
+        siblings = (await session.execute(
+            select(Workflow).where(Workflow.project_id == wf.project_id, Workflow.id != workflow_id)
+        )).scalars().all()
+        if any(slugify(w.name) == new_slug for w in siblings):
+            raise HTTPException(400, f"Workflow '{new_name}' đã tồn tại trong project này")
 
     for field in ["name", "description", "graph_json", "color"]:
         if field in body:
@@ -423,65 +429,9 @@ async def stream_logs(run_id: str, offset: int = 0):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ── Telegram Listener ───────────────────────────────────────
-
-@router.post("/api/workflows/{workflow_id}/listener/start")
-async def start_listener(workflow_id: str, session: AsyncSession = Depends(get_session)):
-    wf = await session.get(Workflow, workflow_id)
-    if not wf:
-        raise HTTPException(404, "Workflow không tồn tại")
-        
-    import json
-    try:
-        graph = json.loads(wf.graph_json)
-        nodes = graph.get("nodes", [])
-        listener_nodes = [n for n in nodes if n.get("data", {}).get("type") == "telegram_listener"]
-        
-        if not listener_nodes:
-            raise HTTPException(400, "Workflow không có khối Telegram Listener")
-            
-        bdata = listener_nodes[0].get("data", {})
-        bot_token = bdata.get("telegramListenerToken", bdata.get("botToken", "")).strip()
-        
-        # Get commands from telegramListenerCommands array or telegramCommands string
-        raw_commands = bdata.get("telegramListenerCommands") or bdata.get("telegramCommands", "")
-        if isinstance(raw_commands, list):
-            # Extract command strings from the array
-            commands = [c.get("command", "").strip() if isinstance(c, dict) else str(c).strip() for c in raw_commands]
-            commands = [c for c in commands if c]
-        else:
-            commands = [c.strip() for c in str(raw_commands).split(",") if c.strip()]
-        if not bot_token:
-            raise HTTPException(400, "Thiếu Bot Token")
-            
-
-        if not commands:
-            raise HTTPException(400, "Thiếu cấu hình lệnh")
-            
-        from services.telegram_listener import start_telegram_listener
-        started = await start_telegram_listener(
-            workflow_id=workflow_id,
-            bot_token=bot_token,
-            commands=commands,
-            project_id=wf.project_id,
-            workflow_name=wf.name,
-            graph_json=wf.graph_json
-        )
-        if started:
-            return {"status": "started"}
-        else:
-            return {"status": "already_running"}
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-@router.post("/api/workflows/{workflow_id}/listener/stop")
-async def stop_listener(workflow_id: str):
-    from services.telegram_listener import stop_telegram_listener
-    stopped = await stop_telegram_listener(workflow_id)
-    if stopped:
-        return {"status": "stopped"}
-    return {"status": "not_running"}
+# Listener chỉ được bật/tắt thông qua nút Chạy/Dừng của workflow (xem
+# services/executor_blocks.py, khối telegram_listener), endpoint dưới đây
+# chỉ để đọc trạng thái hiện tại cho UI.
 
 @router.get("/api/workflows/{workflow_id}/listener/status")
 async def listener_status(workflow_id: str):

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, FolderOpen, Clock, Trash2, Settings, ChevronRight, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Copy, Download, GripVertical } from 'lucide-react'
-import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects, duplicateProject } from '../api/client'
+import { Plus, FolderOpen, Clock, Trash2, Settings, ChevronRight, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Download, GripVertical } from 'lucide-react'
+import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects } from '../api/client'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
@@ -169,17 +169,6 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     })
   }
 
-  const handleDuplicate = async (id) => {
-    try {
-      const res = await duplicateProject(id)
-      setProjects((prev) => [res.data, ...prev])
-      toast.success('Đã sao chép project!')
-      loadData()
-    } catch (e) {
-      toast.error('Lỗi sao chép project: ' + e.message)
-    }
-  }
-
   const handleExport = (project) => {
     window.location.href = `http://localhost:8000/api/projects/${project.id}/export`
     toast.success(`Đang tải xuống project ${project.name}...`)
@@ -273,7 +262,6 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
                     project={project}
                     onOpen={() => onOpenProject?.(project)}
                     onEdit={() => handleEdit(project)}
-                    onDuplicate={() => handleDuplicate(project.id)}
                     onExport={() => handleExport(project)}
                     onDelete={() => handleDelete(project.id)}
                   />
@@ -363,7 +351,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   )
 }
 
-function ProjectCard({ project, onOpen, onEdit, onDuplicate, onExport, onDelete }) {
+function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
   const {
     attributes,
     listeners,
@@ -415,7 +403,6 @@ function ProjectCard({ project, onOpen, onEdit, onDuplicate, onExport, onDelete 
 
   const items = [
     { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
-    { key: 'duplicate', label: 'Sao chép', icon: <Copy size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onDuplicate(); } },
     { key: 'export', label: 'Export ZIP', icon: <Download size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
     { type: 'divider' },
     { key: 'delete', label: 'Xóa Project', icon: <Trash2 size="0.938rem" />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },

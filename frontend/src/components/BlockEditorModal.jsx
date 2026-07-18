@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, startListener, stopListener, getListenerStatus } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Power, PowerOff, Flag } from 'lucide-react'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -467,8 +467,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const [loadingTelegramFiles, setLoadingTelegramFiles] = useState(false)
   const [listenerCommands, setListenerCommands] = useState(node.data.telegramListenerCommands || [{ command: '/hi', description: 'Gửi lời chào', reply: 'Xin chào! 👋', runWorkflow: false }])
   const [listenerRunning, setListenerRunning] = useState(false)
-  const [listenerLoading, setListenerLoading] = useState(false)
-  
+
   const telegramParseMode = Form.useWatch('telegramParseMode', form)
   const telegramAction = Form.useWatch('telegramAction', form)
   const pivotInputFiles = Form.useWatch('pivotInputFiles', form)
@@ -558,7 +557,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
     const fetchStatus = () => {
       getListenerStatus(workflowId).then(res => {
-        setListenerRunning(res.data?.running || false)
+        setListenerRunning(res.data?.status === 'running')
       }).catch(() => {})
     }
 
@@ -648,31 +647,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     }
   }, [isPivotExcel, open, workflowId, pivotEnableSort, pivotSortColumn, pivotSortOrder, pivotInputFile, pivotHeaderRow])
 
-  const handleToggleListener = async () => {
-    setListenerLoading(true)
-    try {
-      if (listenerRunning) {
-        await stopListener(workflowId)
-        setListenerRunning(false)
-        toast.success('Đã tắt Listener')
-      } else {
-        // Save trước khi start để đảm bảo config mới nhất
-        const values = await form.validateFields()
-        if (onUpdate) {
-          await onUpdate(node.id, { ...values, telegramListenerCommands: listenerCommands })
-        } else {
-          onSave(node.id, { ...values, telegramListenerCommands: listenerCommands })
-        }
-        await startListener(workflowId)
-        setListenerRunning(true)
-        toast.success('Đã bật Listener')
-      }
-    } catch (e) {
-      toast.error(e.message || 'Lỗi')
-    } finally {
-      setListenerLoading(false)
-    }
-  }
 
   const handleSave = async () => {
     try {
@@ -699,7 +673,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   return (
     <Drawer
       title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
-      size={hasRightPanel ? 'large' : 'default'}
+      width="50vw"
       onClose={onClose}
       open={true}
       mask={{ closable: false }}
@@ -736,8 +710,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 condOperator: node.data.condOperator || '==',
                 condValue: node.data.condValue || '',
             }),
-            endEnableTimer: node.data.endEnableTimer ?? false,
-            endTime: node.data.endTime || '18:00',
             delaySeconds: node.data.delaySeconds || 3,
             telegramBotToken: node.data.telegramBotToken || '',
             telegramChatId: node.data.telegramChatId || '',
@@ -880,28 +852,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           )}
 
           {isEnd && (
-            <>
-              <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)' }}>
-                <Flag size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
-                Khi workflow chạy đến khối này, nó sẽ kết thúc. Nếu bật hẹn giờ, khi đến giờ sẽ tự tắt cả <b>Listener</b> và <b>Workflow</b>.
-              </div>
-              <Form.Item
-                label="Bật hẹn giờ kết thúc"
-                name="endEnableTimer"
-                valuePropName="checked"
-                tooltip="Khi bật, workflow sẽ chờ đến giờ rồi mới tắt listener + workflow."
-              >
-                <Switch />
-              </Form.Item>
-              <Form.Item
-                label="Giờ kết thúc"
-                name="endTime"
-                tooltip="Khi đến giờ này, tự tắt Listener + Workflow."
-                rules={[{ required: true, message: 'Chọn giờ kết thúc' }]}
-              >
-                <Input type="time" style={{ width: '100%' }} />
-              </Form.Item>
-            </>
+            <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)' }}>
+              <Flag size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
+              Khi workflow chạy đến khối này, nó sẽ kết thúc.
+            </div>
           )}
 
           {isTelegram && (
@@ -958,7 +912,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               </Form.Item>
               <div style={{ background: 'var(--bg-card)', padding: '10px 14px', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)', lineHeight: 1.6 }}>
                 <RadioIcon size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
-                Cấu hình các lệnh ở bảng bên phải. Bật Listener để bot bắt đầu lắng nghe.
+                Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe.
               </div>
             </>
           )}
@@ -1186,29 +1140,27 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
             </div>
           ) : isTelegramListener ? (
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
-              {/* Header + Status */}
+              {/* Header + Status (chỉ hiển thị - Listener bật/tắt theo nút Chạy/Dừng của workflow) */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <RadioIcon size="1.25rem" color="var(--accent-primary)" />
                   <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Danh sách lệnh</h2>
                 </div>
-                <Button
-                  type={listenerRunning ? 'default' : 'primary'}
-                  danger={listenerRunning}
-                  loading={listenerLoading}
-                  icon={listenerRunning ? <PowerOff size="0.875rem" /> : <Power size="0.875rem" />}
-                  onClick={handleToggleListener}
-                >
-                  {listenerRunning ? 'Tắt Listener' : 'Bật Listener'}
-                </Button>
-              </div>
-
-              {listenerRunning && (
-                <div style={{ background: '#10b98120', border: '1px solid #10b98150', borderRadius: 8, padding: '8px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 2s infinite' }} />
-                  <span style={{ color: '#10b981', fontWeight: 500, fontSize: '0.9rem' }}>Đang lắng nghe...</span>
+                <div style={{
+                  background: listenerRunning ? '#10b98120' : 'var(--bg-elevated)',
+                  border: `1px solid ${listenerRunning ? '#10b98150' : 'var(--border-default)'}`,
+                  borderRadius: 8, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8
+                }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: listenerRunning ? '#10b981' : 'var(--text-muted)',
+                    display: 'inline-block', animation: listenerRunning ? 'pulse 2s infinite' : 'none'
+                  }} />
+                  <span style={{ color: listenerRunning ? '#10b981' : 'var(--text-muted)', fontWeight: 500, fontSize: '0.9rem' }}>
+                    {listenerRunning ? 'Đang lắng nghe...' : 'Chưa chạy (bấm Chạy workflow để bật)'}
+                  </span>
                 </div>
-              )}
+              </div>
 
               {/* Commands Table */}
               {listenerCommands.map((cmd, idx) => (

@@ -88,6 +88,27 @@ def get_pip_path(project_id: str) -> str:
 def venv_exists(project_id: str) -> bool:
     return venv_manager.venv_exists(project_id)
 
+def _stop_telegram_listener_sync(workflow_id: str, log_fn=None):
+    """Dừng Telegram Listener từ thread thực thi workflow (đồng bộ, không có event loop riêng)."""
+    try:
+        from services.telegram_listener import _stop_events, _active_listeners
+        if workflow_id in _stop_events:
+            _stop_events[workflow_id].set()
+        task = _active_listeners.get(workflow_id)
+        if task:
+            try:
+                # Lấy đúng loop mà task listener đang chạy trên đó (thread riêng),
+                # KHÔNG dùng asyncio.get_running_loop() vì hàm này được gọi từ một
+                # thread đồng bộ không có loop nào đang chạy cả.
+                task.get_loop().call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                # Loop của task đã đóng - stop_event.set() ở trên vẫn đủ để vòng
+                # lặp long-polling tự thoát trong lần lặp kế tiếp (nếu còn sống).
+                pass
+    except Exception as e:
+        if log_fn:
+            log_fn("system", "warning", f"⚠ Không tắt được listener: {e}")
+
 
 def create_venv_sync(project_id: str) -> dict:
     proj_dir = get_project_dir(project_id)
@@ -546,66 +567,6 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
             elif btype == "end":
                 if log_fn:
                     log_fn(bid, "info", f"🏁 [End] {label}")
-
-                # Hẹn giờ kết thúc: dừng cả listener + workflow khi đến giờ
-                enable_timer = bdata.get("endEnableTimer", False)
-                end_time_str = bdata.get("endTime", "18:00")  # HH:MM
-
-                if enable_timer:
-                    from datetime import datetime as _dt, timedelta
-                    import time as _time
-                    now = _dt.now()
-                    try:
-                        hh, mm = map(int, end_time_str.split(":"))
-                        target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-                        if target <= now:
-                            target = target + timedelta(days=1)
-                        wait_sec = (target - now).total_seconds()
-
-                        if log_fn:
-                            log_fn(bid, "info", f"⏰ [End] {label} - Hẹn giờ tắt lúc {end_time_str} (chờ {int(wait_sec)}s)")
-
-                        check_interval = 1.0
-                        waited = 0.0
-                        while waited < wait_sec:
-                            if stop_event and stop_event.is_set():
-                                break
-                            sleep_time = min(check_interval, wait_sec - waited)
-                            _time.sleep(sleep_time)
-                            waited += sleep_time
-
-                        if log_fn:
-                            log_fn(bid, "warning", f"⏰ [End] {label} - Đã đến giờ hẹn ({end_time_str}), dừng listener + workflow!")
-
-                        # 1) Set stop event cho listener (thread-safe, không cần event loop)
-                        try:
-                            from services.telegram_listener import _stop_events
-                            if workflow_id in _stop_events:
-                                _stop_events[workflow_id].set()
-                        except Exception as e:
-                            if log_fn:
-                                log_fn(bid, "warning", f"⚠ Không tắt được listener stop_event: {e}")
-
-                        # 2) Cancel task listener (cần chạy trong event loop)
-                        try:
-                            import asyncio as _asyncio
-                            from services.telegram_listener import _active_listeners
-                            task = _active_listeners.get(workflow_id)
-                            if task:
-                                try:
-                                    loop = _asyncio.get_running_loop()
-                                    loop.call_soon_threadsafe(task.cancel)
-                                except RuntimeError:
-                                    # Không có loop trong thread này → bỏ qua
-                                    pass
-                        except Exception as e:
-                            if log_fn:
-                                log_fn(bid, "warning", f"⚠ Không cancel được listener task: {e}")
-                    except Exception as e:
-                        if log_fn:
-                            log_fn(bid, "error", f"❌ [End] Lỗi hẹn giờ: {e}")
-
-                # Kết thúc workflow
                 break
             elif btype == "delay":
                 delay_sec = float(bdata.get("delaySeconds", 3))
@@ -634,9 +595,9 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         log_fn(bid, "info", f"🎧 [Telegram Listener] {label} - Đã nhận tin nhắn và chạy workflow")
                     current_input = bdata["_initial_input"]
                 else:
-                    # Manual run (bấm nút Chạy/Start) → DỪNG tại listener, tự bật listener
+                    # Manual run (bấm nút Chạy/Start) → bật Listener, workflow giữ RUNNING chờ tin nhắn
                     if log_fn:
-                        log_fn(bid, "info", f"⏭  [Telegram Listener] {label} - Dừng tại đây. Đang bật Listener để chờ tin nhắn...")
+                        log_fn(bid, "info", f"🎧 [Telegram Listener] {label} - Đang bật Listener để chờ tin nhắn...")
 
                     # Tự động bật Listener (nếu chưa bật) - chạy trong thread riêng có event loop
                     try:
@@ -646,21 +607,62 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             is_listener_running,
                         )
                         if not is_listener_running(workflow_id):
-                            tg_node = node
-                            tg_data = tg_node.get("data", {})
-                            tg_token = tg_data.get("telegramBotToken", "")
-                            tg_commands = tg_data.get("telegramCommands", [])
+                            # Dùng bdata (đã nội suy biến {{key}}/input.json ở trên), KHÔNG dùng
+                            # node["data"] thô - nếu không Bot Token dạng biến sẽ bị gửi nguyên văn.
+                            tg_token = bdata.get("telegramListenerToken") or bdata.get("telegramBotToken", "")
+
+                            # commands: list các {"command", "reply", "runWorkflow"} - giữ nguyên
+                            # cấu hình reply/runWorkflow để listener biết trả lời trực tiếp hay chạy tiếp workflow.
+                            # Lưu ý: command để trống (hoặc "*") là hợp lệ - nghĩa là khớp MỌI tin nhắn,
+                            # nên KHÔNG được lọc bỏ các dòng có command rỗng.
+                            raw_commands = bdata.get("telegramListenerCommands") or bdata.get("telegramCommands", "")
+                            tg_commands = []
+                            if isinstance(raw_commands, list):
+                                for c in raw_commands:
+                                    if isinstance(c, dict):
+                                        tg_commands.append({
+                                            "command": (c.get("command") or "").strip(),
+                                            "description": c.get("description", ""),
+                                            "reply": c.get("reply", ""),
+                                            "runWorkflow": bool(c.get("runWorkflow", False)),
+                                        })
+                                    else:
+                                        tg_commands.append({"command": str(c).strip(), "reply": "", "runWorkflow": True})
+                            else:
+                                tg_commands = [
+                                    {"command": c.strip(), "reply": "", "runWorkflow": True}
+                                    for c in str(raw_commands).split(",") if c.strip()
+                                ]
 
                             def _run_listener_in_thread():
                                 import asyncio as _aio
-                                _aio.run(start_telegram_listener(
-                                    project_id=project_id,
-                                    workflow_id=workflow_id,
-                                    workflow_name=workflow_name,
-                                    graph_json=graph_json,
-                                    bot_token=tg_token,
-                                    commands=tg_commands,
-                                ))
+                                from services.telegram_listener import _active_listeners as _listeners_map, _stop_events as _stops_map
+                                loop = _aio.new_event_loop()
+                                _aio.set_event_loop(loop)
+                                try:
+                                    # start_telegram_listener chỉ tạo task nền rồi trả về ngay,
+                                    # nên phải tự giữ loop sống bằng cách run_until_complete
+                                    # chính task đó - nếu không loop đóng lại và task bị hủy ngay.
+                                    loop.run_until_complete(start_telegram_listener(
+                                        project_id=project_id,
+                                        workflow_id=workflow_id,
+                                        workflow_name=workflow_name,
+                                        graph_json=graph_json,
+                                        bot_token=tg_token,
+                                        commands=tg_commands,
+                                    ))
+                                    task = _listeners_map.get(workflow_id)
+                                    if task:
+                                        try:
+                                            loop.run_until_complete(task)
+                                        except _aio.CancelledError:
+                                            pass
+                                finally:
+                                    # Task đã kết thúc (bị dừng/hủy/lỗi) - dọn khỏi bảng theo dõi
+                                    # để is_listener_running() phản ánh đúng trạng thái thật.
+                                    _listeners_map.pop(workflow_id, None)
+                                    _stops_map.pop(workflow_id, None)
+                                    loop.close()
 
                             _t = _threading_listener.Thread(
                                 target=_run_listener_in_thread,
@@ -670,7 +672,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             _t.start()
 
                             if log_fn:
-                                log_fn(bid, "success", f"✅ Listener đã được bật. Đang chờ tin nhắn Telegram...")
+                                log_fn(bid, "success", f"✅ Listener đã được bật. Đang lắng nghe tin nhắn Telegram...")
                         else:
                             if log_fn:
                                 log_fn(bid, "info", f"ℹ️ Listener đã chạy sẵn.")
@@ -678,8 +680,19 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         if log_fn:
                             log_fn(bid, "warning", f"⚠ Lỗi khi bật listener: {e}")
 
-                    # KHÔNG enqueue block tiếp theo - dừng tại listener
-                    continue  # bỏ qua xử lý block này, không chạy tiếp
+                    # Listener chỉ được bật ở đây (từ khối Start) và chỉ tắt khi
+                    # người dùng bấm Dừng - workflow giữ trạng thái RUNNING trong
+                    # lúc chờ, không tự đánh dấu "hoàn thành" khi chưa chạm khối End.
+                    import time as _time_listener
+                    while True:
+                        if stop_event and stop_event.is_set():
+                            if log_fn:
+                                log_fn(bid, "warning", f"⏹ Đang tắt Listener theo yêu cầu người dùng...")
+                            _stop_telegram_listener_sync(workflow_id, log_fn=log_fn)
+                            final_status = "stopped"
+                            break
+                        _time_listener.sleep(0.5)
+                    break
             elif btype == "telegram":
                 bot_token = interpolate(bdata.get("telegramBotToken", "")).strip()
                 chat_id = interpolate(bdata.get("telegramChatId", "")).strip()

@@ -47,7 +47,6 @@ export const createProject     = (data)       => api.post('/api/projects', data)
 export const updateProject     = (id, data)   => api.put(`/api/projects/${id}`, data)
 export const deleteProject     = (id)         => api.delete(`/api/projects/${id}`)
 export const reorderProjects   = (items)      => api.put('/api/projects/reorder/items', items)
-export const duplicateProject  = (id)         => api.post(`/api/projects/${id}/duplicate`)
 export const importProject     = (formData)   => api.post('/api/projects/import', formData, { headers: { 'Content-Type': 'multipart/form-data' }})
 // Note: exportProject and exportWorkflow will be handled directly via browser URL download
 
@@ -81,8 +80,7 @@ export const stopWorkflow      = (id)         => api.post(`/api/workflows/${id}/
 export const reorderWorkflows  = (projectId, items) => api.put(`/api/projects/${projectId}/workflows/reorder`, items)
 
 // ── Telegram Listener ─────────────────────────────────────
-export const startListener       = (wfId) => api.post(`/api/workflows/${wfId}/listener/start`)
-export const stopListener        = (wfId) => api.post(`/api/workflows/${wfId}/listener/stop`)
+// Listener chỉ bật/tắt theo nút Chạy/Dừng của workflow (xem BlockEditorModal), đây chỉ để đọc trạng thái.
 export const getListenerStatus   = (wfId) => api.get(`/api/workflows/${wfId}/listener/status`)
 
 // ── Run History ───────────────────────────────────────────

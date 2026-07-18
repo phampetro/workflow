@@ -9,6 +9,7 @@ import json
 import sqlite3
 import unicodedata
 import re
+import asyncio
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.parent  # thư mục gốc workflow/
@@ -69,7 +70,10 @@ async def create_venv(project_id: str) -> dict:
     venv_path = get_venv_path(project_id)
     venv_path.mkdir(parents=True, exist_ok=True)
 
-    result = subprocess.run(
+    # subprocess.run chặn (blocking) - chạy trong thread riêng để không đứng hình
+    # toàn bộ event loop (mọi request khác của app) trong lúc tạo venv (vài giây).
+    result = await asyncio.to_thread(
+        subprocess.run,
         [sys.executable, "-m", "venv", str(venv_path)],
         capture_output=True,
         text=True,
@@ -91,7 +95,8 @@ async def install_package(project_id: str, package: str) -> dict:
         await create_venv(project_id)
 
     pip = get_pip_path(project_id)
-    result = subprocess.run(
+    result = await asyncio.to_thread(
+        subprocess.run,
         [pip, "install", package, "--quiet"],
         capture_output=True,
         text=True,
@@ -107,7 +112,8 @@ async def install_package(project_id: str, package: str) -> dict:
 async def uninstall_package(project_id: str, package: str) -> dict:
     """Gỡ cài đặt package"""
     pip = get_pip_path(project_id)
-    result = subprocess.run(
+    result = await asyncio.to_thread(
+        subprocess.run,
         [pip, "uninstall", package, "-y"],
         capture_output=True,
         text=True,
@@ -128,7 +134,8 @@ async def list_packages(project_id: str) -> list[dict]:
     pip = get_pip_path(project_id)
     logger.info(f"pip path: {pip}")
 
-    result = subprocess.run(
+    result = await asyncio.to_thread(
+        subprocess.run,
         [pip, "list", "--format=json"],
         capture_output=True,
         text=True,

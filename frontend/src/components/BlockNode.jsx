@@ -1,5 +1,5 @@
-import React, { memo, useState } from 'react'
-import { Handle, Position } from '@xyflow/react'
+import React, { memo, useState, useEffect } from 'react'
+import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
 import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy } from 'lucide-react'
 
 const BLOCK_TYPES = {
@@ -103,7 +103,7 @@ const STATUS_STYLES = {
   error:   { border: '#ef4444', glow: '0 0 16px rgba(239,68,68,0.4)' },
 }
 
-const BlockNode = memo(({ data, selected }) => {
+const BlockNode = memo(({ id, data, selected }) => {
   const type = BLOCK_TYPES[data.type] || BLOCK_TYPES.python
   const runStatus = data.runStatus || 'idle'
   const style = STATUS_STYLES[runStatus] || STATUS_STYLES.idle
@@ -114,6 +114,14 @@ const BlockNode = memo(({ data, selected }) => {
   const inPos = data.inPosition || 'left'
   const outPos = data.outPosition || 'right'
   const isOutVertical = outPos === 'top' || outPos === 'bottom'
+
+  // React Flow cache vị trí handle theo lần đo đầu tiên; khi số lượng/vị trí
+  // handle đổi (đổi cổng IN/OUT, đổi loại block) phải báo lại để nó đo lại,
+  // nếu không cạnh nối vẫn tồn tại trong dữ liệu nhưng vẽ sai/mất trên canvas.
+  const updateNodeInternals = useUpdateNodeInternals()
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, inPos, outPos, hasSource, hasTarget, data.type, updateNodeInternals])
 
   return (
     <div
