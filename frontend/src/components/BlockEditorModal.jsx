@@ -687,7 +687,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       })
       toast.success('Đã lưu cấu hình khối!')
     } catch (e) {
-      console.log('Validate failed:', e)
+      // validation error already surfaced via form fields
     }
   }
 
