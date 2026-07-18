@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Terminal, Download } from 'lucide-react'
 import { createLogStream } from '../api/client'
-import { Drawer, Button, Space, Typography, Tag, Empty } from 'antd'
+import { Drawer, Button, Typography, Tag, Empty, Space } from 'antd'
 import useStore from '../store/useStore'
 
 const { Text } = Typography
 
-const LEVEL_STYLES = {
-  info:    { color: '#e5e5e5' },
-  success: { color: '#4ade80' },
-  warning: { color: '#fbbf24' },
-  error:   { color: '#ff5f57' },
+const LEVEL_CONFIG = {
+  info:    { color: '#a1a1aa', bg: 'transparent' },
+  success: { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' },
+  warning: { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' },
+  error:   { color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
 }
 
 export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
@@ -19,19 +19,15 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
   const bottomRef = useRef(null)
   const logContainerRef = useRef(null)
 
-  // Reset logs khi runId thay đổi
   useEffect(() => {
     if (!runId) {
       setLogs([])
       return
     }
 
-    // Bước 1: Hiển thị log đã có trong bộ nhớ Zustand (nếu có)
-    // Bộ nhớ này chỉ tồn tại trong phiên trình duyệt hiện tại (không persist)
     const cached = useStore.getState().runLogs[runId] || []
     setLogs([...cached])
 
-    // Bước 2: Kết nối SSE chỉ lấy phần mới chưa có trong cache
     const cleanup = createLogStream(
       runId,
       (data) => {
@@ -46,19 +42,19 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
         if (data.message && (
           data.message.includes('✅ Workflow hoàn thành') ||
           data.message.includes('❌ Workflow thất bại') ||
+          data.message.includes('❌ Lỗi hệ thống khi chạy workflow') ||
           data.message.includes('⏹ Đã dừng')
         )) {
           if (onFinished) onFinished()
         }
       },
       (err) => { console.error('SSE Error:', err) },
-      cached.length  // offset: chỉ lấy những dòng backend có nhưng Zustand chưa có
+      cached.length
     )
 
     return () => cleanup()
   }, [runId])
 
-  // Auto scroll xuống cuối khi có log mới
   useEffect(() => {
     if (autoScroll && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' })
@@ -85,46 +81,18 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
   return (
     <Drawer
       title={
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', minHeight: 32 }}>
-          {/* Left: title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Terminal size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
-            <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-              Tiến trình chạy
-            </span>
-            {runId && (
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border-default)' }}>
-                #{runId}
-              </span>
-            )}
-          </div>
-
-          {/* Right: status + actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 24 }}>
-            {isRunning && (
-              <div className="status-pill running">
-                <span className="pulse-dot" />
-                Đang chạy
-              </div>
-            )}
-            <button
-              onClick={exportLogs}
-              disabled={!logs.length}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '4px 10px', borderRadius: 6, cursor: logs.length ? 'pointer' : 'not-allowed',
-                background: 'transparent', border: '1px solid var(--border-default)',
-                color: logs.length ? 'var(--text-secondary)' : 'var(--text-muted)',
-                fontSize: '0.78rem', fontWeight: 500, lineHeight: 1,
-                transition: 'all 0.15s',
-                opacity: logs.length ? 1 : 0.4,
-              }}
-            >
-              <Download size={13} />
-              Lưu Log
-            </button>
-          </div>
-        </div>
+        <Space>
+          <Terminal size={16} color="var(--accent-primary)" />
+          <span style={{ fontWeight: 600 }}>Tiến trình chạy</span>
+          {runId && (
+            <Tag bordered={false} style={{ margin: 0, fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
+              #{runId}
+            </Tag>
+          )}
+          {isRunning && (
+            <Tag color="processing" style={{ margin: 0 }}>Đang chạy</Tag>
+          )}
+        </Space>
       }
       placement="bottom"
       height="42vh"
@@ -133,17 +101,23 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
       mask={false}
       styles={{
         body: { padding: 0, background: '#0d1117', display: 'flex', flexDirection: 'column' },
-        header: {
-          background: 'var(--bg-elevated)',
-          borderBottom: '1px solid var(--border-default)',
-          padding: '10px 20px',
-        }
+        header: { background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', padding: '12px 20px' }
       }}
+      extra={
+        <Button
+          icon={<Download size={14} />}
+          size="small"
+          onClick={exportLogs}
+          disabled={!logs.length}
+        >
+          Lưu Log
+        </Button>
+      }
     >
       <div
         ref={logContainerRef}
         onScroll={handleScroll}
-        style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '13px', lineHeight: 1.6 }}
+        style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '13px', lineHeight: 1.7 }}
       >
         {logs.length === 0 ? (
           <Empty
@@ -152,14 +126,30 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
             style={{ margin: '40px 0' }}
           />
         ) : (
-          logs.map((log, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem' }}>
-              <span style={{ color: '#888', flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
-              <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all', ...(LEVEL_STYLES[log.level] || LEVEL_STYLES.info) }}>
-                {log.msg}
-              </span>
-            </div>
-          ))
+          logs.map((log, i) => {
+            const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
+            return (
+              <div key={i} style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem' }}>
+                <span style={{ color: '#666', flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
+                <Tag
+                  style={{
+                    margin: 0,
+                    padding: '0 4px',
+                    fontSize: '10px',
+                    background: cfg.bg,
+                    color: cfg.color,
+                    border: 'none',
+                    flexShrink: 0
+                  }}
+                >
+                  {log.level?.toUpperCase()}
+                </Tag>
+                <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: cfg.color }}>
+                  {log.msg}
+                </span>
+              </div>
+            )
+          })
         )}
         <div ref={bottomRef} />
       </div>

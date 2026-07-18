@@ -125,7 +125,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
       open={open}
       onCancel={allowClose ? onClose : undefined}
       closable={allowClose}
-      maskClosable={allowClose}
+      mask={{ closable: allowClose }}
       footer={null}
       width={460}
       centered

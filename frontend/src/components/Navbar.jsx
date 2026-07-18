@@ -1,5 +1,5 @@
 import React from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Maximize } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Upload } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import useStore from '../store/useStore'
 
@@ -11,45 +11,20 @@ export default function Navbar({
   loading,
   onRefresh,
   onCreateProject,
+  onImport,
   isDashboard,
   onSwitchUser,
 }) {
   const theme = useStore((state) => state.theme)
   const setTheme = useStore((state) => state.setTheme)
-  const uiSize = useStore((state) => state.uiSize)
-  const setUiSize = useStore((state) => state.setUiSize)
   const currentUser = useStore((state) => state.currentUser)
 
   const settingsItems = [
     {
-      key: 'current-user',
-      label: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
-          <div style={{
-            width: '2.2rem', height: '2.2rem', borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent-primary), #3b82f6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 600, fontSize: '0.9rem', flexShrink: 0,
-            boxShadow: '0 2px 8px rgba(139, 92, 246, 0.4)'
-          }}>
-            {currentUser?.name?.charAt(0).toUpperCase() || '?'}
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.2 }}>
-              {currentUser?.name || 'Chưa chọn'}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Người dùng hiện tại</div>
-          </div>
-        </div>
-      ),
-      disabled: true,
-    },
-    { type: 'divider' },
-    {
       key: 'switch-user',
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <UserCog size="0.938rem" />
+          <UserCog size="0.875rem" />
           Chuyển người dùng
         </span>
       ),
@@ -60,37 +35,11 @@ export default function Navbar({
       key: 'theme',
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {theme === 'light' ? <Moon size="0.938rem" /> : <Sun size="0.938rem" />}
+          {theme === 'light' ? <Moon size="0.875rem" /> : <Sun size="0.875rem" />}
           {theme === 'light' ? 'Giao diện Tối' : 'Giao diện Sáng'}
         </span>
       ),
       onClick: () => setTheme(theme === 'light' ? 'dark' : 'light'),
-    },
-    {
-      key: 'ui-size',
-      label: (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Maximize size="0.938rem" />
-          Kích cỡ giao diện (Scale)
-        </span>
-      ),
-      children: [
-        {
-          key: 'size-small',
-          label: <span style={{ fontWeight: uiSize === 'small' ? 700 : 400 }}>Nhỏ gọn (Small)</span>,
-          onClick: () => setUiSize('small'),
-        },
-        {
-          key: 'size-medium',
-          label: <span style={{ fontWeight: uiSize === 'medium' ? 700 : 400 }}>Tiêu chuẩn (Medium)</span>,
-          onClick: () => setUiSize('medium'),
-        },
-        {
-          key: 'size-large',
-          label: <span style={{ fontWeight: uiSize === 'large' ? 700 : 400 }}>Mở rộng (Large)</span>,
-          onClick: () => setUiSize('large'),
-        },
-      ]
     },
   ]
 
@@ -123,6 +72,16 @@ export default function Navbar({
               >
                 Tạo Project
               </Button>
+              <Tooltip title="Import project từ file ZIP">
+                <Button
+                  type="default"
+                  onClick={onImport}
+                  icon={<Upload size="0.875rem" />}
+                  style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                >
+                  Import
+                </Button>
+              </Tooltip>
               <Tooltip title="Làm mới dữ liệu">
                 <Button
                   type="text"
@@ -185,6 +144,19 @@ export default function Navbar({
           </div>
         )}
         {stats && <div className="navbar-sep" />}
+
+        {/* User name */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 0.5rem' }}>
+          <div style={{
+            width: '1.75rem', height: '1.75rem', borderRadius: '50%',
+            background: 'linear-gradient(135deg, var(--accent-primary), #3b82f6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 600, fontSize: '0.75rem', flexShrink: 0,
+          }}>
+            {currentUser?.name?.charAt(0).toUpperCase() || '?'}
+          </div>
+          <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>{currentUser?.name}</span>
+        </div>
 
         <Dropdown menu={{ items: settingsItems }} placement="bottomRight" trigger={['click']}>
           <Tooltip title="Cài đặt hệ thống">

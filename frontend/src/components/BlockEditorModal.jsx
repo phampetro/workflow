@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getFileColumns, getFileColumnValues } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react'
-import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, message, Radio, Switch, Table, Tooltip } from 'antd'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, startListener, stopListener, getListenerStatus } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Power, PowerOff, Flag } from 'lucide-react'
+import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip } from 'antd'
+import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
 
 const { Text } = Typography
@@ -451,7 +452,7 @@ const PositionSelector = ({ value, onChange }) => {
   );
 };
 
-export default function BlockEditorModal({ node, open, onClose, onSave, inputKeys = [], workflowId }) {
+export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate, inputKeys = [], workflowId }) {
   const theme = useStore(state => state.theme)
   const [form] = Form.useForm()
   const [code, setCode] = useState(node.data.code || BLOCK_TEMPLATES.python.default)
@@ -462,8 +463,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [mergeAllInput, setMergeAllInput] = useState(node.data.mergeAllInput !== false) // default ON
   const [mergeFileSource, setMergeFileSource] = useState(node.data.mergeFileSource || 'input') // 'input' | 'output'
+  const [telegramFiles, setTelegramFiles] = useState([])
+  const [loadingTelegramFiles, setLoadingTelegramFiles] = useState(false)
+  const [listenerCommands, setListenerCommands] = useState(node.data.telegramListenerCommands || [{ command: '/hi', description: 'Gửi lời chào', reply: 'Xin chào! 👋', runWorkflow: false }])
+  const [listenerRunning, setListenerRunning] = useState(false)
+  const [listenerLoading, setListenerLoading] = useState(false)
   
   const telegramParseMode = Form.useWatch('telegramParseMode', form)
+  const telegramAction = Form.useWatch('telegramAction', form)
   const pivotInputFiles = Form.useWatch('pivotInputFiles', form)
   const pivotInputFile = pivotInputFiles?.[0] || ''
   const pivotHeaderRow = Form.useWatch('pivotHeaderRow', form)
@@ -484,7 +491,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const isPython = node.data.type === 'python'
   const isCondition = node.data.type === 'condition'
   const isDelay = node.data.type === 'delay'
+  const isEnd = node.data.type === 'end'
   const isTelegram = node.data.type === 'telegram'
+  const isTelegramListener = node.data.type === 'telegram_listener'
   const isEmail = node.data.type === 'email'
   const isDatabase = node.data.type === 'database'
   const isSqlToExcel = node.data.type === 'sql_to_excel'
@@ -497,7 +506,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   const [expandedStep, setExpandedStep] = useState(null)
 
   const hasCodeEditor = isPython || isSqlToExcel
-  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isDatabase || isTelegram || isBrowser
+  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isDatabase || isTelegram || isTelegramListener || isBrowser
 
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
@@ -506,8 +515,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       const fetchFiles = async () => {
         setLoadingFiles(true)
         try {
-          const res = await getWorkflowFiles(workflowId)
-          let files = res.data || []
+          const [inRes, outRes] = await Promise.all([
+            getWorkflowFiles(workflowId).catch(() => ({ data: [] })),
+            getWorkflowOutputFiles(workflowId).catch(() => ({ data: [] }))
+          ])
+          let files = [...(inRes.data || []), ...(outRes.data || [])]
           if (isMergeExcel || isPivotExcel) {
             files = files.filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.csv'))
           }
@@ -520,7 +532,40 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       }
       fetchFiles()
     }
-  }, [isMergeExcel, open, workflowId])
+  }, [isMergeExcel, isEmail, isPivotExcel, open, workflowId])
+
+  // Fetch output files cho Telegram attachment
+  useEffect(() => {
+    if (isTelegram && open && workflowId) {
+      const fetchTelegramFiles = async () => {
+        setLoadingTelegramFiles(true)
+        try {
+          const res = await getWorkflowOutputFiles(workflowId)
+          setTelegramFiles(res.data || [])
+        } catch (e) {
+          console.error(e)
+        } finally {
+          setLoadingTelegramFiles(false)
+        }
+      }
+      fetchTelegramFiles()
+    }
+  }, [isTelegram, open, workflowId])
+
+  // Fetch + poll listener status mỗi 5s
+  useEffect(() => {
+    if (!isTelegramListener || !open || !workflowId) return
+
+    const fetchStatus = () => {
+      getListenerStatus(workflowId).then(res => {
+        setListenerRunning(res.data?.running || false)
+      }).catch(() => {})
+    }
+
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 5000)
+    return () => clearInterval(interval)
+  }, [isTelegramListener, open, workflowId])
 
   useEffect(() => {
     if (isPivotExcel && open && workflowId && pivotInputFile) {
@@ -603,6 +648,32 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
     }
   }, [isPivotExcel, open, workflowId, pivotEnableSort, pivotSortColumn, pivotSortOrder, pivotInputFile, pivotHeaderRow])
 
+  const handleToggleListener = async () => {
+    setListenerLoading(true)
+    try {
+      if (listenerRunning) {
+        await stopListener(workflowId)
+        setListenerRunning(false)
+        toast.success('Đã tắt Listener')
+      } else {
+        // Save trước khi start để đảm bảo config mới nhất
+        const values = await form.validateFields()
+        if (onUpdate) {
+          await onUpdate(node.id, { ...values, telegramListenerCommands: listenerCommands })
+        } else {
+          onSave(node.id, { ...values, telegramListenerCommands: listenerCommands })
+        }
+        await startListener(workflowId)
+        setListenerRunning(true)
+        toast.success('Đã bật Listener')
+      }
+    } catch (e) {
+      toast.error(e.message || 'Lỗi')
+    } finally {
+      setListenerLoading(false)
+    }
+  }
+
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
@@ -612,8 +683,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
         ...(isSqlToExcel ? { sqlQuery: sqlCode } : {}),
         ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
         ...(isBrowser ? { steps: browserSteps } : {}),
+        ...(isTelegramListener ? { telegramListenerCommands: listenerCommands } : {}),
       })
-      message.success('Đã lưu cấu hình khối!')
+      toast.success('Đã lưu cấu hình khối!')
     } catch (e) {
       console.log('Validate failed:', e)
     }
@@ -627,10 +699,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
   return (
     <Drawer
       title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
-      width={hasRightPanel ? '75vw' : 360}
+      size={hasRightPanel ? 'large' : 'default'}
       onClose={onClose}
       open={true}
-      maskClosable={false}
+      mask={{ closable: false }}
       destroyOnHidden
       extra={
         <Space>
@@ -648,14 +720,33 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
         initialValues={{
             label: node.data.label || '',
             description: node.data.description || '',
-            condVariable: node.data.condVariable || '',
-            condOperator: node.data.condOperator || '==',
-            condValue: node.data.condValue || '',
+            ...(node.data.type === 'condition' ? (() => {
+              let logicalOp = node.data.logicalOperator || 'AND';
+              let conditions = node.data.conditions;
+              if (!conditions || conditions.length === 0) {
+                conditions = [{
+                  condVariable: node.data.condVariable || '',
+                  condOperator: node.data.condOperator || '==',
+                  condValue: node.data.condValue || ''
+                }];
+              }
+              return { logicalOperator: logicalOp, conditions: conditions };
+            })() : {
+                condVariable: node.data.condVariable || '',
+                condOperator: node.data.condOperator || '==',
+                condValue: node.data.condValue || '',
+            }),
+            endEnableTimer: node.data.endEnableTimer ?? false,
+            endTime: node.data.endTime || '18:00',
             delaySeconds: node.data.delaySeconds || 3,
             telegramBotToken: node.data.telegramBotToken || '',
             telegramChatId: node.data.telegramChatId || '',
             telegramMessage: node.data.telegramMessage || '',
             telegramParseMode: node.data.telegramParseMode || 'HTML',
+            telegramAttachments: node.data.telegramAttachments || [],
+            telegramAction: node.data.telegramAction || 'send',
+            telegramMessageId: node.data.telegramMessageId || '',
+            telegramListenerToken: node.data.telegramListenerToken || '',
             dbType: node.data.dbType || 'postgresql',
             dbHost: node.data.dbHost || '',
             dbPort: node.data.dbPort || '',
@@ -713,23 +804,68 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
 
           {isCondition && (
             <>
-              <Form.Item name="condVariable" label="Biến so sánh" rules={[{ required: true, message: 'Nhập tên biến' }]}>
-                <Input placeholder="VD: status" />
-              </Form.Item>
-              <Form.Item name="condOperator" label="Toán tử">
+              <Form.Item name="logicalOperator" label="Toán tử Logic" tooltip="Cách kết hợp khi có nhiều điều kiện">
                 <Select>
-                  <Select.Option value="==">Bằng (==)</Select.Option>
-                  <Select.Option value="!=">Khác (!=)</Select.Option>
-                  <Select.Option value=">">Lớn hơn (&gt;)</Select.Option>
-                  <Select.Option value="<">Nhỏ hơn (&lt;)</Select.Option>
-                  <Select.Option value=">=">Lớn hơn/Bằng (&gt;=)</Select.Option>
-                  <Select.Option value="<=">Nhỏ hơn/Bằng (&lt;=)</Select.Option>
-                  <Select.Option value="contains">Chứa (contains)</Select.Option>
+                  <Select.Option value="AND">Tất cả đều đúng (AND)</Select.Option>
+                  <Select.Option value="OR">Ít nhất một cái đúng (OR)</Select.Option>
                 </Select>
               </Form.Item>
-              <Form.Item name="condValue" label="Giá trị mốc" rules={[{ required: true, message: 'Nhập giá trị' }]}>
-                <Input placeholder="VD: success" />
-              </Form.Item>
+              
+              <Form.List name="conditions">
+                {(fields, { add, remove }) => (
+                  <>
+                    {fields.map(({ key, name, ...restField }) => (
+                      <div key={key} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'flex-start' }}>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'condVariable']}
+                          style={{ flex: 1, marginBottom: 0 }}
+                          rules={[{ required: true, message: 'Nhập biến' }]}
+                        >
+                          <Input placeholder="Biến (VD: npp)" />
+                        </Form.Item>
+                        
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'condOperator']}
+                          style={{ width: 120, marginBottom: 0 }}
+                        >
+                          <Select>
+                            <Select.Option value="==">==</Select.Option>
+                            <Select.Option value="!=">!=</Select.Option>
+                            <Select.Option value=">">&gt;</Select.Option>
+                            <Select.Option value="<">&lt;</Select.Option>
+                            <Select.Option value=">=">&gt;=</Select.Option>
+                            <Select.Option value="<=">&lt;=</Select.Option>
+                            <Select.Option value="contains">chứa</Select.Option>
+                          </Select>
+                        </Form.Item>
+
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'condValue']}
+                          style={{ flex: 1, marginBottom: 0 }}
+                        >
+                          <Input placeholder="Giá trị" />
+                        </Form.Item>
+
+                        <Button
+                          type="text"
+                          danger
+                          icon={<Trash2 size={16} />}
+                          onClick={() => remove(name)}
+                          style={{ marginTop: 4 }}
+                        />
+                      </div>
+                    ))}
+                    <Form.Item>
+                      <Button type="dashed" onClick={() => add({ condOperator: '==' })} block icon={<Plus size={16} />}>
+                        Thêm điều kiện
+                      </Button>
+                    </Form.Item>
+                  </>
+                )}
+              </Form.List>
               <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 24, border: '1px solid var(--border-default)' }}>
                 <Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
                 Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.
@@ -743,14 +879,51 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
             </Form.Item>
           )}
 
+          {isEnd && (
+            <>
+              <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)' }}>
+                <Flag size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
+                Khi workflow chạy đến khối này, nó sẽ kết thúc. Nếu bật hẹn giờ, khi đến giờ sẽ tự tắt cả <b>Listener</b> và <b>Workflow</b>.
+              </div>
+              <Form.Item
+                label="Bật hẹn giờ kết thúc"
+                name="endEnableTimer"
+                valuePropName="checked"
+                tooltip="Khi bật, workflow sẽ chờ đến giờ rồi mới tắt listener + workflow."
+              >
+                <Switch />
+              </Form.Item>
+              <Form.Item
+                label="Giờ kết thúc"
+                name="endTime"
+                tooltip="Khi đến giờ này, tự tắt Listener + Workflow."
+                rules={[{ required: true, message: 'Chọn giờ kết thúc' }]}
+              >
+                <Input type="time" style={{ width: '100%' }} />
+              </Form.Item>
+            </>
+          )}
+
           {isTelegram && (
             <>
+              <Form.Item label="Chế độ" name="telegramAction">
+                <Select>
+                  <Select.Option value="send">📤 Gửi mới</Select.Option>
+                  <Select.Option value="edit">✏️ Sửa tin nhắn</Select.Option>
+                  <Select.Option value="reply">↩️ Trả lời tin nhắn</Select.Option>
+                </Select>
+              </Form.Item>
               <Form.Item label="Bot Token" name="telegramBotToken" rules={[{ required: true, message: 'Nhập Bot Token' }]}>
                 <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
               </Form.Item>
               <Form.Item label="ID Người nhận / Nhóm" name="telegramChatId" rules={[{ required: true, message: 'Nhập Chat ID' }]}>
                 <AutoComplete options={autoCompleteOptions} placeholder="Nhập ID hoặc chọn biến" allowClear />
               </Form.Item>
+              {(telegramAction === 'edit' || telegramAction === 'reply') && (
+                <Form.Item label="Message ID" name="telegramMessageId" rules={[{ required: true, message: 'Nhập Message ID' }]} tooltip="Dùng biến {message_id} từ block Telegram trước đó.">
+                  <AutoComplete options={[{ value: '{message_id}' }, ...autoCompleteOptions]} placeholder="{message_id} hoặc nhập số" allowClear />
+                </Form.Item>
+              )}
               <Form.Item label="Nội dung tin nhắn" name="telegramMessage" rules={[{ required: true, message: 'Nhập nội dung' }]} tooltip="Gõ {{TEN_BIEN}} để chèn dữ liệu cấu hình.">
                 <Input.TextArea rows={4} placeholder="Nội dung tin nhắn..." />
               </Form.Item>
@@ -761,6 +934,32 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
                   <Select.Option value="">Không có</Select.Option>
                 </Select>
               </Form.Item>
+              {telegramAction !== 'edit' && (
+                <>
+                  <Divider style={{ margin: '16px 0 12px' }}>
+                    <Space><Paperclip size="0.875rem" /> Đính kèm tập tin</Space>
+                  </Divider>
+                  <Form.Item label="Đính kèm File" name="telegramAttachments" extra="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter.">
+                    <Select mode="tags" loading={loadingTelegramFiles} placeholder="Chọn file có sẵn hoặc gõ tên file và Enter" style={{ width: '100%' }}>
+                      {telegramFiles.map(f => (
+                        <Select.Option key={f.name || f} value={f.name || f}>{f.name || f}</Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </>
+              )}
+            </>
+          )}
+
+          {isTelegramListener && (
+            <>
+              <Form.Item label="Bot Token" name="telegramListenerToken" rules={[{ required: true, message: 'Nhập Bot Token' }]}>
+                <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
+              </Form.Item>
+              <div style={{ background: 'var(--bg-card)', padding: '10px 14px', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, border: '1px solid var(--border-default)', lineHeight: 1.6 }}>
+                <RadioIcon size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
+                Cấu hình các lệnh ở bảng bên phải. Bật Listener để bot bắt đầu lắng nghe.
+              </div>
             </>
           )}
 
@@ -793,9 +992,15 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
           )}
 
           {isSqlToExcel && (
-            <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
-              <Input placeholder="VD: bao_cao_thang.xlsx" />
-            </Form.Item>
+            <>
+              <div style={{ background: '#fffbe6', padding: '10px 14px', borderRadius: 8, fontSize: '0.85rem', color: '#d48806', marginBottom: 16, border: '1px solid #ffe58f', lineHeight: 1.6 }}>
+                <Info size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />
+                <b>Yêu cầu:</b> Khối này phải được nối phía sau khối <b>Cơ sở dữ liệu</b> để nhận cấu hình kết nối tự động.
+              </div>
+              <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
+                <Input placeholder="VD: bao_cao_thang.xlsx" />
+              </Form.Item>
+            </>
           )}
 
           {isMergeExcel && (
@@ -979,6 +1184,109 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                 </pre>
               </div>
             </div>
+          ) : isTelegramListener ? (
+            <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
+              {/* Header + Status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <RadioIcon size="1.25rem" color="var(--accent-primary)" />
+                  <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Danh sách lệnh</h2>
+                </div>
+                <Button
+                  type={listenerRunning ? 'default' : 'primary'}
+                  danger={listenerRunning}
+                  loading={listenerLoading}
+                  icon={listenerRunning ? <PowerOff size="0.875rem" /> : <Power size="0.875rem" />}
+                  onClick={handleToggleListener}
+                >
+                  {listenerRunning ? 'Tắt Listener' : 'Bật Listener'}
+                </Button>
+              </div>
+
+              {listenerRunning && (
+                <div style={{ background: '#10b98120', border: '1px solid #10b98150', borderRadius: 8, padding: '8px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 2s infinite' }} />
+                  <span style={{ color: '#10b981', fontWeight: 500, fontSize: '0.9rem' }}>Đang lắng nghe...</span>
+                </div>
+              )}
+
+              {/* Commands Table */}
+              {listenerCommands.map((cmd, idx) => (
+                <div key={idx} style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 14, marginBottom: 10, border: '1px solid var(--border-default)' }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <Input
+                      value={cmd.command}
+                      onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], command: e.target.value }; setListenerCommands(c) }}
+                      placeholder="/lệnh hoặc *"
+                      style={{ width: 120 }}
+                    />
+                    <Input
+                      value={cmd.description}
+                      onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], description: e.target.value }; setListenerCommands(c) }}
+                      placeholder="Mô tả lệnh (hiển thị trên app Telegram)"
+                      style={{ flex: 1 }}
+                    />
+                    <div style={{ flex: 1 }} />
+                    <Tooltip title={cmd.runWorkflow ? 'Chạy workflow tiếp' : 'Chỉ trả lời nhanh'}>
+                      <Switch
+                        size="small"
+                        checked={cmd.runWorkflow}
+                        onChange={v => { const c = [...listenerCommands]; c[idx] = { ...c[idx], runWorkflow: v }; setListenerCommands(c) }}
+                        checkedChildren="WF"
+                        unCheckedChildren="Reply"
+                      />
+                    </Tooltip>
+                    {listenerCommands.length > 1 && (
+                      <Button size="small" type="text" danger icon={<Trash2 size="0.8rem" />} onClick={() => setListenerCommands(listenerCommands.filter((_, i) => i !== idx))} />
+                    )}
+                  </div>
+                  <Input.TextArea
+                    value={cmd.reply}
+                    onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], reply: e.target.value }; setListenerCommands(c) }}
+                    placeholder="Mẫu trả lời..."
+                    rows={2}
+                    style={{ fontSize: '0.9rem' }}
+                  />
+                </div>
+              ))}
+
+              <Button type="dashed" block icon={<Plus size="0.875rem" />} onClick={() => setListenerCommands([...listenerCommands, { command: '', description: '', reply: '', runWorkflow: false }])}>
+                Thêm lệnh
+              </Button>
+
+              <Divider />
+              <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', lineHeight: 1.6, marginBottom: 16 }}>
+                <b>Hướng dẫn cơ bản:</b><br />
+                • <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <code>/</code> (vd: <code>/start</code>). Nhập <code>*</code> hoặc để trống để bắt <b>mọi tin nhắn</b>.<br />
+                • <b>Reply</b>: Bot trả lời ngay, không chạy workflow<br />
+                • <b>WF</b>: Bot trả lời + chạy các block phía sau<br />
+                • Dữ liệu truyền vào workflow: <code>{'{command}'}</code>, <code>{'{from_name}'}</code>, <code>{'{chat_id}'}</code>, <code>{'{message_id}'}</code>, <code>{'{text}'}</code>
+              </div>
+
+              <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', overflowX: 'auto' }}>
+                <div style={{ marginBottom: 12, fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Cú pháp HTML cho mẫu Reply:</div>
+                <Table
+                  size="small"
+                  pagination={false}
+                  columns={[
+                    { title: 'Chức năng', dataIndex: 'func', key: 'func', width: '25%' },
+                    { title: 'Cú pháp thẻ HTML', dataIndex: 'syntax', key: 'syntax', render: t => <code style={{ color: 'var(--accent-primary)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{t}</code> },
+                    { title: 'Kết quả hiển thị', dataIndex: 'result', key: 'result', width: '35%' }
+                  ]}
+                  dataSource={[
+                    { key: 1, func: 'In đậm', syntax: '<b>chữ in đậm</b>', result: <strong style={{ fontWeight: 'bold' }}>chữ in đậm</strong> },
+                    { key: 2, func: 'In nghiêng', syntax: '<i>chữ in nghiêng</i>', result: <em style={{ fontStyle: 'italic' }}>chữ in nghiêng</em> },
+                    { key: 3, func: 'Gạch chân', syntax: '<u>chữ gạch chân</u>', result: <u style={{ textDecoration: 'underline' }}>chữ gạch chân</u> },
+                    { key: 4, func: 'Gạch ngang', syntax: '<s>gạch ngang</s>', result: <del style={{ textDecoration: 'line-through' }}>gạch ngang</del> },
+                    { key: 5, func: 'Link ẩn', syntax: '<a href="http://example.com/">Tên link</a>', result: <a href="#">Tên link (Click được)</a> },
+                    { key: 6, func: 'Code 1 dòng', syntax: '<code>đoạn code ngắn</code>', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>đoạn code ngắn</code> },
+                    { key: 7, func: 'Khối Code', syntax: '<pre>code nhiều dòng</pre>', result: 'Khối code nền xám' },
+                    { key: 8, func: 'Trích dẫn', syntax: '<blockquote>đoạn trích dẫn</blockquote>', result: 'Thanh dọc thụt lề' },
+                    { key: 9, func: 'Giấu chữ', syntax: '<tg-spoiler>bí mật</tg-spoiler>', result: 'Làm mờ, bấm vào hiện' },
+                  ]}
+                />
+              </div>
+            </div>
           ) : isTelegram ? (
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
@@ -1072,7 +1380,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                     setMergeAllInput(checked)
                     if (checked) {
                       // Tự động chọn tất cả input
-                      const inputFiles = availableFiles.filter(f => f.source === 'input')
+                      const inputFiles = availableFiles.filter(f => f.type === 'input')
                       form.setFieldsValue({ selectedFiles: inputFiles.map(f => f.name) })
                     }
                   }}
@@ -1120,7 +1428,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                     extra="File đầu tiên được chọn sẽ giữ nguyên tiêu đề"
                   >
                     <FileSelectionTable
-                      files={availableFiles.filter(f => f.source === mergeFileSource)}
+                      files={availableFiles.filter(f => f.type === mergeFileSource)}
                       loading={loadingFiles}
                     />
                   </Form.Item>
@@ -1133,10 +1441,10 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8 }}>File sẽ được ghép (tất cả Input):</div>
                   {loadingFiles ? (
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Đang tải...</div>
-                  ) : availableFiles.filter(f => f.source === 'input').length === 0 ? (
+                  ) : availableFiles.filter(f => f.type === 'input').length === 0 ? (
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Chưa có file nào trong thư mục Input.</div>
                   ) : (
-                    availableFiles.filter(f => f.source === 'input').map((f, i) => (
+                    availableFiles.filter(f => f.type === 'input').map((f, i) => (
                       <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border-default)' }}>
                         <span style={{ color: 'var(--accent-primary)', fontWeight: 700, width: 20, textAlign: 'center' }}>{i + 1}</span>
                         <span style={{ fontSize: '0.9rem' }}>{f.name}</span>

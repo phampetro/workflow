@@ -14,11 +14,11 @@ import WorkflowHistoryPanel from '../components/WorkflowHistoryPanel'
 import InputJsonModal from '../components/InputJsonModal'
 import {
   ArrowLeft, Play, Square, Calendar, Terminal, History,
-  Save, Loader, CheckCircle, AlertCircle, Database, Table, Files
+  Save, Loader, CheckCircle, AlertCircle, Database, Table, Files, RefreshCw, Trash2
 } from 'lucide-react'
-import { Button, Drawer, Space, Input, message } from 'antd'
+import { Button, Drawer, Space, Input, message, Popconfirm } from 'antd'
 import toast from 'react-hot-toast'
-import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory } from '../api/client'
+import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory } from '../api/client'
 import useStore from '../store/useStore'
 
 const nodeTypes = { block: BlockNode }
@@ -31,7 +31,7 @@ const BLOCK_GROUPS = [
   { title: 'Tự động hóa Web', items: ['browser'] },
   { title: 'Xử lý Dữ liệu', items: ['merge_excel', 'pivot_excel'] },
   { title: 'Cơ sở dữ liệu', items: ['database', 'sql_to_excel'] },
-  { title: 'Gửi tin nhắn', items: ['telegram', 'email'] }
+  { title: 'Gửi tin nhắn', items: ['telegram', 'telegram_listener', 'email'] }
 ];
 
 const DEFAULT_GRAPH = {
@@ -58,6 +58,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const [inputData, setInputData] = useState({})
   const [inputKeys, setInputKeys] = useState([])
   const [saveStatus, setSaveStatus] = useState('saved')
+  const historyPanelRef = useRef(null)
 
   const currentRunId = useStore((s) => s.activeRuns[workflow?.id] || null)
   const isRunning = !!currentRunId
@@ -70,6 +71,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   }, [currentRunId])
 
   const [wfData, setWfData] = useState(workflow)
+  const [checkingStatus, setCheckingStatus] = useState(true)
   const saveTimer = useRef(null)
   const reactFlowWrapper = useRef(null)
   const { screenToFlowPosition } = useReactFlow()
@@ -88,14 +90,35 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             ...n,
             data: { ...n.data, onEdit: undefined, onDelete: undefined },
           }))
+          // Remove duplicate nodes by ID (keep first occurrence)
+          const seenIds = new Set()
+          const uniqueNodes = loadedNodes.filter(n => {
+            if (seenIds.has(n.id)) return false
+            seenIds.add(n.id)
+            return true
+          })
           const loadedEdges = (graph.edges || []).map(e => {
             const cleanEdge = { ...e, type: 'custom' }
             cleanEdge.markerEnd = { type: MarkerType.ArrowClosed, color: '#6c63ff' }
             cleanEdge.data = { ...cleanEdge.data, onDelete: handleDeleteEdge }
             return cleanEdge
           })
-          setNodes(loadedNodes)
-          setEdges(loadedEdges)
+          // Remove duplicate edges
+          const seenEdgeIds = new Set()
+          const uniqueEdges = loadedEdges.filter(e => {
+            const edgeId = `${e.source}-${e.target}-${e.sourceHandle || 'default'}-${e.targetHandle || 'default'}`
+            if (seenEdgeIds.has(edgeId)) return false
+            seenEdgeIds.add(edgeId)
+            return true
+          })
+          // Sync nodeIdCounter lên cao hơn ID lớn nhất đang có để tránh tạo ID trùng
+          uniqueNodes.forEach(n => {
+            const parts = n.id.split('-')
+            const num = parseInt(parts[parts.length - 1], 10)
+            if (!isNaN(num) && num >= nodeIdCounter) nodeIdCounter = num + 1
+          })
+          setNodes(uniqueNodes)
+          setEdges(uniqueEdges)
         } catch { setNodesFromDefault() }
       } else {
         setNodesFromDefault()
@@ -121,8 +144,18 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           useStore.getState().clearActiveRun(workflow.id)
         }
       }
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setCheckingStatus(false))
   }, [workflow?.id])
+
+  const handleDeleteHistory = async () => {
+    try {
+      await deleteRunHistory(wfData?.id)
+      message.success('Đã xóa lịch sử chạy')
+      historyPanelRef.current?.loadHistory()
+    } catch (err) {
+      toast.error('Lỗi xóa lịch sử: ' + err.message)
+    }
+  }
 
   const setNodesFromDefault = () => {
     setNodes(DEFAULT_GRAPH.nodes)
@@ -146,6 +179,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           const cleanData = { ...n.data }
           delete cleanData.onDelete
           delete cleanData.onEdit
+          delete cleanData.onDuplicate
           return {
             id: n.id,
             type: n.type,
@@ -219,6 +253,25 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     triggerAutoSave(newNodes, newEdges)
   }
 
+  const duplicateNode = (nodeId) => {
+    // Dùng updater function để luôn đọc state nodes mới nhất, tránh stale closure
+    setNodes(prev => {
+      const original = prev.find((n) => n.id === nodeId)
+      if (!original) return prev
+      const newId = `${original.data.type}-${++nodeIdCounter}`
+      const newNode = {
+        ...original,
+        id: newId,
+        position: { x: original.position.x + 40, y: original.position.y + 80 },
+        selected: false,
+        data: { ...original.data, onEdit: undefined, onDelete: undefined, onDuplicate: undefined },
+      }
+      const newNodes = [...prev, newNode]
+      triggerAutoSave(newNodes, edges)
+      return newNodes
+    })
+  }
+
   const handleSaveBlock = (nodeId, data) => {
     const newNodes = nodes.map((n) =>
       n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
@@ -227,6 +280,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     setEditingNode(null)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveGraph(newNodes, edges)
+  }
+
+  const handleUpdateNode = async (nodeId, data) => {
+    const newNodes = nodes.map((n) =>
+      n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
+    )
+    setNodes(newNodes)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    return saveGraph(newNodes, edges)
   }
 
   const handleRun = async () => {
@@ -274,7 +336,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     (event) => {
       event.preventDefault()
       const type = event.dataTransfer.getData('application/reactflow')
-      if (typeof type === 'undefined' || !type) return
+      // Guard: bỏ qua nếu không phải block type hợp lệ từ palette (tránh nhầm với drag node nội bộ)
+      if (!type || !BLOCK_TYPES[type]) return
 
       const position = screenToFlowPosition({
         x: event.clientX,
@@ -295,6 +358,11 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           delaySeconds: type === 'delay' ? 3 : undefined,
           telegramMessage: type === 'telegram' ? 'Xin chào, đây là tin nhắn từ Workflow!\nDữ liệu: {input_data}' : undefined,
           telegramParseMode: type === 'telegram' ? 'HTML' : undefined,
+          telegramAttachments: type === 'telegram' ? [] : undefined,
+          telegramAction: type === 'telegram' ? 'send' : undefined,
+          telegramListenerCommands: type === 'telegram_listener' ? [
+            { command: '/hi', reply: 'Xin chào! 👋', runWorkflow: false }
+          ] : undefined,
           dbType: type === 'database' ? 'postgresql' : undefined,
           dbHost: type === 'database' ? 'localhost' : undefined,
           dbPort: type === 'database' ? 5432 : undefined,
@@ -316,6 +384,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       ...n.data,
       onEdit: () => openEditor(n.id),
       onDelete: () => deleteNode(n.id),
+      onDuplicate: () => duplicateNode(n.id),
     },
   }))
 
@@ -366,7 +435,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             {isRunning ? (
               <Button danger icon={<Square size="0.875rem" />} onClick={handleStop}>Dừng</Button>
             ) : (
-              <Button type="primary" icon={<Play size="0.875rem" />} onClick={handleRun} disabled={!wfData?.id}>Chạy</Button>
+              <Button type="primary" icon={<Play size="0.875rem" />} onClick={handleRun} disabled={!wfData?.id || checkingStatus}>
+                {checkingStatus ? 'Đang tải...' : 'Chạy'}
+              </Button>
             )}
           </Space>
         </div>
@@ -442,11 +513,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             }}
             style={{ background: 'transparent' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size="0.062rem" color="rgba(255,255,255,0.04)" />
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(255,255,255,0.04)" />
             <Controls style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }} />
             <MiniMap
               style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }}
-              nodeColor={(n) => BLOCK_TYPES[n.data?.type]?.color || '#6c63ff'}
+              nodeColor={(n) => {
+                if (!n?.data?.type) return '#6c63ff'
+                return BLOCK_TYPES[n.data.type]?.color || '#6c63ff'
+              }}
               maskColor="rgba(0,0,0,0.6)"
             />
           </ReactFlow>
@@ -465,12 +539,32 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       <Drawer
         title="Lịch sử chạy Workflow"
         placement="right"
-        width="50vw"
+        size="large"
         onClose={() => setShowHistory(false)}
         open={showHistory}
-        bodyStyle={{ padding: 16 }}
+        styles={{ body: { padding: 16 } }}
+        extra={
+          <Space>
+            <Button type="default" icon={<RefreshCw size={14} />} size="small" onClick={() => historyPanelRef.current?.loadHistory()}>
+              Làm mới
+            </Button>
+            <Popconfirm title="Xóa toàn bộ lịch sử chạy?" onConfirm={handleDeleteHistory} okText="Xóa" cancelText="Hủy" placement="bottomRight">
+              <Button type="primary" danger icon={<Trash2 size={14} />} size="small">
+                Xóa lịch sử
+              </Button>
+            </Popconfirm>
+          </Space>
+        }
       >
-        <WorkflowHistoryPanel workflowId={wfData?.id} />
+        <WorkflowHistoryPanel 
+          ref={historyPanelRef}
+          workflowId={wfData?.id} 
+          onViewLog={(runId) => {
+            setViewingRunId(runId)
+            setShowHistory(false)
+            setShowLogs(true)
+          }}
+        />
       </Drawer>
 
       {editingNode && (
@@ -479,6 +573,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           open={!!editingNode}
           onClose={() => setEditingNode(null)}
           onSave={handleSaveBlock}
+          onUpdate={handleUpdateNode}
           inputKeys={inputKeys}
           workflowId={wfData?.id}
         />
@@ -615,7 +710,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           white-space: nowrap;
         }
 
-        .canvas-area { flex: 1; background: var(--bg-base); position: relative; }
+        .canvas-area { flex: 1; background: var(--bg-base); position: relative; min-width: 400px; min-height: 300px; }
         
         .save-status { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); padding: 0 0.75rem; }
         .save-status svg { color: var(--accent-success); }
@@ -629,6 +724,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         .react-flow__controls button:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
         .react-flow__controls svg path { fill: currentColor !important; }
         .react-flow__edge-path { stroke-width: 2 !important; }
+        .react-flow__node { overflow: visible !important; }
       `}</style>
     </div>
   )

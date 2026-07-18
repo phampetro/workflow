@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe } from 'lucide-react'
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy } from 'lucide-react'
 
 const BLOCK_TYPES = {
   start: {
@@ -37,6 +37,13 @@ const BLOCK_TYPES = {
     color: '#0088cc',
     gradient: 'linear-gradient(135deg, #0088cc, #33aadd)',
     description: 'Gửi tin nhắn Telegram',
+  },
+  telegram_listener: {
+    label: 'TG Listener',
+    icon: <Radio size="0.875rem" />,
+    color: '#0088cc',
+    gradient: 'linear-gradient(135deg, #00bfff, #0088cc)',
+    description: 'Lắng nghe lệnh Telegram',
   },
   email: {
     label: 'Email',
@@ -170,12 +177,23 @@ const BlockNode = memo(({ data, selected }) => {
         {data.type === 'condition' && (
           <div className="block-condition">
             <span className="condition-label">if</span>
-            <code>{data.condVariable || '?'} {data.condOperator || '=='} {data.condValue || '?'}</code>
+            <code>
+              {(() => {
+                const conds = data.conditions || [{
+                  condVariable: data.condVariable,
+                  condOperator: data.condOperator || '==',
+                  condValue: data.condValue
+                }];
+                if (!conds[0]?.condVariable) return '? == ?';
+                if (conds.length === 1) return `${conds[0].condVariable} ${conds[0].condOperator} ${conds[0].condValue}`;
+                return `${conds.length} conditions (${data.logicalOperator || 'AND'})`;
+              })()}
+            </code>
           </div>
         )}
       </div>
 
-      {/* Actions (show on hover via CSS) */}
+      {/* Actions - always visible */}
       <div className="block-actions">
         <button
           className="block-action-btn"
@@ -183,6 +201,14 @@ const BlockNode = memo(({ data, selected }) => {
           title="Chỉnh sửa"
         >
           <Settings size="0.875rem" />
+        </button>
+        <button
+          className="block-action-btn"
+          onClick={(e) => { e.stopPropagation(); data.onDuplicate?.() }}
+          title="Sao chép khối"
+          style={{ color: 'var(--accent-primary)' }}
+        >
+          <Copy size="0.875rem" />
         </button>
         <button
           className="block-action-btn danger"
@@ -247,11 +273,7 @@ const BlockNode = memo(({ data, selected }) => {
 
         .block-node:hover {
           transform: translateY(-2px);
-        }
-
-        .block-node:hover .block-actions {
-          opacity: 1;
-          transform: translateY(0);
+          box-shadow: 0 0 0 2px var(--block-color), var(--shadow-md);
         }
 
         .block-header {
@@ -344,8 +366,17 @@ const BlockNode = memo(({ data, selected }) => {
           flex-direction: row;
           gap: 6px;
           opacity: 0;
-          transform: translateY(4px);
+          pointer-events: none;
+          transform: translateY(10px);
           transition: all var(--transition-fast);
+          z-index: 100;
+        }
+
+        .block-node:hover .block-actions,
+        .block-node.selected .block-actions {
+          opacity: 1;
+          pointer-events: auto;
+          transform: translateY(0);
         }
 
         .block-action-btn {

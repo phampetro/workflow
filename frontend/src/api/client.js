@@ -18,9 +18,13 @@ api.interceptors.request.use((config) => {
 
 // Interceptor log lỗi
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // 204 No Content -> trả về rỗng, không lỗi
+    if (res.status === 204) return res
+    return res
+  },
   (err) => {
-    const msg = err.response?.data?.error || err.message || 'Lỗi kết nối'
+    const msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Lỗi kết nối'
     console.error('[API Error]', err.config?.url, msg)
     return Promise.reject(new Error(msg))
   }
@@ -42,7 +46,10 @@ export const getProject        = (id)         => api.get(`/api/projects/${id}`)
 export const createProject     = (data)       => api.post('/api/projects', data)
 export const updateProject     = (id, data)   => api.put(`/api/projects/${id}`, data)
 export const deleteProject     = (id)         => api.delete(`/api/projects/${id}`)
-export const reorderProjects   = (items)      => api.put('/api/projects/reorder', items)
+export const reorderProjects   = (items)      => api.put('/api/projects/reorder/items', items)
+export const duplicateProject  = (id)         => api.post(`/api/projects/${id}/duplicate`)
+export const importProject     = (formData)   => api.post('/api/projects/import', formData, { headers: { 'Content-Type': 'multipart/form-data' }})
+// Note: exportProject and exportWorkflow will be handled directly via browser URL download
 
 // ── Packages ──────────────────────────────────────────────
 export const getPackages       = (projectId)  => api.get(`/api/projects/${projectId}/packages`)
@@ -56,6 +63,7 @@ export const createWorkflow    = (projectId, data) => api.post(`/api/projects/${
 export const getWorkflow       = (id)         => api.get(`/api/workflows/${id}`)
 export const updateWorkflow    = (id, data)   => api.put(`/api/workflows/${id}`, data)
 export const duplicateWorkflow = (id)         => api.post(`/api/workflows/${id}/duplicate`)
+export const importWorkflow    = (projectId, formData) => api.post(`/api/projects/${projectId}/workflows/import`, formData, { headers: { 'Content-Type': 'multipart/form-data' }})
 export const getWorkflowInput  = (id)         => api.get(`/api/workflows/${id}/input`)
 export const updateWorkflowInput = (id, data) => api.put(`/api/workflows/${id}/input`, data)
 export const getWorkflowFiles    = (id)         => api.get(`/api/workflows/${id}/files`)
@@ -72,8 +80,14 @@ export const runWorkflow       = (id)         => api.post(`/api/workflows/${id}/
 export const stopWorkflow      = (id)         => api.post(`/api/workflows/${id}/stop`)
 export const reorderWorkflows  = (projectId, items) => api.put(`/api/projects/${projectId}/workflows/reorder`, items)
 
+// ── Telegram Listener ─────────────────────────────────────
+export const startListener       = (wfId) => api.post(`/api/workflows/${wfId}/listener/start`)
+export const stopListener        = (wfId) => api.post(`/api/workflows/${wfId}/listener/stop`)
+export const getListenerStatus   = (wfId) => api.get(`/api/workflows/${wfId}/listener/status`)
+
 // ── Run History ───────────────────────────────────────────
 export const getRunHistory     = (workflowId, limit = 20) => api.get(`/api/workflows/${workflowId}/runs?limit=${limit}`)
+export const deleteRunHistory  = (workflowId) => api.delete(`/api/workflows/${workflowId}/runs`)
 export const getRun            = (runId)      => api.get(`/api/runs/${runId}`)
 
 // ── Schedules ─────────────────────────────────────────────
@@ -90,7 +104,9 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
   es.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data)
-      if (data.type !== 'connected' && data.type !== 'ping') {
+      // Backend sends: { run_id, block_id, level, message, time }
+      // Only process if it has the expected fields
+      if (data.run_id && data.message) {
         onMessage(data)
       }
     } catch (_) {}

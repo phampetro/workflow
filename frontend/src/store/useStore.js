@@ -104,13 +104,6 @@ const useStore = create((set, get) => ({
     set({ theme })
   },
 
-  uiSize: localStorage.getItem('pyflow_uiSize') || 'medium',
-  setUiSize: (uiSize) => {
-    localStorage.setItem('pyflow_uiSize', uiSize)
-    document.documentElement.setAttribute('data-size', uiSize)
-    set({ uiSize })
-  },
-
   sidebarOpen: true,
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 

@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy } from 'lucide-react'
-import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow } from '../api/client'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History } from 'lucide-react'
+import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow } from '../api/client'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
-import SortableCard from '../components/SortableCard'
-import { Modal, Form, Input, Button, Tabs, Table, Tag, Popconfirm, Typography, Divider, Space, Card, Alert, Tooltip, Spin, Empty, Dropdown } from 'antd'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Divider, Space, Card, Alert, Tooltip, Spin, Empty, Dropdown, Badge, Statistic, Row, Col, message } from 'antd'
+const { Text, Title } = Typography
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
 
@@ -21,7 +23,6 @@ const STATUS_CONFIG = {
 }
 
 export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
-  const [activeTab, setActiveTab] = useState('workflows')
   const [workflows, setWorkflows] = useState([])
   const [packages, setPackages] = useState([])
   const [runHistory, setRunHistory] = useState([])
@@ -41,6 +42,10 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
   const [deletingWf, setDeletingWf] = useState(null)
   const [initingVenv, setInitingVenv] = useState(false)
 
+  // Modal states for Packages and History
+  const [packagesModalOpen, setPackagesModalOpen] = useState(false)
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
+
   // Đọc trạng thái đang chạy từ Zustand (nguồn sự thật duy nhất)
   const activeRuns = useStore((s) => s.activeRuns)
   // Chỉ dùng Zustand, không dùng running_count từ server (có thể stale)
@@ -56,23 +61,16 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
       setWorkflows(wfList)
 
       // Đồng bộ Zustand từ server:
-      // - Nếu server nói wf đang chạy nhưng Zustand chưa biết → gọn lại run history để lấy run_id
-      // - Nếu Zustand nói đang chạy nhưng server nói không → clear Zustand
+      // - Server nói wf đang chạy nhưng Zustand chưa biết → lấy run_id
+      // - Server nói không chạy nhưng Zustand vẫn giữ → clear
       const store = useStore.getState()
       for (const wf of wfList) {
         const isActiveInZustand = !!store.activeRuns[wf.id]
-        const isRunningOnServer = wf.running_count > 0
+        const isRunningOnServer = wf.is_running
 
-        if (isRunningOnServer && !isActiveInZustand) {
-          // Server đang chạy nhưng Zustand chưa biết → lấy run_id mới nhất
-          getRunHistory(wf.id, 1).then(r => {
-            const latest = r.data?.[0]
-            if (latest && latest.status === 'running') {
-              store.setActiveRun(wf.id, latest.id)
-            }
-          }).catch(() => {})
+        if (isRunningOnServer && !isActiveInZustand && wf.running_run_id) {
+          store.setActiveRun(wf.id, wf.running_run_id)
         } else if (!isRunningOnServer && isActiveInZustand) {
-          // Server đã kết thúc nhưng Zustand vẫn giữ → clear
           store.clearActiveRun(wf.id)
         }
       }
@@ -123,8 +121,6 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
   }, [proj.id, workflows])
 
   useEffect(() => { loadWorkflows() }, [loadWorkflows])
-  useEffect(() => { if (activeTab === 'packages') loadPackages() }, [activeTab, loadPackages])
-  useEffect(() => { if (activeTab === 'history') loadHistory() }, [activeTab, loadHistory])
 
   const handleCloseWfModal = () => {
     setIsWfModalOpen(false)
@@ -205,6 +201,38 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
     }
   }
 
+  const handleExportWorkflow = (wf) => {
+    window.location.href = `http://localhost:8000/api/workflows/${wf.id}/export`
+    toast.success(`Đang tải xuống workflow ${wf.name}...`)
+  }
+
+  const wfFileInputRef = useRef(null)
+  const [importingWf, setImportingWf] = useState(false)
+
+  const handleImportWfClick = () => {
+    wfFileInputRef.current?.click()
+  }
+
+  const handleWfFileChange = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    
+    setImportingWf(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    try {
+      const res = await importWorkflow(proj.id, formData)
+      setWorkflows((prev) => [res.data, ...prev])
+      toast.success('Import workflow thành công!')
+    } catch (err) {
+      toast.error('Lỗi import workflow: ' + err.message)
+    } finally {
+      setImportingWf(false)
+      if (wfFileInputRef.current) wfFileInputRef.current.value = ''
+    }
+  }
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const handleDragEnd = async ({ active, over }) => {
@@ -241,6 +269,17 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
     }
   }
 
+  const handleStopWorkflow = async (wf, e) => {
+    e.stopPropagation()
+    if (!isWfRunning(wf.id)) return
+    try {
+      await stopWorkflow(wf.id)
+      toast.success(`Đã gửi lệnh dừng ${wf.name}`)
+    } catch (err) {
+      toast.error('Lỗi dừng workflow: ' + err.message)
+    }
+  }
+
   const handleInstall = async () => {
     if (!pkgInput.trim() || installingPkg) return
     setInstallingPkg(true)
@@ -271,7 +310,8 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
     try {
       await initVenv(proj.id)
       toast.success('Khởi tạo Venv thành công!')
-      proj.venv_ready = 1
+      // Trigger parent to refresh project data
+      if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true })
       await loadPackages()
     } catch (e) {
       toast.error('Lỗi tạo venv: ' + e.message)
@@ -303,38 +343,46 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
   }
 
   const pkgColumns = [
-    { title: 'STT', key: 'index', width: 50, align: 'center', render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{index + 1}</span> },
-    { title: 'Package', dataIndex: 'name', key: 'name', render: text => <strong style={{ color: 'var(--accent-secondary)', fontSize: '0.85rem' }}>{text}</strong> },
+    { title: 'STT', key: 'index', width: 60, align: 'center', render: (_, __, index) => <Text type="secondary" style={{ fontSize: '0.8rem' }}>{index + 1}</Text> },
+    { title: 'Package', dataIndex: 'name', key: 'name', render: text => <Text strong style={{ fontSize: '0.875rem' }}>{text}</Text> },
     {
-      title: 'Version', dataIndex: 'version', key: 'version', width: 150, align: 'center',
-      render: text => (
-        <span style={{
-          display: 'inline-block', padding: '1px 8px', borderRadius: 4,
-          background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)',
-          color: '#c4b5fd', fontSize: '0.78rem', fontFamily: 'var(--font-mono)'
-        }}>{text || '-'}</span>
-      )
+      title: 'Phiên bản', dataIndex: 'version', key: 'version', width: 140, align: 'center',
+      render: text => <Text style={{ fontSize: '0.8125rem', color: 'var(--text-primary)' }}>{text || '-'}</Text>
     },
-    { title: 'Hành động', key: 'action', width: 90, align: 'center', render: (_, record) => (
-      <Popconfirm title="Gỡ package này?" onConfirm={() => handleUninstall(record.name)}>
-        <Button size="small" type="text" danger icon={<Trash2 size="0.875rem" />} />
+    { title: 'Thao tác', key: 'action', width: 80, align: 'center', render: (_, record) => (
+      <Popconfirm
+        title="Gỡ package này?"
+        description="Package sẽ bị xóa khỏi môi trường."
+        onConfirm={() => handleUninstall(record.name)}
+        okText="Gỡ"
+        cancelText="Hủy"
+        okButtonProps={{ danger: true }}
+      >
+        <Button type="text" size="small" danger icon={<Trash2 size="0.875rem" />} style={{ height: 22, padding: '0 6px', lineHeight: 1 }} />
       </Popconfirm>
     )}
   ]
 
   const historyColumns = [
-    { title: 'STT', key: 'index', width: 50, align: 'center', render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{index + 1}</span> },
-    { title: 'Workflow', key: 'workflow', render: (_, r) => <strong style={{ color: 'var(--accent-secondary)', fontSize: '0.85rem' }}>{workflows.find(w => w.id === r.workflow_id)?.name || r.workflow_id}</strong> },
+    { title: 'STT', key: 'index', width: 50, align: 'center', render: (_, __, index) => <Text type="secondary" style={{ fontSize: '0.8rem' }}>{index + 1}</Text> },
+    { title: 'Workflow', key: 'workflow', render: (_, r) => <Text strong style={{ fontSize: '0.875rem' }}>{workflows.find(w => w.id === r.workflow_id)?.name || r.workflow_id}</Text> },
     {
       title: 'Trạng thái', dataIndex: 'status', key: 'status', align: 'center',
       render: s => {
-        const cls = s === 'running' ? 'running' : s === 'success' ? 'success' : s === 'error' ? 'error' : s === 'scheduled' ? 'scheduled' : 'idle'
-        const label = STATUS_CONFIG[s]?.label || s
+        const statusMap = {
+          running: { color: 'processing', text: 'Đang chạy', icon: <Loader size="0.75rem" className="spinning" /> },
+          success: { color: 'success', text: 'Thành công', icon: <CheckCircle size="0.75rem" /> },
+          error: { color: 'error', text: 'Lỗi', icon: <XCircle size="0.75rem" /> },
+          scheduled: { color: 'warning', text: 'Đã lên lịch', icon: <Clock size="0.75rem" /> },
+          idle: { color: 'default', text: 'Chờ', icon: null },
+          pending: { color: 'default', text: 'Chờ', icon: null },
+          stopped: { color: 'default', text: 'Đã dừng', icon: null },
+        }
+        const cfg = statusMap[s] || statusMap.idle
         return (
-          <div className={`status-pill ${cls}`} style={{ display: 'inline-flex', margin: '0 auto' }}>
-            {s === 'running' && <span className="pulse-dot" />}
-            {label}
-          </div>
+          <Tag color={cfg.color} icon={cfg.icon} style={{ margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {cfg.text}
+          </Tag>
         )
       }
     },
@@ -342,193 +390,140 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
       title: 'Kích hoạt bởi', key: 'trigger', align: 'center',
       render: (_, r) => {
         const type = r.triggered_by?.startsWith('schedule:') ? 'Lịch hẹn' : 'Thủ công'
-        return <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{type}: {formatDate(r.started_at)}</span>
+        const icon = r.triggered_by?.startsWith('schedule:') ? <Clock size="0.75rem" /> : <Play size="0.75rem" />
+        return (
+          <Text type="secondary" style={{ fontSize: '0.8rem' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {icon} {type}: {formatDate(r.started_at)}
+            </span>
+          </Text>
+        )
       }
     },
-    { title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration', align: 'center', render: ms => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatDuration(ms)}</span> },
+    {
+      title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration', align: 'center',
+      render: ms => (
+        <Text type="secondary" style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>
+          {formatDuration(ms)}
+        </Text>
+      )
+    },
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-base)' }}>
       {/* Header */}
       <div className="section-header" style={{ height: 'var(--navbar-height)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2.5rem', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-default)', margin: 0, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <Button 
             type="text" 
             onClick={onBack} 
-            icon={<ArrowLeft size="1rem" />}
-            style={{ color: 'var(--text-secondary)' }}
+            icon={<ArrowLeft size="0.875rem" />}
+            style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
           >
             Quay lại
           </Button>
-          <div style={{ width: 1, height: '1.25rem', background: 'var(--border-default)' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ width: '0.75rem', height: '0.75rem', borderRadius: '50%', background: proj.color || 'var(--accent-primary)', boxShadow: `0 0 10px ${proj.color || 'var(--accent-primary)'}` }} />
-            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              {proj.name}
-              <span style={{ color: 'var(--border-subtle)' }}>|</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 400 }}>{proj.description || 'Chưa có mô tả'}</span>
-            </h2>
+          <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
+          <Button
+            type="primary"
+            icon={<Plus size="0.875rem" />}
+            onClick={() => setIsWfModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            Workflow mới
+          </Button>
+          <input type="file" accept=".zip" style={{ display: 'none' }} ref={wfFileInputRef} onChange={handleWfFileChange} />
+          <Button
+            type="default"
+            icon={<Upload size="0.875rem" />}
+            onClick={handleImportWfClick}
+            loading={importingWf}
+            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            Import
+          </Button>
+          <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
+          <Button
+            type="default"
+            icon={<Package size="0.875rem" />}
+            onClick={() => { loadPackages(); setPackagesModalOpen(true); }}
+            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            Packages
+          </Button>
+          <Button
+            type="default"
+            icon={<History size="0.875rem" />}
+            onClick={() => { loadHistory(); setHistoryModalOpen(true); }}
+            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            Lịch sử
+          </Button>
+          <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: proj.color || 'var(--accent-primary)', boxShadow: `0 0 6px ${proj.color || 'var(--accent-primary)'}` }} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{proj.name}</span>
+            {proj.description && (
+              <>
+                <span style={{ color: 'var(--border-subtle)' }}>|</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{proj.description}</span>
+              </>
+            )}
           </div>
         </div>
         <Space>
           {!proj.venv_ready && (
             <Button 
+              danger 
+              icon={<Terminal size="0.875rem" />} 
               onClick={handleInitVenv} 
-              loading={initingVenv} 
+              loading={initingVenv}
+              style={{ fontWeight: 500 }}
             >
               Khởi tạo Venv
             </Button>
           )}
-          <Button 
-            type="primary" 
-            icon={<Plus size="1rem" />} 
-            onClick={() => setIsWfModalOpen(true)}
-          >
-            Workflow mới
-          </Button>
         </Space>
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, padding: '0.75rem 2.5rem', overflowY: 'auto' }}>
-        <Tabs 
-          activeKey={activeTab} 
-          onChange={setActiveTab}
-          size="small"
-          tabBarGutter={24}
-          items={[
-            {
-              key: 'workflows',
-              label: <span style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Workflow size="0.875rem"/>Workflows ({workflows.length})</span>,
-              children: (
-                <Spin spinning={loading}>
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                    <SortableContext items={workflows.map(w => w.id)} strategy={rectSortingStrategy}>
-                      <div className="grid-workflows" style={{ marginTop: '1.5rem' }}>
-                        {workflows.map((wf) => {
-                          const wColor = wf.color || 'var(--accent-primary)'
-                          return (
-                          <SortableCard key={wf.id} id={wf.id}>
-                            <div 
-                        onClick={() => onOpenWorkflow(wf)}
-                        className="project-row"
-                        style={{ '--project-color': wColor }}
-                      >
-                        {/* Row 1: Logo, Name & Desc, Options */}
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem', marginBottom: '1.25rem' }}>
-                          <div style={{ 
-                            width: '2.75rem', height: '2.75rem', borderRadius: '0.625rem', 
-                            background: `color-mix(in srgb, ${wColor} 15%, transparent)`, 
-                            color: wColor, display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                            flexShrink: 0, border: `1px solid color-mix(in srgb, ${wColor} 30%, transparent)`
-                          }}>
-                            <Workflow size="1.375rem" strokeWidth={2} />
-                          </div>
-                          
-                          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                            <Tooltip title={wf.name} placement="top" mouseEnterDelay={0.5}>
-                              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {wf.name}
-                              </h3>
-                            </Tooltip>
-                            <Tooltip title={wf.description || 'Chưa có mô tả'} placement="top" mouseEnterDelay={0.5}>
-                              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {wf.description || 'Chưa có mô tả'}
-                              </p>
-                            </Tooltip>
-                          </div>
-                          
-                          <Dropdown menu={{ items: [
-                            { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); handleEditWf(wf); } },
-                            { key: 'duplicate', label: 'Sao chép', icon: <Copy size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); handleDuplicateWorkflow(wf.id); } },
-                            { type: 'divider' },
-                            { key: 'delete', label: 'Xóa Workflow', icon: <Trash2 size="0.938rem"/>, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); handleDeleteWorkflow(wf.id); } }
-                          ]}} trigger={['click']} placement="bottomRight">
-                            <Button className="project-menu-btn" type="text" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} />
-                          </Dropdown>
-                        </div>
-
-                        {/* Row 2: Time, WF Count, Status */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', borderTop: '1px solid var(--border-default)', paddingTop: '0.875rem' }}>
-                          <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Clock size="0.812rem" /> {formatDate(wf.updated_at)}</span>
-                          </div>
-                          
-                          <Button 
-                            type={isWfRunning(wf.id) ? 'default' : 'primary'} 
-                            icon={isWfRunning(wf.id) ? <Loader size="0.875rem" className="spinning"/> : <Play size="0.875rem" />}
-                            onClick={(e) => handleRunWorkflow(wf, e)}
-                            disabled={deletingWf === wf.id || isWfRunning(wf.id)}
-                            style={{ borderRadius: 6, fontWeight: 500 }}
-                          >
-                            {isWfRunning(wf.id) ? 'Đang chạy' : 'Chạy'}
-                          </Button>
-                        </div>
-                      </div>
-                    </SortableCard>
-                          )
-                        })}
-                  </div>
-                </SortableContext>
-              </DndContext>
-                </Spin>
-              )
-            },
-            {
-              key: 'packages',
-              label: <span style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}><Package size="0.875rem"/>Packages</span>,
-              children: (
-                <div style={{ maxWidth: 800, marginTop: 16 }}>
-                  {!proj.venv_ready && (
-                    <Alert message="Venv chưa sẵn sàng. Nhấn 'Khởi tạo Venv' ở góc trên bên phải để bắt đầu." type="warning" showIcon style={{ marginBottom: 24 }} />
-                  )}
-                  <Space.Compact size="small" style={{ width: '100%', marginBottom: 16 }}>
-                    <Input 
-                      size="small"
-                      placeholder="Tên package, VD: pandas, scikit-learn..." 
-                      value={pkgInput} 
-                      onChange={e => setPkgInput(e.target.value)}
-                      onPressEnter={handleInstall}
+        <Spin spinning={loading}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={workflows.map(w => w.id)} strategy={rectSortingStrategy}>
+              <div className="grid-workflows" style={{ marginTop: '1.5rem' }}>
+                {workflows.length === 0 ? (
+                  <Empty 
+                    image={Empty.PRESENTED_IMAGE_SIMPLE} 
+                    description={
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Chưa có workflow nào. Nhấn <strong>Workflow mới</strong> để tạo.
+                      </span>
+                    }
+                    style={{ gridColumn: '1 / -1', padding: '3rem' }}
+                  />
+                ) : workflows.map((wf) => {
+                  const wColor = wf.color || 'var(--accent-primary)'
+                  return (
+                    <WorkflowCard
+                      key={wf.id}
+                      workflow={wf}
+                      color={wColor}
+                      onOpen={() => onOpenWorkflow(wf)}
+                      onEdit={() => handleEditWf(wf)}
+                      onDuplicate={() => handleDuplicateWorkflow(wf.id)}
+                      onExport={() => handleExportWorkflow(wf)}
+                      onDelete={() => handleDeleteWorkflow(wf.id)}
+                      isRunning={isWfRunning(wf.id)}
+                      onRun={(e) => handleRunWorkflow(wf, e)}
+                      onStop={(e) => handleStopWorkflow(wf, e)}
                     />
-                    <Button size="small" type="primary" icon={<Download size="0.75rem" />} onClick={handleInstall} loading={installingPkg} disabled={!pkgInput.trim()}>
-                      Cài đặt
-                    </Button>
-                    <Button size="small" icon={<RefreshCw size="0.75rem" />} onClick={loadPackages} loading={pkgLoading} />
-                  </Space.Compact>
-                  <Table 
-                    dataSource={packages} 
-                    columns={pkgColumns} 
-                    rowKey="name" 
-                    loading={pkgLoading}
-                    pagination={{ pageSize: 10, size: 'small' }}
-                    size="small"
-                  />
-                </div>
-              )
-            },
-            {
-              key: 'history',
-              label: <span style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}><Terminal size="0.875rem"/>Lịch sử chạy</span>,
-              children: (
-                <div style={{ marginTop: 16 }}>
-                  <div className="section-header">
-                    <h3 className="section-title">Lịch sử chạy gần đây</h3>
-                    <Button size="small" icon={<RefreshCw size="0.75rem"/>} onClick={loadHistory} loading={histLoading}>Làm mới</Button>
-                  </div>
-                  <Table 
-                    dataSource={runHistory} 
-                    columns={historyColumns} 
-                    rowKey="id" 
-                    loading={histLoading}
-                    pagination={{ pageSize: 10, size: 'small' }}
-                    size="small"
-                  />
-                </div>
-              )
-            }
-          ]}
-        />
+                  )
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </Spin>
       </div>
 
       {/* Modal */}
@@ -579,6 +574,372 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
         </Form>
       </Modal>
 
+      {/* Packages Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingRight: 36, width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexShrink: 0 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 8,
+                background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', boxShadow: '0 2px 8px rgba(114, 46, 209, 0.3)', flexShrink: 0
+              }}>
+                <Package size="1.125rem" />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>Quản lý Packages</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, lineHeight: 1.3 }}>Python Environment</div>
+              </div>
+            </div>
+
+            {/* Input + nút Cài đặt — nằm trong title, ngang hàng icon */}
+            <Space.Compact style={{ width: 320, flexShrink: 0, marginLeft: 'auto' }} onKeyDown={(e) => e.stopPropagation()}>
+              <Input
+                placeholder="Cài package, ví dụ: pandas"
+                value={pkgInput}
+                onChange={e => setPkgInput(e.target.value)}
+                onPressEnter={handleInstall}
+                size="small"
+                style={{ fontSize: '0.8125rem' }}
+              />
+              <Button
+                size="small"
+                type="primary"
+                icon={<Download size="0.75rem" />}
+                onClick={handleInstall}
+                loading={installingPkg}
+                disabled={!pkgInput.trim()}
+                style={{
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                  border: 'none',
+                  color: '#fff',
+                  boxShadow: '0 2px 4px rgba(22, 119, 255, 0.25)'
+                }}
+              >
+                Cài đặt
+              </Button>
+            </Space.Compact>
+          </div>
+        }
+        open={packagesModalOpen}
+        onCancel={() => setPackagesModalOpen(false)}
+        footer={null}
+        width={800}
+        destroyOnHidden
+        styles={{ body: { padding: '0 0 16px 0' } }}
+      >
+        {!proj.venv_ready ? (
+          <div style={{ padding: '3rem 2rem', textAlign: 'center' }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: 16, background: 'rgba(250, 173, 20, 0.1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem'
+            }}>
+              <Terminal size="2rem" style={{ color: '#faad14' }} />
+            </div>
+            <Title level={5} style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Python Environment chưa sẵn sàng</Title>
+            <Text type="secondary" style={{ display: 'block', marginBottom: '1.5rem' }}>
+              Cần khởi tạo Virtual Environment trước khi quản lý packages.
+            </Text>
+            <Button type="primary" danger icon={<Terminal size="0.875rem" />} onClick={handleInitVenv} loading={initingVenv}>
+              Khởi tạo Venv
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* Stats Row */}
+            <div style={{ padding: '16px 24px', background: 'var(--bg-base)', borderBottom: '1px solid var(--border-subtle)', margin: '0 -0px' }}>
+              <Row gutter={24} justify="space-between">
+                <Col span={8}>
+                  <div style={{ textAlign: 'center' }}>
+                    <Statistic
+                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tổng packages</span>}
+                      value={packages.length}
+                      styles={{ content: { fontSize: '1.5rem', color: 'var(--text-primary)' } }}
+                      prefix={<Package size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                    />
+                  </div>
+                </Col>
+                <Col span={8}>
+                  <div style={{ textAlign: 'center' }}>
+                    <Statistic
+                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Môi trường</span>}
+                      value="Active"
+                      styles={{ content: { fontSize: '1.5rem', color: '#52c41a' } }}
+                      prefix={<CheckCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                    />
+                  </div>
+                </Col>
+                <Col span={8}>
+                  <div style={{ textAlign: 'center' }}>
+                    <Statistic
+                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Python</span>}
+                      value="3.x"
+                      styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-primary)' } }}
+                      prefix={<Terminal size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                    />
+                  </div>
+                </Col>
+              </Row>
+            </div>
+
+            {/* Table Section */}
+            <div style={{ padding: '16px 24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text type="secondary" style={{ fontSize: '0.8rem' }}>
+                  Đã cài đặt {packages.length} package{packages.length !== 1 ? 's' : ''}
+                </Text>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<RefreshCw size="0.75rem" />}
+                  onClick={() => loadPackages()}
+                  loading={pkgLoading}
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Làm mới
+                </Button>
+              </div>
+
+              <Table
+                dataSource={packages}
+                columns={pkgColumns}
+                rowKey="name"
+                loading={pkgLoading}
+                pagination={{
+                  pageSize: 8,
+                  showSizeChanger: false,
+                  showTotal: (total) => `${total} packages`,
+                }}
+                size="small"
+                style={{ marginTop: 8 }}
+              />
+            </div>
+          </>
+        )}
+      </Modal>
+
+      {/* History Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'white', boxShadow: '0 2px 8px rgba(24, 144, 255, 0.3)'
+            }}>
+              <History size="1.125rem" />
+            </div>
+            <div>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Lịch sử chạy</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>Run History</div>
+            </div>
+          </div>
+        }
+        open={historyModalOpen}
+        onCancel={() => setHistoryModalOpen(false)}
+        footer={null}
+        width={800}
+        destroyOnHidden
+        styles={{ body: { padding: '0 0 16px 0' } }}
+      >
+        {/* Stats Row */}
+        <div style={{ padding: '16px 24px', background: 'var(--bg-base)', borderBottom: '1px solid var(--border-subtle)', margin: '0 -0px' }}>
+          <Row gutter={24} justify="space-between">
+            <Col span={8}>
+              <div style={{ textAlign: 'center' }}>
+                <Statistic
+                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tổng lần chạy</span>}
+                  value={runHistory.length}
+                  styles={{ content: { fontSize: '1.5rem', color: 'var(--text-primary)' } }}
+                  prefix={<History size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                />
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ textAlign: 'center' }}>
+                <Statistic
+                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Thành công</span>}
+                  value={runHistory.filter(r => r.status === 'success').length}
+                  styles={{ content: { fontSize: '1.5rem', color: '#52c41a' } }}
+                  prefix={<CheckCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                />
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ textAlign: 'center' }}>
+                <Statistic
+                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Lỗi</span>}
+                  value={runHistory.filter(r => r.status === 'error').length}
+                  styles={{ content: { fontSize: '1.5rem', color: '#ff4d4f' } }}
+                  prefix={<XCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
+                />
+              </div>
+            </Col>
+          </Row>
+        </div>
+
+        {/* Table Section */}
+        <div style={{ padding: '16px 24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text type="secondary" style={{ fontSize: '0.8rem' }}>
+              {runHistory.length} bản ghi
+            </Text>
+            <Button
+              type="text"
+              size="small"
+              icon={<RefreshCw size="0.75rem" />}
+              onClick={() => loadHistory()}
+              loading={histLoading}
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Làm mới
+            </Button>
+          </div>
+
+          <Table
+            dataSource={runHistory}
+            columns={historyColumns}
+            rowKey="id"
+            loading={histLoading}
+            pagination={{
+              pageSize: 8,
+              showSizeChanger: false,
+              showTotal: (total) => `${total} bản ghi`,
+            }}
+            size="small"
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      </Modal>
+
+    </div>
+  )
+}
+
+// WorkflowCard component với drag-drop tích hợp
+function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, onDelete, isRunning, onRun, onStop }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: workflow.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+    zIndex: isDragging ? 10 : 'auto',
+  }
+
+  const formatDate = (iso) => {
+    if (!iso) return '-'
+    try {
+      const d = new Date(iso)
+      return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    } catch { return iso }
+  }
+
+  // Trạng thái: đang chạy > lỗi gần đây > sẵn sàng (chưa chạy) > thành công
+  const lastStatus = workflow.last_run_status
+  let statusBadge = null
+  if (isRunning) {
+    statusBadge = { text: 'Đang chạy', color: '#1677ff', bg: 'rgba(22, 119, 255, 0.1)', dot: <Loader size="0.75rem" className="spinning"/> }
+  } else if (lastStatus === 'error') {
+    statusBadge = { text: 'Lỗi gần đây', color: '#ff4d4f', bg: 'rgba(255, 77, 79, 0.1)', dot: <XCircle size="0.75rem"/> }
+  } else if (lastStatus === 'success') {
+    statusBadge = { text: 'Thành công', color: '#52c41a', bg: 'rgba(82, 196, 26, 0.1)', dot: <CheckCircle size="0.75rem"/> }
+  } else if (lastStatus === 'stopped') {
+    statusBadge = { text: 'Đã dừng', color: '#faad14', bg: 'rgba(250, 173, 20, 0.1)', dot: <AlertCircle size="0.75rem"/> }
+  } else {
+    statusBadge = { text: 'Sẵn sàng', color: '#8c8c8c', bg: 'rgba(140, 140, 140, 0.1)', dot: <CheckCircle size="0.75rem"/> }
+  }
+
+  const items = [
+    { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
+    { key: 'duplicate', label: 'Sao chép', icon: <Copy size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onDuplicate(); } },
+    { key: 'export', label: 'Export ZIP', icon: <Download size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
+    { type: 'divider' },
+    { key: 'delete', label: 'Xóa Workflow', icon: <Trash2 size="0.938rem"/>, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } }
+  ]
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ ...style, '--wf-color': color }}
+      className="workflow-row"
+      {...attributes}
+      {...listeners}
+      onClick={onOpen}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
+        <div style={{
+          width: '2.75rem', height: '2.75rem', borderRadius: '0.625rem',
+          background: `color-mix(in srgb, ${color} 15%, transparent)`,
+          color: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`
+        }}>
+          <Workflow size="1.375rem" strokeWidth={2} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <Tooltip title={workflow.name} placement="top" mouseEnterDelay={0.5}>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {workflow.name}
+            </h3>
+          </Tooltip>
+          <Tooltip title={workflow.description || 'Chưa có mô tả'} placement="top" mouseEnterDelay={0.5}>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {workflow.description || 'Chưa có mô tả'}
+            </p>
+          </Tooltip>
+        </div>
+
+        <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+          <Button className="project-menu-btn" type="text" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} />
+        </Dropdown>
+      </div>
+
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        borderTop: '1px solid var(--border-default)', paddingTop: '0.875rem', marginTop: '0.5rem',
+        gap: '0.75rem'
+      }}>
+        {/* Cột 1: date trên, badge dưới — canh giữa */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1 }}>
+            <Clock size="0.75rem" style={{ flexShrink: 0 }} />
+            <span>{formatDate(workflow.updated_at)}</span>
+          </span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '2px 8px', borderRadius: 10,
+            background: statusBadge.bg, color: statusBadge.color,
+            fontSize: '0.7rem', fontWeight: 500, whiteSpace: 'nowrap', lineHeight: 1
+          }}>
+            {statusBadge.dot}
+            {statusBadge.text}
+          </span>
+        </div>
+
+        {/* Cột 2: nút chạy/dừng — canh giữa */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+          <Button
+            type={isRunning ? 'default' : 'primary'}
+            icon={isRunning ? <Loader size="0.875rem" className="spinning"/> : <Play size="0.875rem" />}
+            onClick={(e) => { e.stopPropagation(); isRunning ? onStop(e) : onRun(e); }}
+            danger={isRunning}
+            style={{ borderRadius: 6, fontWeight: 500 }}
+          >
+            {isRunning ? 'Dừng' : 'Chạy'}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

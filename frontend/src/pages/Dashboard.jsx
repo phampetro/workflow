@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, FolderOpen, Clock, Trash2, Settings, ChevronRight, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor } from 'lucide-react'
-import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects } from '../api/client'
+import { Plus, FolderOpen, Clock, Trash2, Settings, ChevronRight, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Copy, Download, GripVertical } from 'lucide-react'
+import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects, duplicateProject } from '../api/client'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
-import SortableCard from '../components/SortableCard'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Button, Modal, Form, Input, Card, Dropdown, Spin, Empty, Tag, Space, Alert, Tooltip } from 'antd'
 import toast from 'react-hot-toast'
 
@@ -168,6 +169,22 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     })
   }
 
+  const handleDuplicate = async (id) => {
+    try {
+      const res = await duplicateProject(id)
+      setProjects((prev) => [res.data, ...prev])
+      toast.success('Đã sao chép project!')
+      loadData()
+    } catch (e) {
+      toast.error('Lỗi sao chép project: ' + e.message)
+    }
+  }
+
+  const handleExport = (project) => {
+    window.location.href = `http://localhost:8000/api/projects/${project.id}/export`
+    toast.success(`Đang tải xuống project ${project.name}...`)
+  }
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const handleDragEnd = async ({ active, over }) => {
@@ -213,15 +230,17 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     <div style={{ padding: '2rem 2.5rem', overflowY: 'auto', height: '100%' }}>
       {/* Greeting */}
       <div style={{ marginBottom: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-          {currentUser ? `Xin chào, ${currentUser.name}! 👋` : 'Workspace'}
-        </h2>
-        <p style={{ color: 'var(--text-muted)', margin: '3px 0 0 0', fontSize: '0.83rem' }}>
-          {currentUser
-            ? `Bạn có ${projects.length} project${projects.length !== 1 ? 's' : ''} — chúc bạn làm việc hiệu quả!`
-            : `${projects.length} project${projects.length !== 1 ? 's' : ''} — Quản lý tất cả workflows của bạn`
-          }
-        </p>
+        <div>
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+            {currentUser ? `Xin chào, ${currentUser.name}! 👋` : 'Workspace'}
+          </h2>
+          <p style={{ color: 'var(--text-muted)', margin: '3px 0 0 0', fontSize: '0.83rem' }}>
+            {currentUser
+              ? `Bạn có ${projects.length} project${projects.length !== 1 ? 's' : ''} — chúc bạn làm việc hiệu quả!`
+              : `${projects.length} project${projects.length !== 1 ? 's' : ''} — Quản lý tất cả workflows của bạn`
+            }
+          </p>
+        </div>
       </div>
 
       {/* Error state */}
@@ -249,14 +268,15 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
             <SortableContext items={projects.map(p => p.id)} strategy={rectSortingStrategy}>
               <div className="grid-projects">
                 {projects.map((project) => (
-                  <SortableCard key={project.id} id={project.id}>
-                    <ProjectCard
-                      project={project}
-                      onOpen={() => onOpenProject?.(project)}
-                      onEdit={() => handleEdit(project)}
-                      onDelete={() => handleDelete(project.id)}
-                    />
-                  </SortableCard>
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    onOpen={() => onOpenProject?.(project)}
+                    onEdit={() => handleEdit(project)}
+                    onDuplicate={() => handleDuplicate(project.id)}
+                    onExport={() => handleExport(project)}
+                    onDelete={() => handleDelete(project.id)}
+                  />
                 ))}
               </div>
             </SortableContext>
@@ -343,7 +363,23 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   )
 }
 
-function ProjectCard({ project, onOpen, onEdit, onDelete }) {
+function ProjectCard({ project, onOpen, onEdit, onDuplicate, onExport, onDelete }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: project.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+    zIndex: isDragging ? 10 : 'auto',
+  }
+
   const formatDate = (iso) => {
     if (!iso) return '-'
     try {
@@ -361,12 +397,16 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
 
   let statusText = 'Đang tạo venv'
   let statusColor = 'warning'
-  
+
+  // Ưu tiên: đang chạy > lỗi gần đây > đã có venv > đang tạo venv
   if (project.running_count > 0) {
     statusText = 'Đang chạy'
     statusColor = 'processing'
+  } else if (project.last_run_status === 'error') {
+    statusText = 'Lỗi gần đây'
+    statusColor = 'error'
   } else if (project.venv_ready) {
-    statusText = 'Sẵn sàng'
+    statusText = 'Đã có venv'
     statusColor = 'success'
   }
 
@@ -375,26 +415,32 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
 
   const items = [
     { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
+    { key: 'duplicate', label: 'Sao chép', icon: <Copy size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onDuplicate(); } },
+    { key: 'export', label: 'Export ZIP', icon: <Download size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
     { type: 'divider' },
     { key: 'delete', label: 'Xóa Project', icon: <Trash2 size="0.938rem" />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },
   ]
 
   return (
-    <div 
-      onClick={onOpen}
+    <div
+      ref={setNodeRef}
+      style={{ ...style, '--proj-color': pColor }}
       className="project-row"
-      style={{ '--project-color': pColor }}
+      {...attributes}
+      {...listeners}
+      onClick={onOpen}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem', marginBottom: '1.25rem' }}>
-        <div style={{ 
-          width: '2.75rem', height: '2.75rem', borderRadius: '0.625rem', 
-          background: `color-mix(in srgb, ${pColor} 15%, transparent)`, 
-          color: pColor, display: 'flex', alignItems: 'center', justifyContent: 'center', 
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem', paddingLeft: '1.25rem' }}>
+        <div style={{
+          width: '2.75rem', height: '2.75rem', borderRadius: '0.625rem',
+          background: `color-mix(in srgb, ${pColor} 15%, transparent)`,
+          color: pColor, display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0, border: `1px solid color-mix(in srgb, ${pColor} 30%, transparent)`
         }}>
           <IconComponent size="1.375rem" strokeWidth={2} />
         </div>
-        
+
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           <Tooltip title={project.name} placement="top" mouseEnterDelay={0.5}>
             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -407,11 +453,11 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
             </p>
           </Tooltip>
         </div>
-        
+
         <Dropdown menu={{ items }} trigger={['click']}>
-          <Button 
-            type="text" 
-            icon={<MoreVertical size="1.125rem" />} 
+          <Button
+            type="text"
+            icon={<MoreVertical size="1.125rem" />}
             onClick={e => e.stopPropagation()}
             className="project-menu-btn"
             style={{ color: 'var(--text-muted)' }}
@@ -419,12 +465,12 @@ function ProjectCard({ project, onOpen, onEdit, onDelete }) {
         </Dropdown>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', borderTop: '1px solid var(--border-default)', paddingTop: '0.875rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', borderTop: '1px solid var(--border-default)', paddingTop: '0.875rem', marginTop: '0.5rem' }}>
         <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Clock size="0.812rem" /> {formatDate(project.updated_at || project.created_at)}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Workflow size="0.812rem" /> {project.workflow_count || 0}</span>
         </div>
-        
+
         <Tag color={statusColor} style={{ margin: 0, borderRadius: '0.375rem', border: 'none', padding: '0.125rem 0.5rem', fontSize: '0.75rem', fontWeight: 500 }}>
           {statusText}
         </Tag>

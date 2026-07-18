@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import ProjectDetail from './pages/ProjectDetail'
@@ -10,7 +10,8 @@ import viVN from 'antd/locale/vi_VN'
 import 'dayjs/locale/vi'
 import dayjs from 'dayjs'
 import useStore from './store/useStore'
-import { checkHealth, getUsers, getDashboardStats } from './api/client'
+import { checkHealth, getUsers, getDashboardStats, importProject } from './api/client'
+import toast from 'react-hot-toast'
 
 dayjs.locale('vi')
 
@@ -22,7 +23,6 @@ const VIEWS = {
 
 export default function App() {
   const theme = useStore((state) => state.theme)
-  const uiSize = useStore((state) => state.uiSize)
   const currentUser = useStore((state) => state.currentUser)
   const setCurrentUser = useStore((state) => state.setCurrentUser)
 
@@ -42,15 +42,38 @@ export default function App() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [openCreateModal, setOpenCreateModal] = useState(false)
 
-  // ── Sync Theme & UI Size ──────────────
+  // Import state
+  const importInputRef = useRef(null)
+  const [importing, setImporting] = useState(false)
+
+  // ── Sync Theme ─────────────────────────────
   useEffect(() => {
     if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
     else document.documentElement.removeAttribute('data-theme')
   }, [theme])
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-size', uiSize)
-  }, [uiSize])
+  // ── Import Handler ─────────────────────────
+  const handleImportClick = () => {
+    importInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImporting(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      await importProject(formData)
+      toast.success('Import project thành công!')
+      setRefreshTick((t) => t + 1)
+    } catch (err) {
+      toast.error('Lỗi import: ' + err.message)
+    } finally {
+      setImporting(false)
+      if (importInputRef.current) importInputRef.current.value = ''
+    }
+  }
 
   // ── Bootstrap: check backend + user selection ──────────────
   useEffect(() => {
@@ -132,8 +155,17 @@ export default function App() {
     loadStats()
   }
 
-  const openProject = (project) => {
-    setSelectedProject(project)
+  const openProject = async (project) => {
+    // Fetch lại project để lấy workflows_count mới nhất
+    try {
+      const res = await fetch(`http://localhost:8000/api/projects/${project.id}`, {
+        headers: { 'X-User-Id': currentUser?.id }
+      })
+      const updatedProject = await res.json()
+      setSelectedProject(updatedProject)
+    } catch {
+      setSelectedProject(project)
+    }
     setView(VIEWS.PROJECT)
   }
 
@@ -160,15 +192,15 @@ export default function App() {
         token: {
           colorPrimary: '#8b5cf6',
           fontFamily: 'var(--font-sans)',
-          borderRadius: uiSize === 'small' ? 6 : uiSize === 'large' ? 10 : 8,
-          borderRadiusSM: uiSize === 'small' ? 4 : uiSize === 'large' ? 8 : 6,
-          borderRadiusLG: uiSize === 'small' ? 8 : uiSize === 'large' ? 16 : 12,
-          controlHeight: uiSize === 'small' ? 28 : uiSize === 'large' ? 44 : 36,
-          controlHeightSM: uiSize === 'small' ? 24 : uiSize === 'large' ? 36 : 30,
-          controlHeightLG: uiSize === 'small' ? 36 : uiSize === 'large' ? 52 : 44,
-          fontSize: uiSize === 'small' ? 12 : uiSize === 'large' ? 16 : 14,
-          fontSizeSM: uiSize === 'small' ? 11 : uiSize === 'large' ? 14 : 12,
-          fontSizeLG: uiSize === 'small' ? 14 : uiSize === 'large' ? 18 : 16,
+          borderRadius: 8,
+          borderRadiusSM: 6,
+          borderRadiusLG: 12,
+          controlHeight: 36,
+          controlHeightSM: 30,
+          controlHeightLG: 44,
+          fontSize: 14,
+          fontSizeSM: 12,
+          fontSizeLG: 16,
           colorBgBase: theme === 'dark' ? '#09090b' : '#fafafa',
           colorBgContainer: theme === 'dark' ? '#18181b' : '#ffffff',
           colorBgElevated: theme === 'dark' ? '#27272a' : '#ffffff',
@@ -192,7 +224,23 @@ export default function App() {
           },
           Select: {
             activeShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)',
-          }
+          },
+          Table: {
+            headerBorderRadius: 8,
+          },
+          Select: { controlHeight: 30 },
+          Input: { controlHeight: 30 },
+          Button: { controlHeight: 30 },
+          Table: { cellHeight: 40 },
+          Pagination: { itemSize: 28 },
+          Menu: {
+            itemHeight: 36,
+            iconSize: 14,
+            horizontalItemHoverBg: 'transparent',
+          },
+          Dropdown: {
+            controlHeight: 36,
+          },
         }
       }}
     >
@@ -242,17 +290,27 @@ export default function App() {
           <>
             {/* Navbar */}
             {view !== VIEWS.EDITOR && (
-              <Navbar
-                title={view === VIEWS.PROJECT ? selectedProject?.name : null}
-                subtitle={view === VIEWS.PROJECT ? `${selectedProject?.workflows_count || 0} workflows` : null}
-                onLogoClick={() => { setView(VIEWS.DASHBOARD); setSelectedProject(null) }}
-                isDashboard={view === VIEWS.DASHBOARD}
-                stats={stats}
-                loading={statsLoading}
-                onRefresh={handleNavRefresh}
-                onCreateProject={() => setOpenCreateModal(true)}
-                onSwitchUser={() => setShowUserPicker(true)}
-              />
+              <>
+                <input
+                  type="file"
+                  accept=".zip"
+                  style={{ display: 'none' }}
+                  ref={importInputRef}
+                  onChange={handleFileChange}
+                />
+                <Navbar
+                  title={view === VIEWS.PROJECT ? selectedProject?.name : null}
+                  subtitle={view === VIEWS.PROJECT ? `${selectedProject?.workflows_count || 0} workflows` : null}
+                  onLogoClick={() => { setView(VIEWS.DASHBOARD); setSelectedProject(null) }}
+                  isDashboard={view === VIEWS.DASHBOARD}
+                  stats={stats}
+                  loading={statsLoading}
+                  onRefresh={handleNavRefresh}
+                  onCreateProject={() => setOpenCreateModal(true)}
+                  onImport={handleImportClick}
+                  onSwitchUser={() => setShowUserPicker(true)}
+                />
+              </>
             )}
 
             {/* Main Content */}
@@ -272,6 +330,9 @@ export default function App() {
                   project={selectedProject}
                   onBack={goBack}
                   onOpenWorkflow={openWorkflow}
+                  onProjectUpdate={(updated) => {
+                    setSelectedProject(updated)
+                  }}
                 />
               )}
               {view === VIEWS.EDITOR && (

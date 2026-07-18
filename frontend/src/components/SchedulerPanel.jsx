@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar, Trash2, Clock, Edit2 } from 'lucide-react'
 import { getSchedules, createSchedule, updateSchedule, deleteSchedule as apiDeleteSchedule, toggleSchedule as apiToggleSchedule } from '../api/client'
-import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber } from 'antd'
+import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber, Card, Empty } from 'antd'
 import toast from 'react-hot-toast'
 import dayjs from 'dayjs'
 
@@ -14,7 +14,7 @@ const DAY_OPTIONS = [
   { label: 'Thứ 5', value: 'thu' },
   { label: 'Thứ 6', value: 'fri' },
   { label: 'Thứ 7', value: 'sat' },
-  { label: 'Chủ nhật', value: 'sun' }
+  { label: 'CN', value: 'sun' }
 ]
 const DAY_MAP = DAY_OPTIONS.reduce((acc, curr) => ({ ...acc, [curr.value]: curr.label }), {})
 
@@ -25,21 +25,14 @@ function parseCron(cron) {
       const time = config.hour && config.minute ? `${config.hour.padStart(2, '0')}:${config.minute.padStart(2, '0')}` : 'mỗi giờ'
       let str = ''
       if (config.schedule_type === 'month') {
-        str = `Lặp lại ngày ${config.day_of_month || 1} hàng tháng lúc ${time}`
+        str = `Ngày ${config.day_of_month || 1} / tháng lúc ${time}`
       } else {
         const days = config.days && config.days.length > 0 ? config.days.map(d => DAY_MAP[d] || d).join(', ') : 'Hàng ngày'
-        str = `Lặp lại ${days} lúc ${time}`
+        str = `${days} lúc ${time}`
       }
-      if (config.start_date) str += ` (từ ${config.start_date})`
-      if (config.end_date) str += ` (đến ${config.end_date})`
       return str
     }
-    const parts = cron.split(' ')
-    if (parts.length !== 5) return 'Cron không hợp lệ'
-    const [min, hour, dom, mon, dow] = parts
-    const days = dow === '*' ? 'Hàng ngày' : `Thứ ${dow}`
-    const time = `${hour === '*' ? 'mỗi giờ' : hour.padStart(2, '0') + ':' + min.padStart(2, '0')}`
-    return `${days} lúc ${time}`
+    return 'Lịch tùy chỉnh'
   } catch {
     return 'Lịch tùy chỉnh'
   }
@@ -146,34 +139,42 @@ export default function SchedulerPanel({ workflow, onClose }) {
   }
 
   const formatNextRun = (iso) => {
-    if (!iso) return 'Chưa xếp lịch'
+    if (!iso) return <Text type="secondary">Chưa xếp lịch</Text>
     const d = new Date(iso)
-    return d.toLocaleString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    return <Text style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+      {d.toLocaleString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+    </Text>
   }
 
   const columns = [
+    {
+      title: 'STT',
+      key: 'stt',
+      width: 50,
+      render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{index + 1}</span>
+    },
     {
       title: 'Tên ghi nhớ',
       dataIndex: 'label',
       key: 'label',
       render: (text, record) => (
-        <span style={{ opacity: record.enabled ? 1 : 0.5, fontWeight: 500 }}>{text}</span>
+        <div>
+          <div style={{ fontWeight: 500, opacity: record.enabled ? 1 : 0.5 }}>{text}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{parseCron(record.cron_expr)}</div>
+        </div>
       )
     },
     {
-      title: 'Lần chạy tiếp theo',
+      title: 'Chạy tiếp',
       dataIndex: 'next_run_at',
       key: 'next_run_at',
-      render: (text, record) => (
-        <Text type={record.enabled ? 'warning' : 'secondary'} strong>
-          {formatNextRun(text)}
-        </Text>
-      )
+      width: 130,
+      render: formatNextRun
     },
     {
-      title: 'Trạng thái',
+      title: 'Bật',
       key: 'status',
-      width: 100,
+      width: 70,
       render: (_, record) => (
         <Switch size="small" checked={record.enabled} onChange={(checked) => toggleSchedule(record.id, checked)} />
       )
@@ -181,12 +182,12 @@ export default function SchedulerPanel({ workflow, onClose }) {
     {
       title: 'Thao tác',
       key: 'action',
-      width: 100,
+      width: 90,
       render: (_, record) => (
-        <Space size="small">
-          <Button size="small" type="text" icon={<Edit2 size="0.875rem" />} onClick={() => openEdit(record)} />
+        <Space size={4}>
+          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} />
           <Popconfirm title="Xóa lịch này?" onConfirm={() => deleteSchedule(record.id)}>
-            <Button size="small" type="text" danger icon={<Trash2 size="0.875rem" />} />
+            <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
           </Popconfirm>
         </Space>
       )
@@ -196,89 +197,91 @@ export default function SchedulerPanel({ workflow, onClose }) {
   return (
     <Drawer
       title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-          <Calendar size="1.125rem" color="var(--accent-warning)" style={{ flexShrink: 0 }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Lịch chạy — {workflow?.name}
-          </span>
-        </div>
+        <Space>
+          <Calendar size={16} color="var(--accent-warning)" />
+          <span style={{ fontWeight: 600 }}>{showAdd ? (editingSchedule ? 'Chỉnh sửa lịch' : 'Thêm lịch mới') : 'Lịch chạy'}</span>
+          <Tag bordered={false} style={{ margin: 0 }}>{workflow?.name}</Tag>
+        </Space>
+      }
+      extra={
+        !showAdd ? (
+          <Button size="small" type="primary" icon={<Clock size={14} />} onClick={() => { setEditingSchedule(null); form.resetFields(); setShowAdd(true); }}>
+            Thêm mới
+          </Button>
+        ) : (
+          <Button size="small" onClick={() => { setShowAdd(false); setEditingSchedule(null); }}>
+            Quay lại
+          </Button>
+        )
       }
       open={true}
       onClose={onClose}
-      maskClosable={false}
+      mask={{ closable: false }}
       destroyOnClose
-      width="50vw"
+      size="large"
       placement="right"
-      bodyStyle={{ padding: 16 }}
+      styles={{ body: { padding: 16 } }}
     >
-      <div>
-        {!showAdd && (
-          <>
-            <div className="section-header">
-              <h3 className="section-title">Danh sách lịch hẹn</h3>
-              <Button size="small" type="primary" onClick={() => { setEditingSchedule(null); form.resetFields(); setShowAdd(true); }}>
-                + Thêm mới
-              </Button>
-            </div>
-            <Table 
-              dataSource={schedules}
-              columns={columns}
-              rowKey="id"
-              loading={loading}
-              pagination={false}
-              size="small"
-              bordered
-              locale={{ emptyText: 'Chưa có lịch nào. Thêm lịch để tự động chạy workflow.' }}
-            />
-          </>
-        )}
-
-        {showAdd && (
+      {!showAdd ? (
+        <Table 
+          dataSource={schedules}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          size="small"
+          sticky={{ offsetHeader: 0 }}
+          scroll={{ y: 'calc(100vh - 160px)' }}
+          locale={{ emptyText: <Empty description="Chưa có lịch nào. Thêm lịch để tự động chạy workflow." image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        />
+      ) : (
           <Form
             form={form}
             layout="vertical"
             onFinish={handleSubmit}
             initialValues={{ schedule_type: 'week', day_of_month: 1, days: ['mon', 'tue', 'wed', 'thu', 'fri'], time: dayjs('08:00', 'HH:mm') }}
-            style={{ background: 'var(--bg-elevated)', padding: 24, borderRadius: 8, border: '1px solid var(--border-default)' }}
           >
-            <h4 style={{ margin: '0 0 16px 0' }}>{editingSchedule ? 'Chỉnh sửa lịch hẹn' : 'Thêm lịch mới'}</h4>
-            
             <Form.Item name="schedule_type" label="Kiểu lặp lại">
-              <Radio.Group optionType="button" buttonStyle="solid">
+              <Radio.Group optionType="button" buttonStyle="solid" size="small">
                 <Radio.Button value="week">Theo tuần</Radio.Button>
                 <Radio.Button value="month">Theo tháng</Radio.Button>
               </Radio.Group>
             </Form.Item>
 
-            <Form.Item name="time" label="Giờ chạy" rules={[{ required: true, message: 'Vui lòng chọn giờ chạy' }]}>
+            <Form.Item name="time" label="Giờ chạy" rules={[{ required: true, message: 'Vui lòng chọn giờ' }]}>
               <TimePicker format="HH:mm" style={{ width: '100%' }} />
             </Form.Item>
 
             {scheduleType === 'month' ? (
-              <Form.Item name="day_of_month" label="Vào ngày" rules={[{ required: true, message: 'Nhập ngày' }]}>
-                <InputNumber min={1} max={31} style={{ width: '100%' }} placeholder="VD: 1 (Ngày 1 hàng tháng)" />
+              <Form.Item name="day_of_month" label="Ngày trong tháng" rules={[{ required: true, message: 'Nhập ngày' }]}>
+                <InputNumber min={1} max={31} style={{ width: '100%' }} placeholder="VD: 1" />
               </Form.Item>
             ) : (
-              <Form.Item name="days" label="Lặp lại vào các ngày" rules={[{ required: true, message: 'Chọn ít nhất 1 ngày' }]}>
-                <Select mode="multiple" options={DAY_OPTIONS} placeholder="Chọn ngày lặp lại" />
+              <Form.Item name="days" label="Các ngày trong tuần" rules={[{ required: true, message: 'Chọn ít nhất 1 ngày' }]}>
+                <Select mode="multiple" options={DAY_OPTIONS} placeholder="Chọn ngày" />
               </Form.Item>
             )}
 
-            <Form.Item name="dateRange" label="Thời gian áp dụng" rules={[{ required: true, message: 'Vui lòng chọn thời gian áp dụng' }]}>
-              <DatePicker.RangePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder={['Ngày bắt đầu', 'Ngày kết thúc']} />
+            <Form.Item name="dateRange" label="Thời gian áp dụng">
+              <DatePicker.RangePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder={['Bắt đầu', 'Kết thúc']} />
             </Form.Item>
 
-            <Form.Item name="label" label="Tên ghi nhớ" rules={[{ required: true, message: 'Vui lòng nhập tên ghi nhớ' }]}>
-              <Input placeholder="VD: Chạy buổi sáng hàng ngày" />
+            <Form.Item name="label" label="Tên ghi nhớ" rules={[{ required: true, message: 'Nhập tên' }]}>
+              <Input placeholder="VD: Chạy buổi sáng" />
             </Form.Item>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-              <Button onClick={() => { setShowAdd(false); setEditingSchedule(null); }}>Hủy</Button>
-              <Button type="primary" htmlType="submit" loading={creating}>{editingSchedule ? 'Lưu thay đổi' : 'Thêm lịch'}</Button>
-            </div>
+            <Form.Item style={{ marginBottom: 0, marginTop: 24 }}>
+              <Space>
+                <Button htmlType="submit" type="primary" loading={creating}>
+                  {editingSchedule ? 'Lưu thay đổi' : 'Thêm lịch'}
+                </Button>
+                <Button onClick={() => { setShowAdd(false); setEditingSchedule(null); }}>
+                  Hủy
+                </Button>
+              </Space>
+            </Form.Item>
           </Form>
-        )}
-      </div>
+      )}
     </Drawer>
   )
 }

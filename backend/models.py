@@ -12,6 +12,23 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    __tablename__ = "user"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "is_active": self.is_active,
+        }
+
+
 class Project(Base):
     __tablename__ = "project"
 
@@ -19,10 +36,13 @@ class Project(Base):
     name = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     color = Column(String, default="#6c63ff")
+    icon = Column(String, default="Box")
+    sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     venv_ready = Column(Boolean, default=False)
     venv_path = Column(String, nullable=True)
+    user_id = Column(String, nullable=True)
 
     def to_dict(self):
         return {
@@ -30,10 +50,13 @@ class Project(Base):
             "name": self.name,
             "description": self.description,
             "color": self.color,
+            "icon": self.icon,
+            "sort_order": self.sort_order,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "venv_ready": self.venv_ready,
             "venv_path": self.venv_path,
+            "user_id": self.user_id,
         }
 
 
@@ -47,6 +70,8 @@ class Workflow(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     graph_json = Column(Text, nullable=True)  # JSON nodes + edges
+    color = Column(String, default="#6c63ff")
+    sort_order = Column(Integer, default=0)
 
     def to_dict(self):
         return {
@@ -57,6 +82,8 @@ class Workflow(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "graph_json": self.graph_json,
+            "color": self.color,
+            "sort_order": self.sort_order,
         }
 
 

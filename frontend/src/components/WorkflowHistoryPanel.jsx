@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react'
-import { Table, Tag, Button, Spin, Empty } from 'antd'
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { Table, Tag, Button, Spin, Empty, Card, Space } from 'antd'
 import { getRunHistory } from '../api/client'
-import { Clock, RefreshCw, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STATUS_CONFIG = {
-  running:   { label: 'Đang chạy', color: 'processing', icon: <Loader size="0.75rem" className="spinning" /> },
-  success:   { label: 'Thành công', color: 'success', icon: <CheckCircle size="0.75rem" /> },
+  running:   { label: 'Đang chạy', color: 'processing' },
+  success:   { label: 'Thành công', color: 'success' },
   scheduled: { label: 'Lên lịch',  color: 'warning' },
-  error:     { label: 'Lỗi',       color: 'error', icon: <XCircle size="0.75rem" /> },
+  error:     { label: 'Lỗi',       color: 'error' },
   idle:      { label: 'Chờ',       color: 'default' },
   pending:   { label: 'Chờ',       color: 'default' },
 }
 
-export default function WorkflowHistoryPanel({ workflowId }) {
+const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -34,6 +34,11 @@ export default function WorkflowHistoryPanel({ workflowId }) {
     loadHistory()
   }, [workflowId])
 
+  useImperativeHandle(ref, () => ({
+    loadHistory,
+    loading
+  }))
+
   const formatDate = (iso) => {
     if (!iso) return '-'
     try {
@@ -50,60 +55,76 @@ export default function WorkflowHistoryPanel({ workflowId }) {
     return `${(ms/1000).toFixed(1)}s`
   }
 
+  const getTriggerLabel = (t) => {
+    if (!t || t === 'manual') return <Tag bordered={false} style={{ margin: 0 }}>Thủ công</Tag>
+    if (t.startsWith('schedule:')) return <Tag color="warning" bordered={false} style={{ margin: 0 }}>Lịch hẹn</Tag>
+    return <Tag bordered={false} style={{ margin: 0 }}>{t}</Tag>
+  }
+
   const columns = [
+    {
+      title: 'STT',
+      key: 'stt',
+      width: 50,
+      render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{index + 1}</span>
+    },
     {
       title: 'Thời gian',
       dataIndex: 'started_at',
       key: 'started_at',
-      render: (t) => <span style={{ fontSize: '0.85rem' }}>{formatDate(t)}</span>
+      width: 160,
+      render: (t) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{formatDate(t)}</span>
     },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
+      width: 120,
       render: (s) => {
         const c = STATUS_CONFIG[s] || { label: s, color: 'default' }
-        const cls = s === 'running' ? 'running' : s === 'success' ? 'success' : s === 'error' ? 'error' : s === 'scheduled' ? 'scheduled' : 'idle'
-        return (
-          <div className={`status-pill ${cls}`} style={{ display: 'inline-flex' }}>
-            {s === 'running' && <span className="pulse-dot" />}
-            {c.label}
-          </div>
-        )
+        return <Tag color={c.color} bordered={false} style={{ margin: 0 }}>{c.label}</Tag>
       }
     },
     {
-      title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration_ms', render: (d) => <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatDuration(d)}</span>
+      title: 'Thời gian chạy',
+      dataIndex: 'duration_ms',
+      key: 'duration_ms',
+      width: 100,
+      render: (d) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatDuration(d)}</span>
     },
     {
-      title: 'Kích hoạt bởi', dataIndex: 'triggered_by', key: 'triggered_by',
-      render: (t) => {
-        if (!t || t === 'manual') return <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Thủ công</span>
-        if (t.startsWith('schedule:')) return <span style={{ fontSize: '0.8rem', color: 'var(--accent-warning)' }}>Lịch hẹn</span>
-        return <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t}</span>
-      }
+      title: 'Kích hoạt bởi',
+      dataIndex: 'triggered_by',
+      key: 'triggered_by',
+      width: 100,
+      render: getTriggerLabel
+    },
+    {
+      title: 'Thao tác',
+      key: 'action',
+      align: 'right',
+      width: 90,
+      render: (_, record) => (
+        <Button size="small" type="link" onClick={() => onViewLog?.(record.id)}>
+          Xem Log
+        </Button>
+      )
     }
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="section-header">
-        <h3 className="section-title">Lịch sử chạy gần đây</h3>
-        <Button icon={<RefreshCw size="0.875rem" />} onClick={loadHistory} size="small" loading={loading}>
-          Làm mới
-        </Button>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        <Table 
-          dataSource={history} 
-          columns={columns} 
-          rowKey="id" 
-          loading={loading}
-          pagination={false}
-          size="small"
-          locale={{ emptyText: <Empty description="Chưa có lượt chạy nào" /> }}
-        />
-      </div>
-    </div>
+    <Table 
+      dataSource={history} 
+      columns={columns} 
+      rowKey="id" 
+      loading={loading}
+      pagination={false}
+      size="small"
+      sticky={{ offsetHeader: 0 }}
+      scroll={{ y: 'calc(100vh - 160px)' }}
+      locale={{ emptyText: <Empty description="Chưa có lượt chạy nào" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+    />
   )
-}
+})
+
+export default WorkflowHistoryPanel

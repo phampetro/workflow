@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Drawer, Button, message, Tabs, Table, Upload, Space, Popconfirm } from 'antd'
+import { Drawer, Button, message, Tabs, Table, Upload, Space, Popconfirm, Tag, Card } from 'antd'
 import Editor from '@monaco-editor/react'
 import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile } from '../api/client'
-import { UploadCloud, Trash2, FileText, Eye, Download } from 'lucide-react'
+import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen } from 'lucide-react'
 import useStore from '../store/useStore'
 
 const { Dragger } = Upload
@@ -13,7 +13,6 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('json')
 
-  // File management states
   const [files, setFiles] = useState([])
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [outFiles, setOutFiles] = useState([])
@@ -97,11 +96,6 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
     }
   }
 
-  const getFileUrl = (filename, isOutput, download) => {
-    const type = isOutput ? 'output-files' : 'files'
-    return `http://localhost:8000/api/workflows/${workflowId}/${type}/${encodeURIComponent(filename)}/download${download ? '?download=1' : ''}`
-  }
-
   const handleView = async (filename, isOutput) => {
     try {
       if (isOutput) {
@@ -109,7 +103,7 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       } else {
         await openWorkflowFile(workflowId, filename)
       }
-      message.success('Đã mở tệp trên máy tính!')
+      message.success('Đã mở tệp!')
     } catch (e) {
       message.error('Lỗi mở tệp: ' + e.message)
     }
@@ -117,7 +111,7 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
 
   const handleDownload = (filename, isOutput) => {
     const a = document.createElement('a')
-    a.href = getFileUrl(filename, isOutput, true)
+    a.href = `http://localhost:8000/api/workflows/${workflowId}/${isOutput ? 'output-files' : 'files'}/${encodeURIComponent(filename)}/download?download=1`
     a.download = filename
     document.body.appendChild(a)
     a.click()
@@ -129,10 +123,10 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       const parsed = JSON.parse(jsonText)
       setSaving(true)
       await updateWorkflowInput(workflowId, parsed)
-      message.success('Đã lưu cấu hình biến môi trường!')
-      onClose(parsed) // pass updated data back
+      message.success('Đã lưu cấu hình!')
+      onClose(parsed)
     } catch (e) {
-      message.error('Lỗi định dạng JSON: ' + e.message)
+      message.error('Lỗi JSON: ' + e.message)
     } finally {
       setSaving(false)
     }
@@ -140,8 +134,7 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
 
   const handleClose = () => {
     if (activeTab === 'files' || activeTab === 'output') {
-      onClose(initialData) // return original json data unchanged when closing from files tab
-
+      onClose(initialData)
     } else {
       onClose()
     }
@@ -167,10 +160,10 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
   }
 
   const formatBytes = (bytes, decimals = 2) => {
-    if (!+bytes) return '0 Bytes'
+    if (!+bytes) return '0 B'
     const k = 1024
     const dm = decimals < 0 ? 0 : decimals
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+    const sizes = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
   }
@@ -182,8 +175,8 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       key: 'name',
       render: (text) => (
         <Space>
-          <FileText size="1rem" color="var(--accent-primary)" />
-          <span style={{ color: 'var(--text-primary)' }}>{text}</span>
+          <FileText size={14} color="var(--accent-primary)" />
+          <span>{text}</span>
         </Space>
       )
     },
@@ -191,24 +184,116 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
       title: 'Kích thước',
       dataIndex: 'size',
       key: 'size',
-      render: (size) => <span style={{ color: 'var(--text-muted)' }}>{formatBytes(size)}</span>
+      width: 100,
+      render: (size) => <Tag bordered={false} style={{ margin: 0 }}>{formatBytes(size)}</Tag>
     },
     {
-      title: 'Hành động',
+      title: '',
       key: 'action',
+      width: 120,
       render: (_, record) => (
-        <Space>
-          <Button type="text" icon={<Eye size="1rem" />} onClick={() => handleView(record.name, isOutput)} title="Xem" />
-          <Button type="text" icon={<Download size="1rem" />} onClick={() => handleDownload(record.name, isOutput)} title="Tải xuống" />
-          <Popconfirm
-            title="Bạn có chắc chắn muốn xóa tệp này?"
-            onConfirm={() => isOutput ? handleDeleteOutFile(record.name) : handleDeleteFile(record.name)}
-            okText="Xóa"
-            cancelText="Hủy"
-          >
-            <Button type="text" danger icon={<Trash2 size="1rem" />} title="Xóa" />
+        <Space size={4}>
+          <Button type="text" size="small" icon={<Eye size={14} />} onClick={() => handleView(record.name, isOutput)} />
+          <Button type="text" size="small" icon={<Download size={14} />} onClick={() => handleDownload(record.name, isOutput)} />
+          <Popconfirm title="Xóa tệp?" onConfirm={() => isOutput ? handleDeleteOutFile(record.name) : handleDeleteFile(record.name)}>
+            <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
           </Popconfirm>
         </Space>
+      )
+    }
+  ]
+
+  const tabItems = [
+    {
+      key: 'json',
+      label: 'Biến môi trường',
+      children: (
+        <div>
+          <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            Khai báo biến JSON để sử dụng trong Workflow.
+          </p>
+          <div style={{ height: 'calc(100vh - 300px)', border: '1px solid var(--border-default)', borderRadius: 8, overflow: 'hidden' }}>
+            <Editor
+              height="100%"
+              defaultLanguage="json"
+              value={jsonText}
+              theme={theme === 'light' ? 'light' : 'vs-dark'}
+              onChange={val => setJsonText(val || '')}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                formatOnPaste: true,
+                scrollBeyondLastLine: false
+              }}
+            />
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'files',
+      label: (
+        <Space>
+          <FolderOpen size={14} />
+          Tệp đính kèm ({files.length})
+        </Space>
+      ),
+      children: (
+        <div>
+          {selectedInputRowKeys.length > 0 && (
+            <Space style={{ marginBottom: 12 }}>
+              <Tag>{selectedInputRowKeys.length} tệp chọn</Tag>
+              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(false)}>Tải</Button>
+              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(false)}>Xóa</Button>
+            </Space>
+          )}
+          <Dragger {...uploadProps} style={{ marginBottom: 12 }}>
+            <p style={{ margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <UploadCloud size={24} color="var(--accent-primary)" />
+              <span>Kéo thả hoặc nhấp để tải tệp lên</span>
+            </p>
+          </Dragger>
+          <Table
+            rowSelection={{ selectedRowKeys: selectedInputRowKeys, onChange: setSelectedInputRowKeys }}
+            dataSource={files}
+            columns={getColumns(false)}
+            rowKey="name"
+            size="small"
+            pagination={false}
+            loading={loadingFiles}
+            locale={{ emptyText: 'Chưa có tệp nào' }}
+          />
+        </div>
+      )
+    },
+    {
+      key: 'output',
+      label: (
+        <Space>
+          <Download size={14} />
+          Kết quả ({outFiles.length})
+        </Space>
+      ),
+      children: (
+        <div>
+          {selectedOutputRowKeys.length > 0 && (
+            <Space style={{ marginBottom: 12 }}>
+              <Tag>{selectedOutputRowKeys.length} tệp chọn</Tag>
+              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(true)}>Tải</Button>
+              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(true)}>Xóa</Button>
+            </Space>
+          )}
+          <Table
+            rowSelection={{ selectedRowKeys: selectedOutputRowKeys, onChange: setSelectedOutputRowKeys }}
+            dataSource={outFiles}
+            columns={getColumns(true)}
+            rowKey="name"
+            size="small"
+            pagination={false}
+            loading={loadingOutFiles}
+            locale={{ emptyText: 'Chưa có tệp kết quả' }}
+          />
+        </div>
       )
     }
   ]
@@ -216,136 +301,28 @@ export default function InputJsonModal({ open, onClose, workflowId, initialData 
   return (
     <Drawer
       title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FileText size="1.125rem" color="var(--accent-primary)" /> 
-          <span>Dữ liệu Workflow</span>
-        </div>
+        <Space>
+          <FileText size={16} color="var(--accent-primary)" />
+          <span style={{ fontWeight: 600 }}>Dữ liệu Workflow</span>
+        </Space>
       }
       open={open}
       onClose={handleClose}
-      maskClosable={false}
-      width="50vw"
+      size="large"
       placement="right"
-      bodyStyle={{ padding: 16 }}
-      footer={
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          {activeTab === 'json' ? (
-            <>
-              <Button key="cancel" onClick={handleClose}>Hủy</Button>
-              <Button key="save" type="primary" loading={saving} onClick={handleSaveJson}>Lưu lại</Button>
-            </>
-          ) : (
-            <Button key="close" type="primary" onClick={handleClose}>Đóng</Button>
-          )}
-        </div>
+      styles={{ body: { padding: 16 } }}
+      extra={
+        activeTab === 'json' ? (
+          <Space>
+            <Button onClick={handleClose}>Hủy</Button>
+            <Button type="primary" loading={saving} onClick={handleSaveJson}>Lưu</Button>
+          </Space>
+        ) : (
+          <Button type="primary" onClick={handleClose}>Đóng</Button>
+        )
       }
     >
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: 'json',
-            label: 'Biến môi trường (JSON)',
-            children: (
-              <>
-                <div style={{ marginBottom: 10, color: 'var(--text-muted)' }}>
-                  Khai báo các biến để sử dụng trong Workflow.
-                </div>
-                <div style={{ height: 'calc(100vh - 270px)', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
-                  <Editor
-                    height="100%"
-                    defaultLanguage="json"
-                    value={jsonText}
-                    theme={theme === 'light' ? 'light' : 'vs-dark'}
-                    onChange={val => setJsonText(val || '')}
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 14,
-                      formatOnPaste: true,
-                      scrollBeyondLastLine: false
-                    }}
-                  />
-                </div>
-              </>
-            )
-          },
-          {
-            key: 'files',
-            label: 'Tệp đính kèm',
-            children: (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    Tải lên các tệp (Excel, CSV, txt...) để xử lý trong Workflow.
-                  </div>
-                  {selectedInputRowKeys.length > 0 && (
-                    <Space>
-                      <Button size="small" type="primary" icon={<Download size="0.875rem" />} onClick={() => handleBatchDownload(false)}>Tải {selectedInputRowKeys.length} tệp</Button>
-                      <Popconfirm title={`Xóa ${selectedInputRowKeys.length} tệp đã chọn?`} onConfirm={() => handleBatchDelete(false)}>
-                        <Button size="small" danger icon={<Trash2 size="0.875rem" />}>Xóa {selectedInputRowKeys.length} tệp</Button>
-                      </Popconfirm>
-                    </Space>
-                  )}
-                </div>
-                <Dragger {...uploadProps} style={{ marginBottom: 16, background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '12px 0' }}>
-                    <UploadCloud size="1.75rem" color="var(--accent-primary)" />
-                    <span style={{ color: 'var(--text-primary)', fontSize: '0.95rem' }}>Nhấp hoặc kéo thả tệp vào đây để tải lên</span>
-                  </div>
-                </Dragger>
-                <Table
-                  rowSelection={{
-                    selectedRowKeys: selectedInputRowKeys,
-                    onChange: setSelectedInputRowKeys,
-                  }}
-                  dataSource={files}
-                  columns={getColumns(false)}
-                  rowKey="name"
-                  size="small"
-                  pagination={false}
-                  loading={loadingFiles}
-                  locale={{ emptyText: 'Chưa có tệp nào' }}
-                />
-              </>
-            )
-          },
-          {
-            key: 'output',
-            label: 'Kết quả đầu ra',
-            children: (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    Các tệp kết quả được tạo ra sau khi chạy Workflow.
-                  </div>
-                  {selectedOutputRowKeys.length > 0 && (
-                    <Space>
-                      <Button size="small" type="primary" icon={<Download size="0.875rem" />} onClick={() => handleBatchDownload(true)}>Tải {selectedOutputRowKeys.length} tệp</Button>
-                      <Popconfirm title={`Xóa ${selectedOutputRowKeys.length} tệp kết quả?`} onConfirm={() => handleBatchDelete(true)}>
-                        <Button size="small" danger icon={<Trash2 size="0.875rem" />}>Xóa {selectedOutputRowKeys.length} tệp</Button>
-                      </Popconfirm>
-                    </Space>
-                  )}
-                </div>
-                <Table
-                  rowSelection={{
-                    selectedRowKeys: selectedOutputRowKeys,
-                    onChange: setSelectedOutputRowKeys,
-                  }}
-                  dataSource={outFiles}
-                  columns={getColumns(true)}
-                  rowKey="name"
-                  size="small"
-                  pagination={false}
-                  loading={loadingOutFiles}
-                  locale={{ emptyText: 'Chưa có tệp kết quả nào' }}
-                />
-              </>
-            )
-          }
-        ]}
-      />
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
     </Drawer>
   )
 }
