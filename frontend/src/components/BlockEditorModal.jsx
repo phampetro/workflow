@@ -658,6 +658,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
         ...(isBrowser ? { steps: browserSteps } : {}),
         ...(isTelegramListener ? { telegramListenerCommands: listenerCommands } : {}),
+        ...(isEmail ? {
+          mailTo: (values.mailTo || []).join(','),
+          mailCc: (values.mailCc || []).join(','),
+        } : {}),
       })
       toast.success('Đã lưu cấu hình khối!')
     } catch (e) {
@@ -733,8 +737,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             mailPort: node.data.mailPort || 465,
             mailUser: node.data.mailUser || '',
             mailPass: node.data.mailPass || '',
-            mailTo: node.data.mailTo || '',
-            mailCc: node.data.mailCc || '',
+            mailTo: node.data.mailTo ? node.data.mailTo.split(',').map(s => s.trim()).filter(Boolean) : [],
+            mailCc: node.data.mailCc ? node.data.mailCc.split(',').map(s => s.trim()).filter(Boolean) : [],
             mailSubject: node.data.mailSubject || '',
             mailBody: node.data.mailBody || '',
             mailAttachments: node.data.mailAttachments || [],
@@ -1297,11 +1301,20 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                 <Mail size="1.25rem" color="var(--accent-primary)" />
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Nội dung Email</h3>
               </div>
-              <Form.Item label="Người nhận (To)" name="mailTo" rules={[{ required: true, message: 'Vui lòng nhập Email người nhận' }]}>
-                <Input placeholder="Nhập Email (có thể dùng biến {email})" />
+              <Form.Item
+                label="Người nhận (To)"
+                name="mailTo"
+                rules={[{ required: true, message: 'Vui lòng nhập Email người nhận' }]}
+                extra="Gõ Email (hoặc biến {email}) rồi bấm Enter để thêm - có thể thêm nhiều người nhận"
+              >
+                <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email rồi bấm Enter..." />
               </Form.Item>
-              <Form.Item label="Người nhận (CC)" name="mailCc">
-                <Input placeholder="Nhập Email CC (ngăn cách bởi dấu phẩy)" />
+              <Form.Item
+                label="Người nhận (CC)"
+                name="mailCc"
+                extra="Gõ Email rồi bấm Enter để thêm - có thể thêm nhiều người nhận"
+              >
+                <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email CC rồi bấm Enter..." />
               </Form.Item>
               <Form.Item label="Tiêu đề Email (Subject)" name="mailSubject" rules={[{ required: true, message: 'Vui lòng nhập Tiêu đề' }]}>
                 <Input placeholder="Nhập tiêu đề (Hỗ trợ định dạng biến {name})" />
