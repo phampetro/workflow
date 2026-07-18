@@ -17,7 +17,7 @@ class User(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=False)
 
     def to_dict(self):
@@ -38,8 +38,8 @@ class Project(Base):
     color = Column(String, default="#6c63ff")
     icon = Column(String, default="Box")
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     venv_ready = Column(Boolean, default=False)
     venv_path = Column(String, nullable=True)
     user_id = Column(String, nullable=True)
@@ -67,8 +67,8 @@ class Workflow(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     project_id = Column(String, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     graph_json = Column(Text, nullable=True)  # JSON nodes + edges
     color = Column(String, default="#6c63ff")
     sort_order = Column(Integer, default=0)
@@ -95,7 +95,7 @@ class Schedule(Base):
     cron_expr = Column(String, nullable=False)
     label = Column(String, nullable=True)
     enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     next_run_at = Column(DateTime, nullable=True)
     last_run_at = Column(DateTime, nullable=True)
 
@@ -119,7 +119,7 @@ class WorkflowRun(Base):
     workflow_id = Column(String, nullable=False, index=True)
     project_id = Column(String, nullable=False)
     status = Column(String, default="pending")   # pending|running|success|error|stopped
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=datetime.now)
     finished_at = Column(DateTime, nullable=True)
     duration_ms = Column(Integer, nullable=True)
     triggered_by = Column(String, default="manual")

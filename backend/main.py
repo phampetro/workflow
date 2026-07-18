@@ -53,24 +53,25 @@ async def reload_schedules():
             
             rows = (await session.execute(stmt)).all()
             loaded = 0
-            
-            from services.scheduler import scheduler as aps_scheduler, trigger_workflow_job, _cron_kwargs
+
+            from services.scheduler import scheduler as aps_scheduler, trigger_workflow_job, build_cron_trigger, get_next_run_time
             # Remove all jobs
             aps_scheduler.remove_all_jobs()
-            
+
             for sched, proj_id in rows:
                 try:
                     aps_scheduler.add_job(
                         trigger_workflow_job,
-                        "cron",
+                        trigger=build_cron_trigger(sched.cron_expr),
                         id=sched.id,
                         kwargs={"workflow_id": sched.workflow_id, "project_id": proj_id, "schedule_id": sched.id},
-                        **_cron_kwargs(sched.cron_expr),
                         replace_existing=True,
                     )
+                    sched.next_run_at = get_next_run_time(sched.id)
                     loaded += 1
                 except Exception as e:
                     pass
+            await session.commit()
             logger.info(f"✅ APScheduler started for user {user.name} - loaded {loaded} schedules")
 
 @asynccontextmanager

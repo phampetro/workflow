@@ -16,7 +16,7 @@ import {
   ArrowLeft, Play, Square, Calendar, Terminal, History,
   Save, Loader, CheckCircle, AlertCircle, Database, Table, Files, RefreshCw, Trash2
 } from 'lucide-react'
-import { Button, Drawer, Space, Input, message, Popconfirm } from 'antd'
+import { Button, Drawer, Space, Input, message, Popconfirm, Tag } from 'antd'
 import toast from 'react-hot-toast'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory } from '../api/client'
 import useStore from '../store/useStore'
@@ -537,7 +537,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       </div>
 
       <Drawer
-        title="Lịch sử chạy Workflow"
+        title={
+          <Space>
+            <History size={16} color="var(--accent-warning)" />
+            <span style={{ fontWeight: 600 }}>Lịch sử chạy</span>
+            <Tag bordered={false} style={{ margin: 0 }}>{wfData?.name}</Tag>
+          </Space>
+        }
         placement="right"
         size="large"
         onClose={() => setShowHistory(false)}

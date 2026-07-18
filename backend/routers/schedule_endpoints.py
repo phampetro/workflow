@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from database import get_session
 from models import Workflow, Schedule, Project
-from services.scheduler import scheduler, _cron_kwargs, trigger_workflow_job
+from services.scheduler import scheduler, build_cron_trigger, get_next_run_time, trigger_workflow_job
 
 router = APIRouter(tags=["schedules"])
 
@@ -34,7 +34,7 @@ async def create_schedule(workflow_id: str, body: dict, session: AsyncSession = 
         cron_expr=cron_expr,
         label=body.get("label", ""),
         enabled=body.get("enabled", True),
-        created_at=datetime.utcnow()
+        created_at=datetime.now()
     )
     session.add(sched)
     await session.commit()
@@ -44,15 +44,16 @@ async def create_schedule(workflow_id: str, body: dict, session: AsyncSession = 
         try:
             scheduler.add_job(
                 trigger_workflow_job,
-                "cron",
+                trigger=build_cron_trigger(sched.cron_expr),
                 id=sched.id,
                 kwargs={"workflow_id": workflow_id, "project_id": wf.project_id, "schedule_id": sched.id},
-                **_cron_kwargs(sched.cron_expr),
                 replace_existing=True,
             )
+            sched.next_run_at = get_next_run_time(sched.id)
+            await session.commit()
         except Exception as e:
             raise HTTPException(400, f"Lỗi cron: {str(e)}")
-            
+
     return sched.to_dict()
 
 
@@ -76,15 +77,16 @@ async def update_schedule(schedule_id: str, body: dict, session: AsyncSession = 
         try:
             scheduler.add_job(
                 trigger_workflow_job,
-                "cron",
+                trigger=build_cron_trigger(sched.cron_expr),
                 id=sched.id,
                 kwargs={"workflow_id": sched.workflow_id, "project_id": wf.project_id, "schedule_id": sched.id},
-                **_cron_kwargs(sched.cron_expr),
                 replace_existing=True,
             )
+            sched.next_run_at = get_next_run_time(sched.id)
+            await session.commit()
         except Exception as e:
             pass
-            
+
     return sched.to_dict()
 
 
@@ -93,36 +95,37 @@ async def toggle_schedule(schedule_id: str, body: dict = None, session: AsyncSes
     sched = await session.get(Schedule, schedule_id)
     if not sched:
         raise HTTPException(404, "Schedule không tồn tại")
-        
+
     wf = await session.get(Workflow, sched.workflow_id)
-        
+
     if body and "enabled" in body:
         enabled = body.get("enabled", True)
     else:
         enabled = not sched.enabled
-        
+
     sched.enabled = enabled
-    await session.commit()
-    
+
     if enabled:
         try:
             scheduler.add_job(
                 trigger_workflow_job,
-                "cron",
+                trigger=build_cron_trigger(sched.cron_expr),
                 id=sched.id,
                 kwargs={"workflow_id": sched.workflow_id, "project_id": wf.project_id, "schedule_id": sched.id},
-                **_cron_kwargs(sched.cron_expr),
                 replace_existing=True,
             )
+            sched.next_run_at = get_next_run_time(sched.id)
         except Exception:
-            pass
+            sched.next_run_at = None
     else:
         try:
             scheduler.remove_job(sched.id)
         except Exception:
             pass
-            
-    return {"status": "ok", "enabled": enabled}
+        sched.next_run_at = None
+
+    await session.commit()
+    return sched.to_dict()
 
 
 @router.delete("/api/schedules/{schedule_id}", status_code=204)

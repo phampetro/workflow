@@ -32,7 +32,7 @@ async def run_workflow_internal(workflow_id: str, initial_input: dict = None, tr
             workflow_id=workflow_id,
             project_id=wf.project_id,
             status=RunStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(),
             triggered_by=triggered_by
         )
         session.add(run)
@@ -72,7 +72,7 @@ async def run_workflow_internal(workflow_id: str, initial_input: dict = None, tr
             if run:
                 run.status = RunStatus.ERROR
                 run.error_message = str(e)
-                run.finished_at = datetime.utcnow()
+                run.finished_at = datetime.now()
         finally:
             from ws.log_socket import get_run_history, cleanup_log
             history = get_run_history(run_id)
@@ -180,8 +180,8 @@ async def create_workflow(project_id: str, body: dict, session: AsyncSession = D
         description=body.get("description"),
         project_id=project_id,
         color=body.get("color", "#6c63ff"),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
     )
     session.add(wf)
     await session.commit()
@@ -211,8 +211,8 @@ async def duplicate_workflow(workflow_id: str, session: AsyncSession = Depends(g
         graph_json=wf.graph_json,
         color=wf.color,
         sort_order=wf.sort_order,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
     )
     session.add(new_wf)
     await session.commit()
@@ -246,7 +246,7 @@ async def update_workflow(workflow_id: str, body: dict, session: AsyncSession = 
     for field in ["name", "description", "graph_json", "color"]:
         if field in body:
             setattr(wf, field, body[field])
-    wf.updated_at = datetime.utcnow()
+    wf.updated_at = datetime.now()
 
     await session.commit()
     await session.refresh(wf)

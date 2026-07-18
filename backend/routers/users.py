@@ -56,7 +56,7 @@ async def create_user(body: dict, session: AsyncSession = Depends(get_session)):
         id=str(uuid.uuid4()),
         name=name,
         is_active=False,
-        created_at=datetime.utcnow()
+        created_at=datetime.now()
     )
     session.add(user)
     try:
@@ -109,28 +109,29 @@ async def activate_user(user_id: str, session: AsyncSession = Depends(get_sessio
             )).scalars().first()
             
             if active_user:
-                from services.scheduler import scheduler as aps_scheduler, trigger_workflow_job, _cron_kwargs
+                from services.scheduler import scheduler as aps_scheduler, trigger_workflow_job, build_cron_trigger, get_next_run_time
                 aps_scheduler.remove_all_jobs()
-                
+
                 stmt = sa_select(Schedule, Workflow.project_id).join(
                     Workflow, Schedule.workflow_id == Workflow.id
                 ).join(
                     Project, Workflow.project_id == Project.id
                 ).where(Schedule.enabled == True, Project.user_id == active_user.id)
-                
+
                 rows = (await new_session.execute(stmt)).all()
                 for sched, proj_id in rows:
                     try:
                         aps_scheduler.add_job(
                             trigger_workflow_job,
-                            "cron",
+                            trigger=build_cron_trigger(sched.cron_expr),
                             id=sched.id,
                             kwargs={"workflow_id": sched.workflow_id, "project_id": proj_id, "schedule_id": sched.id},
-                            **_cron_kwargs(sched.cron_expr),
                             replace_existing=True,
                         )
+                        sched.next_run_at = get_next_run_time(sched.id)
                     except Exception:
                         pass
+                await new_session.commit()
     except Exception:
         pass
         

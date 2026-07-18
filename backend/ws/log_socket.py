@@ -55,7 +55,7 @@ def get_run_history(run_id: str, offset: int = 0) -> list:
     import sqlite3
     try:
         from services.venv_manager import DATA_DIR
-        db_path = DATA_DIR / "workflow.db"
+        db_path = DATA_DIR / "pyflow.db"
         if db_path.exists():
             with sqlite3.connect(str(db_path)) as conn:
                 row = conn.execute("SELECT logs_json FROM workflow_run WHERE id=?", (run_id,)).fetchone()

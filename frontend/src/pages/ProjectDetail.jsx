@@ -708,7 +708,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
                 rowKey="name"
                 loading={pkgLoading}
                 pagination={{
-                  pageSize: 8,
+                  pageSize: 10,
                   showSizeChanger: false,
                   showTotal: (total) => `${total} packages`,
                 }}
@@ -805,7 +805,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
             rowKey="id"
             loading={histLoading}
             pagination={{
-              pageSize: 8,
+              pageSize: 10,
               showSizeChanger: false,
               showTotal: (total) => `${total} bản ghi`,
             }}

@@ -81,8 +81,8 @@ async def create_project(request: Request, body: dict, session: AsyncSession = D
         icon=body.get("icon", "Box"),
         color=body.get("color", "#6c63ff"),
         user_id=user_id,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
     )
     session.add(project)
     await session.commit()
@@ -104,7 +104,7 @@ async def _init_venv_bg(project_id: str):
             if proj:
                 proj.venv_ready = True
                 proj.venv_path = result["path"]
-                proj.updated_at = datetime.utcnow()
+                proj.updated_at = datetime.now()
                 await session.commit()
     except Exception as e:
         import logging
@@ -136,7 +136,7 @@ async def update_project(project_id: str, body: dict, session: AsyncSession = De
     for field in ["name", "description", "color", "icon"]:
         if field in body:
             setattr(proj, field, body[field])
-    proj.updated_at = datetime.utcnow()
+    proj.updated_at = datetime.now()
 
     await session.commit()
     await session.refresh(proj)
@@ -174,8 +174,8 @@ async def duplicate_project(project_id: str, session: AsyncSession = Depends(get
         color=proj.color,
         user_id=proj.user_id,
         sort_order=proj.sort_order,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(),
+        updated_at=datetime.now()
     )
     session.add(new_proj)
     await session.commit()
@@ -233,7 +233,7 @@ async def init_venv_manual(project_id: str, session: AsyncSession = Depends(get_
         r = await create_venv(project_id)
         proj.venv_ready = True
         proj.venv_path = r["path"]
-        proj.updated_at = datetime.utcnow()
+        proj.updated_at = datetime.now()
         await session.commit()
         return {"status": "ok", "path": r["path"]}
     except Exception as e:
