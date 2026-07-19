@@ -25,6 +25,19 @@ def _get_wf_dir(wf: Workflow) -> Path:
     proj_dir = get_project_dir(wf.project_id)
     return proj_dir / f"wf_{slugify(wf.name)}"
 
+
+def _safe_path(base_dir: Path, filename: str) -> Path:
+    """Chống path traversal: chỉ chấp nhận tên file thuần, xác minh kết quả nằm trong base_dir."""
+    name = os.path.basename(str(filename).replace("\\", "/")).strip()
+    if not name or name in (".", ".."):
+        raise HTTPException(400, "Tên file không hợp lệ")
+    path = (base_dir / name).resolve()
+    try:
+        path.relative_to(base_dir.resolve())
+    except ValueError:
+        raise HTTPException(400, "Tên file không hợp lệ")
+    return path
+
 # ── Input Files ──────────────────────────────────────────────
 
 @router.get("/{workflow_id}/files")
@@ -59,12 +72,12 @@ async def upload_file(workflow_id: str, file: UploadFile = File(...), session: A
     input_dir = wf_dir / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
     
-    file_path = input_dir / file.filename
+    file_path = _safe_path(input_dir, file.filename)
     content = await file.read()
     with open(file_path, "wb") as f:
         f.write(content)
-        
-    return {"status": "ok", "filename": file.filename}
+
+    return {"status": "ok", "filename": file_path.name}
 
 
 @router.delete("/{workflow_id}/files/{filename}")
@@ -74,12 +87,26 @@ async def delete_input_file(workflow_id: str, filename: str, session: AsyncSessi
         raise HTTPException(404, "Workflow không tồn tại")
         
     wf_dir = _get_wf_dir(wf)
-    file_path = wf_dir / "input" / filename
-    
+    file_path = _safe_path(wf_dir / "input", filename)
+
     if file_path.exists():
         os.remove(file_path)
         return {"status": "ok"}
     raise HTTPException(404, "File không tồn tại")
+
+
+@router.get("/{workflow_id}/files/{filename}/download")
+async def download_input_file(workflow_id: str, filename: str, session: AsyncSession = Depends(get_session)):
+    wf = await session.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow không tồn tại")
+
+    wf_dir = _get_wf_dir(wf)
+    file_path = _safe_path(wf_dir / "input", filename)
+
+    if not file_path.exists():
+        raise HTTPException(404, "File không tồn tại")
+    return FileResponse(file_path, filename=file_path.name)
 
 
 @router.get("/{workflow_id}/files/{filename}/open")
@@ -89,11 +116,11 @@ async def open_input_file_os(workflow_id: str, filename: str, session: AsyncSess
         raise HTTPException(404, "Workflow không tồn tại")
         
     wf_dir = _get_wf_dir(wf)
-    file_path = wf_dir / "input" / filename
-    
+    file_path = _safe_path(wf_dir / "input", filename)
+
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại")
-        
+
     import platform
     sys_os = platform.system()
     try:
@@ -139,12 +166,26 @@ async def delete_output_file(workflow_id: str, filename: str, session: AsyncSess
         raise HTTPException(404, "Workflow không tồn tại")
         
     wf_dir = _get_wf_dir(wf)
-    file_path = wf_dir / "output" / filename
-    
+    file_path = _safe_path(wf_dir / "output", filename)
+
     if file_path.exists():
         os.remove(file_path)
         return {"status": "ok"}
     raise HTTPException(404, "File không tồn tại")
+
+
+@router.get("/{workflow_id}/output-files/{filename}/download")
+async def download_output_file(workflow_id: str, filename: str, session: AsyncSession = Depends(get_session)):
+    wf = await session.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow không tồn tại")
+
+    wf_dir = _get_wf_dir(wf)
+    file_path = _safe_path(wf_dir / "output", filename)
+
+    if not file_path.exists():
+        raise HTTPException(404, "File không tồn tại")
+    return FileResponse(file_path, filename=file_path.name)
 
 
 @router.get("/{workflow_id}/output-files/{filename}/open")
@@ -154,11 +195,11 @@ async def open_output_file_os(workflow_id: str, filename: str, session: AsyncSes
         raise HTTPException(404, "Workflow không tồn tại")
         
     wf_dir = _get_wf_dir(wf)
-    file_path = wf_dir / "output" / filename
-    
+    file_path = _safe_path(wf_dir / "output", filename)
+
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại")
-        
+
     import platform
     sys_os = platform.system()
     try:
@@ -182,14 +223,14 @@ async def get_excel_columns(workflow_id: str, filename: str, header_row: int = 0
         raise HTTPException(404, "Workflow không tồn tại")
         
     wf_dir = _get_wf_dir(wf)
-    file_path = wf_dir / "input" / filename
-    
+    file_path = _safe_path(wf_dir / "input", filename)
+
     if not file_path.exists():
-        file_path = wf_dir / "output" / filename
-        
+        file_path = _safe_path(wf_dir / "output", filename)
+
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại")
-        
+
     if not str(file_path).endswith(('.xlsx', '.xls', '.csv')):
         return {"columns": []}
         
@@ -211,14 +252,14 @@ async def get_excel_column_values(workflow_id: str, filename: str, col_name: str
         raise HTTPException(404, "Workflow không tồn tại")
         
     wf_dir = _get_wf_dir(wf)
-    file_path = wf_dir / "input" / filename
-    
+    file_path = _safe_path(wf_dir / "input", filename)
+
     if not file_path.exists():
-        file_path = wf_dir / "output" / filename
-        
+        file_path = _safe_path(wf_dir / "output", filename)
+
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại")
-        
+
     try:
         import pandas as pd
         if str(file_path).endswith('.csv'):

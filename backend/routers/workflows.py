@@ -16,6 +16,27 @@ router = APIRouter(tags=["workflows"])
 _stop_flags: dict = {}
 _workflow_run_ids: dict = {}
 
+# Event loop chính của backend (uvicorn) — được set lúc startup.
+# Các nguồn trigger chạy trên loop/thread khác (vd Telegram listener)
+# phải điều phối run về loop này để log/SSE/DB hoạt động nhất quán.
+_main_loop = None
+
+def set_main_loop(loop):
+    global _main_loop
+    _main_loop = loop
+
+def schedule_run_on_main_loop(workflow_id: str, initial_input: dict = None, triggered_by: str = "manual"):
+    """Kích hoạt run từ thread/loop bất kỳ, luôn thực thi trên loop chính."""
+    coro = run_workflow_internal(workflow_id, initial_input=initial_input, triggered_by=triggered_by)
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if _main_loop is not None and _main_loop is not running:
+        asyncio.run_coroutine_threadsafe(coro, _main_loop)
+    else:
+        asyncio.create_task(coro)
+
 
 async def run_workflow_internal(workflow_id: str, initial_input: dict = None, triggered_by: str = "manual", run_id: str = None):
     async with AsyncSessionLocal() as session:
@@ -259,6 +280,26 @@ async def update_workflow(workflow_id: str, body: dict, session: AsyncSession = 
     return wf.to_dict()
 
 
+async def _cascade_delete_workflow_children(session: AsyncSession, workflow_id: str):
+    """Xóa run history + schedule (kèm job APScheduler) của một workflow."""
+    from models import Schedule
+    from services.scheduler import scheduler
+
+    scheds = (await session.execute(
+        select(Schedule).where(Schedule.workflow_id == workflow_id)
+    )).scalars().all()
+    for s in scheds:
+        try:
+            scheduler.remove_job(s.id)
+        except Exception:
+            pass
+        await session.delete(s)
+
+    await session.execute(
+        delete(WorkflowRun).where(WorkflowRun.workflow_id == workflow_id)
+    )
+
+
 @router.delete("/api/workflows/{workflow_id}", status_code=204)
 async def delete_workflow(workflow_id: str, session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)
@@ -268,6 +309,8 @@ async def delete_workflow(workflow_id: str, session: AsyncSession = Depends(get_
     # Lấy project name để tính đường dẫn folder
     proj = await session.get(Project, wf.project_id)
     pj_name = proj.name if proj else None
+
+    await _cascade_delete_workflow_children(session, workflow_id)
     await session.delete(wf)
     await session.commit()
     delete_workflow_dir(workflow_id, wf_name=wf_name, pj_name=pj_name)
@@ -371,14 +414,7 @@ async def get_run_history(workflow_id: str, limit: int = 20, session: AsyncSessi
 
 @router.delete("/api/workflows/{workflow_id}/runs", status_code=204)
 async def delete_run_history(workflow_id: str, session: AsyncSession = Depends(get_session)):
-    import shutil
-    from services.venv_manager import DATA_DIR
-    wf = await session.get(Workflow, workflow_id)
-    if wf:
-        runs_dir = DATA_DIR / f"pj_{wf.project_id}" / f"wf_{workflow_id}" / "runs"
-        if runs_dir.exists():
-            shutil.rmtree(runs_dir, ignore_errors=True)
-            
+    # Lịch sử chạy chỉ nằm trong DB (logs_json), không có thư mục runs/ trên đĩa
     await session.execute(
         delete(WorkflowRun).where(WorkflowRun.workflow_id == workflow_id)
     )

@@ -22,7 +22,7 @@ const STATUS_CONFIG = {
   stopped:   { label: 'Đã dừng',   color: 'default' },
 }
 
-export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
+export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProjectUpdate }) {
   const [workflows, setWorkflows] = useState([])
   const [packages, setPackages] = useState([])
   const [runHistory, setRunHistory] = useState([])
@@ -252,7 +252,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow }) {
     e.stopPropagation()
     if (isWfRunning(wf.id)) return // chặn double-click
     if (!wf.graph_json) {
-      toast.warning('Workflow chưa có nội dung. Vui lòng thêm blocks trước khi chạy.')
+      toast('Workflow chưa có nội dung. Vui lòng thêm blocks trước khi chạy.', { icon: '⚠️' })
       return
     }
     try {

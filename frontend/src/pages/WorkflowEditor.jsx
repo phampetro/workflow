@@ -80,6 +80,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const reactFlowWrapper = useRef(null)
   const { screenToFlowPosition, fitView } = useReactFlow()
 
+  // Refs giữ state mới nhất để các callback (đặc biệt là closure gắn vào edge)
+  // không bao giờ đọc phải state cũ (stale closure)
+  const nodesRef = useRef(nodes)
+  const edgesRef = useRef(edges)
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+  useEffect(() => { edgesRef.current = edges }, [edges])
+  // Chỉ cho phép auto-save/snapshot sau khi graph đã tải xong từ server
+  const graphLoadedRef = useRef(false)
+
   const proj  = project  || { name: 'Project', color: '#6c63ff' }
 
   useEffect(() => {
@@ -104,7 +113,6 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           const loadedEdges = (graph.edges || []).map(e => {
             const cleanEdge = { ...e, type: 'custom' }
             cleanEdge.markerEnd = { type: MarkerType.ArrowClosed, color: '#6c63ff' }
-            cleanEdge.data = { ...cleanEdge.data, onDelete: handleDeleteEdge }
             return cleanEdge
           })
           // Remove duplicate edges
@@ -123,6 +131,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           })
           setNodes(uniqueNodes)
           setEdges(uniqueEdges)
+          graphLoadedRef.current = true
           setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100)
         } catch { setNodesFromDefault() }
       } else {
@@ -165,39 +174,39 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const setNodesFromDefault = () => {
     setNodes(DEFAULT_GRAPH.nodes)
     setEdges(DEFAULT_GRAPH.edges)
+    graphLoadedRef.current = true
     setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100)
   }
 
-  const triggerAutoSave = useCallback((newNodes, newEdges) => {
-    // Chống lỗi HMR / crash component làm state trả về rỗng rồi auto-save đè lên database
-    if (!newNodes || newNodes.length === 0) return;
+  const triggerAutoSave = useCallback(() => {
+    // Chỉ lưu sau khi graph đã tải từ server — chống HMR/remount làm state rỗng đè lên database.
+    // Dữ liệu lưu được đọc từ ref TẠI THỜI ĐIỂM timer chạy nên luôn là state mới nhất.
+    if (!graphLoadedRef.current) return
 
     setSaveStatus('unsaved')
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
-      saveGraph(newNodes, newEdges)
+      saveGraph(nodesRef.current, edgesRef.current)
     }, 1500)
   }, [wfData?.id])
 
   const handleUndo = useCallback(() => {
-    const previous = undo(nodes, edges);
+    const previous = undo(nodesRef.current, edgesRef.current);
     if (previous) {
       setNodes(previous.nodes);
       setEdges(previous.edges);
-      // Gọi tự động lưu với dữ liệu cũ
-      setTimeout(() => triggerAutoSave(previous.nodes, previous.edges), 0);
+      setTimeout(() => triggerAutoSave(), 0);
     }
-  }, [nodes, edges, undo, setNodes, setEdges, triggerAutoSave]);
+  }, [undo, setNodes, setEdges, triggerAutoSave]);
 
   const handleRedo = useCallback(() => {
-    const next = redo(nodes, edges);
+    const next = redo(nodesRef.current, edgesRef.current);
     if (next) {
       setNodes(next.nodes);
       setEdges(next.edges);
-      // Gọi tự động lưu với dữ liệu mới
-      setTimeout(() => triggerAutoSave(next.nodes, next.edges), 0);
+      setTimeout(() => triggerAutoSave(), 0);
     }
-  }, [nodes, edges, redo, setNodes, setEdges, triggerAutoSave]);
+  }, [redo, setNodes, setEdges, triggerAutoSave]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -252,20 +261,26 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   }, [wfData?.id])
 
   const handleNodesChange = useCallback((changes) => {
+    // Xóa bằng phím Delete/Backspace cũng phải vào lịch sử undo
+    if (changes.some(c => c.type === 'remove')) {
+      takeSnapshot(nodesRef.current, edgesRef.current)
+    }
     onNodesChange(changes)
-    setNodes(nds => {
-      triggerAutoSave(nds, edges)
-      return nds
-    })
-  }, [onNodesChange, edges, triggerAutoSave])
+    // Chỉ lưu khi có thay đổi thực sự (bỏ qua select để không ghi đè vô nghĩa)
+    if (changes.some(c => c.type !== 'select')) {
+      triggerAutoSave()
+    }
+  }, [onNodesChange, triggerAutoSave, takeSnapshot])
 
   const handleEdgesChange = useCallback((changes) => {
+    if (changes.some(c => c.type === 'remove')) {
+      takeSnapshot(nodesRef.current, edgesRef.current)
+    }
     onEdgesChange(changes)
-    setEdges(eds => {
-      triggerAutoSave(nodes, eds)
-      return eds
-    })
-  }, [onEdgesChange, nodes, triggerAutoSave])
+    if (changes.some(c => c.type !== 'select')) {
+      triggerAutoSave()
+    }
+  }, [onEdgesChange, triggerAutoSave, takeSnapshot])
 
   const handleManualSave = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -273,28 +288,24 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   }
 
   const handleDeleteEdge = useCallback((edgeId) => {
-    takeSnapshot(nodes, edges)
-    setEdges(eds => {
-      const newEdges = eds.filter(e => e.id !== edgeId)
-      triggerAutoSave(nodes, newEdges)
-      return newEdges
-    })
-  }, [nodes, edges, triggerAutoSave, takeSnapshot])
+    // Đọc từ ref để không bao giờ snapshot/lưu state cũ, dù closure này được gắn từ lâu
+    takeSnapshot(nodesRef.current, edgesRef.current)
+    setEdges(eds => eds.filter(e => e.id !== edgeId))
+    triggerAutoSave()
+  }, [triggerAutoSave, takeSnapshot])
 
   const onConnect = useCallback(
     (params) => {
-      takeSnapshot(nodes, edges)
-      const newEdges = addEdge({
+      takeSnapshot(nodesRef.current, edgesRef.current)
+      setEdges(eds => addEdge({
         ...params, animated: true,
         type: 'custom',
         style: EDGE_STYLE,
         markerEnd: { type: MarkerType.ArrowClosed, color: '#6c63ff' },
-        data: { onDelete: handleDeleteEdge },
-      }, edges)
-      setEdges(newEdges)
-      triggerAutoSave(nodes, newEdges)
+      }, eds))
+      triggerAutoSave()
     },
-    [edges, nodes, triggerAutoSave, handleDeleteEdge, takeSnapshot]
+    [triggerAutoSave, takeSnapshot]
   )
 
   const openEditor = (nodeId) => {
@@ -303,17 +314,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   }
 
   const deleteNode = (nodeId) => {
-    takeSnapshot(nodes, edges)
-    const newNodes = nodes.filter((n) => n.id !== nodeId)
-    const newEdges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
-    setNodes(newNodes)
-    setEdges(newEdges)
-    triggerAutoSave(newNodes, newEdges)
+    takeSnapshot(nodesRef.current, edgesRef.current)
+    setNodes(nds => nds.filter((n) => n.id !== nodeId))
+    setEdges(eds => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+    triggerAutoSave()
   }
 
   const duplicateNode = (nodeId) => {
-    takeSnapshot(nodes, edges)
-    // Dùng updater function để luôn đọc state nodes mới nhất, tránh stale closure
+    takeSnapshot(nodesRef.current, edgesRef.current)
     setNodes(prev => {
       const original = prev.find((n) => n.id === nodeId)
       if (!original) return prev
@@ -325,10 +333,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         selected: false,
         data: { ...original.data, onEdit: undefined, onDelete: undefined, onDuplicate: undefined },
       }
-      const newNodes = [...prev, newNode]
-      triggerAutoSave(newNodes, edges)
-      return newNodes
+      return [...prev, newNode]
     })
+    triggerAutoSave()
   }
 
   const handleSaveBlock = (nodeId, data) => {
@@ -432,11 +439,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         },
       }
 
-      const newNodes = [...nodes, newNode]
-      setNodes(newNodes)
-      triggerAutoSave(newNodes, edges)
+      setNodes(nds => [...nds, newNode])
+      triggerAutoSave()
     },
-    [nodes, edges, screenToFlowPosition, triggerAutoSave]
+    [screenToFlowPosition, triggerAutoSave]
   )
 
   const nodesWithCb = nodes.map((n) => ({
@@ -447,6 +453,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       onDelete: () => deleteNode(n.id),
       onDuplicate: () => duplicateNode(n.id),
     },
+  }))
+
+  // Rebind onDelete mỗi render (giống nodesWithCb) — edge không bao giờ giữ closure cũ,
+  // và undo/redo (deep-clone làm mất function) cũng không làm chết nút xóa edge
+  const edgesWithCb = edges.map((e) => ({
+    ...e,
+    data: { ...e.data, onDelete: handleDeleteEdge },
   }))
 
   const SaveIcon = saveStatus === 'saving' ? Loader
@@ -558,16 +571,16 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         <div className="canvas-area" ref={reactFlowWrapper}>
           <ReactFlow
             nodes={nodesWithCb}
-            edges={edges}
+            edges={edgesWithCb}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onDrop={(e) => {
-              takeSnapshot(nodes, edges)
+              takeSnapshot(nodesRef.current, edgesRef.current)
               onDrop(e)
             }}
             onDragOver={onDragOver}
-            onNodeDragStart={() => takeSnapshot(nodes, edges)}
+            onNodeDragStart={() => takeSnapshot(nodesRef.current, edgesRef.current)}
             onNodeDoubleClick={(e, node) => openEditor(node.id)}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}

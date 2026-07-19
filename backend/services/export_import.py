@@ -75,6 +75,19 @@ def _read_workflow_meta(zip_data: bytes) -> dict:
     return meta.get("workflow", {})
 
 
+def _safe_extract_dest(target_dir: Path, rel: str) -> Path | None:
+    """Chống Zip Slip: bỏ qua entry có đường dẫn tuyệt đối hoặc thoát khỏi target_dir."""
+    rel = rel.replace("\\", "/")
+    if rel.startswith("/") or ".." in rel.split("/"):
+        return None
+    dest = (target_dir / rel).resolve()
+    try:
+        dest.relative_to(target_dir.resolve())
+    except ValueError:
+        return None
+    return dest
+
+
 def _extract_workflow_files(zip_data: bytes, wf_dir: Path):
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zf:
         for sub in ("input", "output"):
@@ -83,7 +96,9 @@ def _extract_workflow_files(zip_data: bytes, wf_dir: Path):
             for name in zf.namelist():
                 if name.startswith(prefix) and not name.endswith("/"):
                     rel = name[len(prefix):]
-                    dest = target_dir / rel
+                    dest = _safe_extract_dest(target_dir, rel)
+                    if dest is None:
+                        continue
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(zf.read(name))
 
@@ -214,7 +229,9 @@ def _extract_project_workflow_files(zip_data: bytes, idx: int, wf_dir: Path):
             for name in zf.namelist():
                 if name.startswith(prefix) and not name.endswith("/"):
                     rel = name[len(prefix):]
-                    dest = target_dir / rel
+                    dest = _safe_extract_dest(target_dir, rel)
+                    if dest is None:
+                        continue
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(zf.read(name))
 

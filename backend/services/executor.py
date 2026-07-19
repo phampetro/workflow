@@ -28,6 +28,10 @@ async def execute_workflow(
     class SyncStopEvent:
         def is_set(self):
             return stop_flag.is_set()
+
+        def set(self):
+            # Có thể được gọi từ thread khác (kill_run) — phải qua call_soon_threadsafe
+            loop.call_soon_threadsafe(stop_flag.set)
             
     try:
         result = await asyncio.to_thread(

@@ -2,7 +2,6 @@ import asyncio
 import logging
 import httpx
 from typing import Dict
-from services.executor import execute_workflow
 
 logger = logging.getLogger("pyflow.telegram_listener")
 
@@ -91,6 +90,17 @@ async def _telegram_listener_loop(
     async with httpx.AsyncClient(timeout=timeout + 5) as client:
         await _set_bot_commands(client, bot_token, commands)
 
+        # Bỏ qua backlog tin nhắn cũ tồn đọng (getUpdates giữ tin chưa xác nhận tới 24h):
+        # nếu không, mỗi lần khởi động lại backend sẽ chạy hàng loạt workflow cho tin nhắn cũ
+        try:
+            resp = await client.get(url, params={"offset": -1, "timeout": 0})
+            data = resp.json()
+            if data.get("ok") and data.get("result"):
+                offset = data["result"][-1]["update_id"] + 1
+                logger.info(f"   Bỏ qua backlog, bắt đầu từ update_id {offset}")
+        except Exception:
+            pass
+
         while not stop_event.is_set():
             try:
                 response = await client.get(url, params={"offset": offset, "timeout": timeout})
@@ -138,39 +148,14 @@ async def _telegram_listener_loop(
                                 "raw_message": message
                             }
                             
-                            # Ghi đè vào graph_json để truyền _initial_input
-                            import json
-                            try:
-                                graph = json.loads(graph_json)
-                                for node in graph.get("nodes", []):
-                                    if node.get("data", {}).get("type") == "telegram_listener":
-                                        node["data"]["_initial_input"] = initial_input
-                                modified_graph_json = json.dumps(graph)
-                            except Exception as e:
-                                logger.error(f"Lỗi khi inject initial_input vào graph: {e}")
-                                modified_graph_json = graph_json
-                            
-                            # Gọi thực thi Workflow
-                            import uuid
-                            run_id = str(uuid.uuid4())
-                            
-                            # Tạo dummy log_callback
-                            async def dummy_log(block_id, level, msg):
-                                pass
-                                
-                            wf_stop_event = asyncio.Event()
-                            
-                            # Kích hoạt workflow trong background
-                            asyncio.create_task(
-                                execute_workflow(
-                                    project_id=project_id,
-                                    workflow_id=workflow_id,
-                                    run_id=run_id,
-                                    workflow_name=workflow_name,
-                                    graph_json=modified_graph_json,
-                                    log_callback=dummy_log,
-                                    stop_flag=wf_stop_event
-                                )
+                            # Chạy qua run_workflow_internal (trên loop chính) để run được
+                            # ghi nhận đầy đủ: có bản ghi WorkflowRun (hiện trong Lịch sử),
+                            # có log lưu DB, và có stop flag (nút Dừng hoạt động được).
+                            from routers.workflows import schedule_run_on_main_loop
+                            schedule_run_on_main_loop(
+                                workflow_id,
+                                initial_input=initial_input,
+                                triggered_by="telegram",
                             )
                 elif response.status_code == 401:
                     logger.error(f"Bot Token không hợp lệ cho Workflow {workflow_id}. Đang dừng Listener.")

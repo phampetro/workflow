@@ -41,8 +41,13 @@ def kill_run(run_id):
                 proc.kill()
             except Exception:
                 pass
-    # Xóa khỏi active runs
-    _active_runs.pop(run_id, None)
+    # Set cờ dừng để vòng lặp workflow không chạy tiếp block kế
+    ev = _active_runs.pop(run_id, None)
+    if ev is not None:
+        try:
+            ev.set()
+        except Exception:
+            pass
 
 
 def stop_workflow_by_id(run_id):
@@ -461,16 +466,30 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
     import time
     time.sleep(0.5) # Đợi client SSE kết nối trước khi chạy nhanh
     start = datetime.now()
+
+    # Đăng ký run để cơ chế force-kill (kill_run / stop_all_runs_for_workflow)
+    # tìm được stop_event và subprocess tương ứng. _finish_run sẽ dọn dẹp.
+    _active_runs[run_id] = stop_event
+    _workflow_run_ids.setdefault(workflow_id, set()).add(run_id)
+
     try:
         graph = json.loads(graph_json)
     except Exception as e:
         _finish_run(run_id, "error", start, error=str(e))
         return
-        
-    proj_dir = get_project_dir(project_id)
-    wf_dir = proj_dir / f"wf_{slugify(workflow_name)}"
-    input_dir = wf_dir / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        proj_dir = get_project_dir(project_id)
+        wf_dir = proj_dir / f"wf_{slugify(workflow_name)}"
+        input_dir = wf_dir / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        # Lỗi trước vòng try chính (DB lock, PermissionError...) không được
+        # để run kẹt ở trạng thái RUNNING vĩnh viễn
+        _finish_run(run_id, "error", start, error=str(e))
+        if log_fn:
+            log_fn("system", "error", f"❌ Lỗi chuẩn bị thư mục workflow: {e}")
+        return
 
     try:
         nodes = graph.get("nodes", [])
@@ -548,15 +567,20 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     for k, v in workflow_env.items():
                         val = val.replace("{{" + k + "}}", str(v))
                     return val
-            
-            # Nội suy các biến môi trường
-            bdata_interpolated = {}
-            for k, v in bdata.items():
-                if isinstance(v, str):
-                    bdata_interpolated[k] = interpolate(v)
-                else:
-                    bdata_interpolated[k] = v
-            bdata = bdata_interpolated
+
+                def interpolate_deep(val):
+                    # Nội suy đệ quy vào dict/list lồng nhau (conditions, attachments,
+                    # danh sách lệnh telegram...) — không chỉ field string cấp cao nhất
+                    if isinstance(val, str):
+                        return interpolate(val)
+                    if isinstance(val, dict):
+                        return {k: interpolate_deep(v) for k, v in val.items()}
+                    if isinstance(val, list):
+                        return [interpolate_deep(item) for item in val]
+                    return val
+
+            # Nội suy các biến môi trường (đệ quy vào cả cấu trúc lồng nhau)
+            bdata = {k: interpolate_deep(v) for k, v in bdata.items()}
 
             btype = bdata.get("type", "python")
             bid = node["id"]

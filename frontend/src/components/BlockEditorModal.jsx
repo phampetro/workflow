@@ -592,8 +592,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         setColumnError('')
         try {
           const res = await getFileColumns(workflowId, pivotInputFile, pivotHeaderRow || 1)
-          if (Array.isArray(res.data)) {
-            const cols = res.data
+          if (Array.isArray(res.data?.columns)) {
+            const cols = res.data.columns
             setAvailableColumns(cols)
             
             // Auto clear invalid fields
@@ -645,12 +645,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         setLoadingCustomSort(true)
         try {
           const res = await getFileColumnValues(workflowId, pivotInputFile, pivotSortColumn, pivotHeaderRow || 1)
-          if (Array.isArray(res.data)) {
-            setCustomSortValues(res.data)
+          if (Array.isArray(res.data?.values)) {
+            setCustomSortValues(res.data.values)
             // Cập nhật giá trị vào form nếu đang trống
             const currentCustom = form.getFieldValue('pivotSortCustom')
             if (!currentCustom || currentCustom.length === 0) {
-              form.setFieldsValue({ pivotSortCustom: res.data })
+              form.setFieldsValue({ pivotSortCustom: res.data.values })
             }
           }
         } catch (e) {
@@ -709,7 +709,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       width={getDrawerWidth()}
       onClose={onClose}
       open={true}
-      mask={{ closable: false }}
+      maskClosable={false}
+      keyboard={false}
       destroyOnHidden
       extra={
         <Space>

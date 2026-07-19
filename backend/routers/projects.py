@@ -191,6 +191,16 @@ async def delete_project(project_id: str, session: AsyncSession = Depends(get_se
         raise HTTPException(404, "Project không tồn tại")
 
     pj_name = proj.name
+
+    # Cascade: xóa toàn bộ workflow con kèm run history + schedule (và job APScheduler)
+    from routers.workflows import _cascade_delete_workflow_children
+    workflows = (await session.execute(
+        select(Workflow).where(Workflow.project_id == project_id)
+    )).scalars().all()
+    for wf in workflows:
+        await _cascade_delete_workflow_children(session, wf.id)
+        await session.delete(wf)
+
     await session.delete(proj)
     await session.commit()
     delete_project_dir(project_id, pj_name=pj_name)

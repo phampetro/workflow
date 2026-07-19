@@ -83,6 +83,9 @@ async def lifespan(app: FastAPI):
     # Cleanup any runs stuck in RUNNING status from previous sessions
     await cleanup_stuck_runs()
     
+    # Ghi nhớ loop chính để các trigger từ thread khác (Telegram listener) điều phối về
+    workflows.set_main_loop(asyncio.get_running_loop())
+
     # Load schedules and start Scheduler
     set_run_callback(workflows.trigger_workflow_from_scheduler)
     start_scheduler()

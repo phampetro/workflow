@@ -220,7 +220,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
       }
       open={true}
       onClose={onClose}
-      mask={{ closable: false }}
+      maskClosable={false}
       destroyOnClose
       size="large"
       placement="right"

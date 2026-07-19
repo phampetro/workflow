@@ -62,17 +62,16 @@ async def update_schedule(schedule_id: str, body: dict, session: AsyncSession = 
     sched = await session.get(Schedule, schedule_id)
     if not sched:
         raise HTTPException(404, "Schedule không tồn tại")
-        
+
     wf = await session.get(Workflow, sched.workflow_id)
-        
+    if not wf:
+        raise HTTPException(404, "Workflow của lịch này không còn tồn tại")
+
     if "cron_expr" in body:
         sched.cron_expr = body["cron_expr"]
     if "label" in body:
         sched.label = body["label"]
-        
-    await session.commit()
-    await session.refresh(sched)
-    
+
     if sched.enabled:
         try:
             scheduler.add_job(
@@ -83,10 +82,12 @@ async def update_schedule(schedule_id: str, body: dict, session: AsyncSession = 
                 replace_existing=True,
             )
             sched.next_run_at = get_next_run_time(sched.id)
-            await session.commit()
         except Exception as e:
-            pass
+            # Không nuốt lỗi: cron sai phải báo cho người dùng, không lưu lịch hỏng
+            raise HTTPException(400, f"Lỗi cron: {str(e)}")
 
+    await session.commit()
+    await session.refresh(sched)
     return sched.to_dict()
 
 
@@ -102,6 +103,9 @@ async def toggle_schedule(schedule_id: str, body: dict = None, session: AsyncSes
         enabled = body.get("enabled", True)
     else:
         enabled = not sched.enabled
+
+    if enabled and not wf:
+        raise HTTPException(404, "Workflow của lịch này không còn tồn tại")
 
     sched.enabled = enabled
 
