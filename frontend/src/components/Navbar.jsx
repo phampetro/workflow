@@ -1,5 +1,5 @@
 import React from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Upload } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Upload, Sparkles } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import useStore from '../store/useStore'
 
@@ -14,6 +14,7 @@ export default function Navbar({
   onImport,
   isDashboard,
   onSwitchUser,
+  onOpenAiSettings,
 }) {
   const theme = useStore((state) => state.theme)
   const setTheme = useStore((state) => state.setTheme)
@@ -29,6 +30,17 @@ export default function Navbar({
         </span>
       ),
       onClick: onSwitchUser,
+    },
+    { type: 'divider' },
+    {
+      key: 'ai-settings',
+      label: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Sparkles size="0.875rem" />
+          Cài đặt AI
+        </span>
+      ),
+      onClick: onOpenAiSettings,
     },
     { type: 'divider' },
     {

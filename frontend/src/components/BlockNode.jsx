@@ -1,7 +1,6 @@
 import React, { memo, useState, useEffect } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat } from 'lucide-react'
-
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal } from 'lucide-react'
 const BLOCK_TYPES = {
   start: {
     label: 'Start',
@@ -9,6 +8,13 @@ const BLOCK_TYPES = {
     color: '#00d4aa',
     gradient: 'linear-gradient(135deg, #00d4aa, #0891b2)',
     description: 'Điểm bắt đầu workflow',
+  },
+  error_trigger: {
+    label: 'Bắt Lỗi',
+    icon: <AlertTriangle size="0.875rem" />,
+    color: '#ef4444',
+    gradient: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+    description: 'Tự động kích hoạt khi có khối lỗi',
   },
   python: {
     label: 'Python Block',
@@ -66,19 +72,26 @@ const BLOCK_TYPES = {
     gradient: 'linear-gradient(135deg, #ef4444, #dc2626)',
     description: 'Kết thúc workflow',
   },
-  database: {
-    label: 'Database',
-    icon: <Database size="0.875rem" />,
-    color: '#10b981',
-    gradient: 'linear-gradient(135deg, #10b981, #059669)',
-    description: 'Kết nối Cơ sở dữ liệu',
-  },
   sql_to_excel: {
     label: 'SQL to Excel',
     icon: <Table size="0.875rem" />,
     color: '#059669',
     gradient: 'linear-gradient(135deg, #059669, #047857)',
     description: 'Xuất kết quả SQL ra Excel',
+  },
+  excel_to_sql: {
+    label: 'Excel to SQL',
+    icon: <Database size="0.875rem" />,
+    color: '#0ea5e9',
+    gradient: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+    description: 'Import Excel vào CSDL',
+  },
+  run_sql_exec: {
+    label: 'Chạy Hàm SQL (EXEC)',
+    icon: <Terminal size="0.875rem" />,
+    color: '#14b8a6',
+    gradient: 'linear-gradient(135deg, #14b8a6, #0f766e)',
+    description: 'Thực thi hàm/thủ tục SQL và lấy kết quả trả về',
   },
   merge_excel: {
     label: 'Merge Excel',
@@ -123,7 +136,7 @@ const BlockNode = memo(({ id, data, selected }) => {
   const style = STATUS_STYLES[runStatus] || STATUS_STYLES.idle
 
   const hasSource = data.type !== 'end'
-  const hasTarget = data.type !== 'start'
+  const hasTarget = data.type !== 'start' && data.type !== 'error_trigger'
 
   const inPos = data.inPosition || 'left'
   const outPos = data.outPosition || 'right'

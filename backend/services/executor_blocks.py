@@ -81,6 +81,43 @@ def get_project_dir(project_id: str) -> Path:
         name = row[0] if row else "unknown"
     return DATA_DIR / f"pj_{slugify(name)}"
 
+def get_saved_db_connection(connection_id: str) -> dict | None:
+    if not connection_id:
+        return None
+    db_path = venv_manager.DATA_DIR / "pyflow.db"
+    with sqlite3.connect(str(db_path), timeout=5) as conn:
+        row = conn.execute(
+            "SELECT db_type, host, port, username, password, dbname FROM db_connection WHERE id=?",
+            (connection_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "db_type": row[0], "host": row[1], "port": row[2],
+        "username": row[3], "password": row[4], "dbname": row[5],
+    }
+
+def build_conn_str(db_config: dict) -> str:
+    db_type = db_config.get("db_type") or "sqlserver"
+    host = db_config.get("host") or ""
+    port = db_config.get("port") or ""
+    dbname = db_config.get("dbname") or ""
+    user = db_config.get("username") or ""
+    pwd = db_config.get("password") or ""
+
+    user_enc = urllib.parse.quote_plus(str(user)) if user else ""
+    pwd_enc = urllib.parse.quote_plus(str(pwd)) if pwd else ""
+    port_str = (":" + str(port)) if port else ""
+
+    if db_type == "postgresql":
+        return "postgresql://" + user_enc + ":" + pwd_enc + "@" + host + port_str + "/" + dbname
+    elif db_type == "mysql":
+        return "mysql+pymysql://" + user_enc + ":" + pwd_enc + "@" + host + port_str + "/" + dbname
+    elif db_type == "sqlite":
+        return "sqlite:///" + dbname
+    else:
+        return "mssql+pyodbc://" + user_enc + ":" + pwd_enc + "@" + host + port_str + "/" + dbname + "?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes"
+
 def get_venv_dir(project_id: str) -> Path:
     return venv_manager.get_venv_path(project_id)
 
@@ -518,6 +555,34 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         from collections import deque
         queue = deque()
         # Enqueue: (node_id, input_data)
+        
+        error_trigger_nodes = [n for n in nodes if n.get("data", {}).get("type") == "error_trigger"]
+        in_error_mode = False
+        
+        def handle_workflow_error(error_msg, failed_bid=None, failed_label=None):
+            nonlocal in_error_mode, queue
+            if in_error_mode:
+                _finish_run(run_id, "error", start, error=error_msg)
+                return True
+            
+            if error_trigger_nodes:
+                if log_fn:
+                    log_fn("system", "warning", f"⚠️ Phát hiện lỗi{' tại ['+failed_label+']' if failed_label else ''}. Đang chuyển hướng sang khối Bắt Lỗi toàn cục...")
+                queue.clear()
+                in_error_mode = True
+                
+                error_payload = {
+                    "status": "error",
+                    "error_detail": error_msg,
+                    "failed_block": failed_label,
+                    "failed_block_id": failed_bid
+                }
+                for et_node in error_trigger_nodes:
+                    queue.append((et_node["id"], error_payload))
+                return False
+            else:
+                _finish_run(run_id, "error", start, error=error_msg)
+                return True
         queue.append((start_nodes[0]["id"], initial_input))
 
         if log_fn:
@@ -548,7 +613,6 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
             bdata = node.get("data", {})
             
-            # Đọc input.json một lần duy nhất nếu chưa đọc
             if "workflow_env" not in locals():
                 workflow_env = {}
                 try:
@@ -559,28 +623,37 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 except Exception:
                     pass
                     
-                def interpolate(val):
-                    if not isinstance(val, str):
-                        return val
-                    if val in workflow_env:
-                        return str(workflow_env[val])
-                    for k, v in workflow_env.items():
-                        val = val.replace("{{" + k + "}}", str(v))
+            def interpolate(val):
+                if not isinstance(val, str):
                     return val
+                
+                ctx = dict(workflow_env)
+                if isinstance(current_input, dict):
+                    ctx.update(current_input)
+                ctx["input_data"] = current_input
+                    
+                if val in ctx:
+                    return str(ctx[val])
+                for k, v in ctx.items():
+                    val = val.replace("{{" + k + "}}", str(v))
+                return val
 
-                def interpolate_deep(val):
-                    # Nội suy đệ quy vào dict/list lồng nhau (conditions, attachments,
-                    # danh sách lệnh telegram...) — không chỉ field string cấp cao nhất
-                    if isinstance(val, str):
-                        return interpolate(val)
-                    if isinstance(val, dict):
-                        return {k: interpolate_deep(v) for k, v in val.items()}
-                    if isinstance(val, list):
-                        return [interpolate_deep(item) for item in val]
-                    return val
+            def interpolate_deep(val, current_key=None):
+                # Nội suy đệ quy vào dict/list lồng nhau (conditions, attachments,
+                # danh sách lệnh telegram...) — không chỉ field string cấp cao nhất
+                if isinstance(val, str):
+                    # Bỏ qua nội suy đối với các trường dùng để điền "tên biến" và "code" python
+                    if current_key in ("condVariable", "key_name", "code"):
+                        return val
+                    return interpolate(val)
+                if isinstance(val, dict):
+                    return {k: interpolate_deep(v, k) for k, v in val.items()}
+                if isinstance(val, list):
+                    return [interpolate_deep(item, current_key) for item in val]
+                return val
 
             # Nội suy các biến môi trường (đệ quy vào cả cấu trúc lồng nhau)
-            bdata = {k: interpolate_deep(v) for k, v in bdata.items()}
+            bdata = {k: interpolate_deep(v, k) for k, v in bdata.items()}
 
             btype = bdata.get("type", "python")
             bid = node["id"]
@@ -723,57 +796,24 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         _time_listener.sleep(0.5)
                     break
             elif btype == "telegram":
-                bot_token = interpolate(bdata.get("telegramBotToken", "")).strip()
-                chat_id = interpolate(bdata.get("telegramChatId", "")).strip()
-                message_template = bdata.get("telegramMessage", "")
+                bot_token = bdata.get("telegramBotToken", "").strip()
+                chat_id = bdata.get("telegramChatId", "").strip()
+                text = bdata.get("telegramMessage", "")
                 parse_mode = bdata.get("telegramParseMode", "")
                 telegram_attachments = bdata.get("telegramAttachments", [])
                 telegram_action = bdata.get("telegramAction", "send")
-                telegram_message_id_template = bdata.get("telegramMessageId", "")
+                msg_id = str(bdata.get("telegramMessageId", ""))
                 
                 if not bot_token or not chat_id:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Telegram] {label} - Thiếu Bot Token hoặc Chat ID")
                     final_status = "error"
                     break
-                    
-                try:
-                    chat_id = chat_id.replace("{input_data}", str(current_input))
-                    if isinstance(current_input, dict):
-                        for k, v in current_input.items():
-                            chat_id = chat_id.replace("{" + str(k) + "}", str(v))
-                except Exception:
-                    pass
-                    
-                text = message_template
-                try:
-                    text = text.replace("{input_data}", str(current_input))
-                    if isinstance(current_input, dict):
-                        for k, v in current_input.items():
-                            text = text.replace("{" + str(k) + "}", str(v))
-                except Exception:
-                    pass
-                
-                msg_id = str(telegram_message_id_template)
-                try:
-                    msg_id = msg_id.replace("{input_data}", str(current_input))
-                    if isinstance(current_input, dict):
-                        for k, v in current_input.items():
-                            msg_id = msg_id.replace("{" + str(k) + "}", str(v))
-                except Exception:
-                    pass
 
                 # --- Resolve attachment file paths ---
                 resolved_files = []
                 for att in telegram_attachments:
                     att_name = att
-                    try:
-                        att_name = att_name.replace("{input_data}", str(current_input))
-                        if isinstance(current_input, dict):
-                            for k, v in current_input.items():
-                                att_name = att_name.replace("{" + str(k) + "}", str(v))
-                    except Exception:
-                        pass
                     if not att_name:
                         continue
                     # Tìm trong output trước, rồi input
@@ -870,14 +910,27 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Chế độ 'Sửa tin nhắn' yêu cầu Message ID hợp lệ.")
                             final_status = "error"
                             break
-                        res = _tg_edit_message_text(bot_token, chat_id, text, msg_id, parse_mode)
+                        try:
+                            msg_id_int = int(msg_id)
+                        except ValueError:
+                            if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Message ID phải là số (hiện tại là '{msg_id}'). Hãy kiểm tra lại biến.")
+                            final_status = "error"
+                            break
+                        res = _tg_edit_message_text(bot_token, chat_id, text, msg_id_int, parse_mode)
                         if not res.get("ok"):
                             if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi sửa tin nhắn: {res.get('description')}")
                             telegram_error = True
                         else:
                             last_message_id = res.get("result", {}).get("message_id")
                     else:
-                        reply_to_id = msg_id if telegram_action == "reply" else None
+                        reply_to_id = None
+                        if telegram_action == "reply" and msg_id:
+                            try:
+                                reply_to_id = int(msg_id)
+                            except ValueError:
+                                if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Message ID phải là số (hiện tại là '{msg_id}').")
+                                final_status = "error"
+                                break
                         
                         if not resolved_files:
                             # Không có file đính kèm
@@ -931,7 +984,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         break
                     else:
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Telegram] {label} - Đã gửi thành công! (message_id={last_message_id})")
+                            log_fn(bid, "success", f"✅ [Telegram] {label} - Đã gửi thánh công! (message_id={last_message_id})")
                         if isinstance(current_input, dict):
                             # Giữ lại message_id cũ (tin nhắn người dùng), thêm sent_message_id (tin vừa gửi ra)
                             current_input["sent_message_id"] = last_message_id
@@ -954,18 +1007,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 mail_body = bdata.get("mailBody", "")
                 mail_attachments = bdata.get("mailAttachments", [])
 
-                def tpl(txt):
-                    if not txt: return ""
-                    t = txt.replace("{input_data}", str(current_input))
-                    if isinstance(current_input, dict):
-                        for k, v in current_input.items():
-                            t = t.replace("{" + str(k) + "}", str(v))
-                    return t
-
-                final_to = tpl(mail_to)
-                final_cc = tpl(mail_cc)
-                final_subject = tpl(mail_subject)
-                final_body = tpl(mail_body)
+                final_to = mail_to
+                final_cc = mail_cc
+                final_subject = mail_subject
+                final_body = mail_body
 
                 if log_fn:
                     log_fn(bid, "info", f"📧 [Email] {label} - Đang gửi thư tới {final_to}...")
@@ -985,7 +1030,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
                 # Attachments
                 for att in mail_attachments:
-                    att_name = tpl(att)
+                    att_name = att
                     if not att_name: continue
                     # try INPUT_DIR then OUTPUT_DIR
                     att_path = input_dir / att_name
@@ -1017,52 +1062,12 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     smtp.quit()
 
                     if log_fn:
-                        log_fn(bid, "success", f"✅ [Email] {label} - Đã gửi thư thành công!")
+                        log_fn(bid, "success", f"✅ [Email] {label} - Đã gửi thư thánh công!")
                 except Exception as e:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Email] {label} - Lỗi gửi thư: {str(e)}")
                     final_status = "error"
                     break
-            elif btype == "database":
-                db_type = bdata.get("dbType", "postgresql")
-                db_host = bdata.get("dbHost", "")
-                db_port = bdata.get("dbPort", "")
-                db_user = bdata.get("dbUser", "")
-                db_pass = bdata.get("dbPassword", "")
-                db_name = bdata.get("dbName", "")
-                
-                db_user_enc = urllib.parse.quote_plus(db_user) if db_user else ""
-                db_pass_enc = urllib.parse.quote_plus(db_pass) if db_pass else ""
-
-                conn_str = ""
-                if db_type == "postgresql":
-                    conn_str = f"postgresql://{db_user_enc}:{db_pass_enc}@{db_host}:{db_port}/{db_name}"
-                elif db_type == "mysql":
-                    conn_str = f"mysql+pymysql://{db_user_enc}:{db_pass_enc}@{db_host}:{db_port}/{db_name}"
-                elif db_type == "sqlite":
-                    conn_str = f"sqlite:///{db_name}"
-                elif db_type == "sqlserver":
-                    conn_str = f"mssql+pyodbc://{db_user_enc}:{db_pass_enc}@{db_host}:{db_port}/{db_name}?driver=ODBC+Driver+17+for+SQL+Server"
-                    
-                current_input = {
-                    "db_type": db_type,
-                    "host": db_host,
-                    "port": db_port,
-                    "user": db_user,
-                    "password": db_pass,
-                    "db_name": db_name,
-                    "connection_string": conn_str
-                }
-                
-                packages_to_install = []
-                if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
-                elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
-                elif db_type == "sqlserver": packages_to_install.append("pyodbc")
-                
-                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
-                
-                if log_fn:
-                    log_fn(bid, "success", f"✅ [Database] {label} - Đã tạo cấu hình kết nối {db_type.upper()}")
             elif btype == "delete_files":
                 import shutil
                 delete_input = bdata.get("delete_input", False)
@@ -1149,8 +1154,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 break
                             if log_fn:
                                 log_fn("system", "error", f"❌ Workflow thất bại (Browser lỗi)")
-                            _finish_run(run_id, "error", start, error=b_result.get("error"))
-                            return
+                            if handle_workflow_error(b_result.get("error"), bid, label):
+                                return
+                            else:
+                                continue
                         else:
                             if b_result.get("output_data") is not None:
                                 browser_out = b_result["output_data"]
@@ -1165,8 +1172,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     except Exception as e:
                         if log_fn:
                             log_fn("system", "error", f"❌ Lỗi ngoại lệ Browser: {e}")
-                        _finish_run(run_id, "error", start, error=str(e))
-                        return
+                        if handle_workflow_error(str(e), bid, label):
+                            return
+                        else:
+                            continue
             elif btype == "python":
                 code = bdata.get("code", "").strip()
                 if not code:
@@ -1185,42 +1194,52 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         if error == "stopped":
                             final_status = "stopped"
                             break
-                        _finish_run(run_id, "error", start, error=error)
                         if log_fn:
                             log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                        return
+                        if handle_workflow_error(error, bid, label):
+                            return
+                        else:
+                            continue
                     current_input = output
             elif btype == "sql_to_excel":
                 sql_query = bdata.get("sqlQuery", "").strip()
                 excel_filename = bdata.get("excelFileName", "export.xlsx").strip()
+                saved_connection_id = bdata.get("sqlToExcelSavedConnectionId", "").strip()
                 if not excel_filename:
                     excel_filename = "export.xlsx"
-                
+
+                db_config = get_saved_db_connection(saved_connection_id)
+
                 if not sql_query:
                     if log_fn:
                         log_fn(bid, "warning", f"⚠️ Block [{label}] không có câu lệnh SQL")
                     continue_branch = False
+                elif not db_config:
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ Block [{label}] chưa chọn Kết nối Database")
+                    if handle_workflow_error("Chưa chọn Kết nối Database cho khối SQL to Excel", bid, label):
+                        return
+                    else:
+                        continue
                 else:
+                    conn_str = build_conn_str(db_config)
+                    db_type = db_config.get("db_type")
                     packages_to_install = ["pandas", "sqlalchemy", "openpyxl"]
-                    if isinstance(current_input, dict):
-                        db_type = current_input.get("db_type")
-                        if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
-                        elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
-                        elif db_type == "sqlserver": packages_to_install.append("pyodbc")
-                    
+                    if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
+                    elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
+                    else: packages_to_install.append("pyodbc")
+
                     ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
-                    
+
                     if log_fn:
                         log_fn(bid, "info", f"⚡ Đang chạy SQL to Excel: {label}...")
-                    
+
                     code = f'''
 import pandas as pd
 import sqlalchemy
 import os
 
-conn_str = input_data.get("connection_string")
-if not conn_str:
-    raise ValueError("Không tìm thấy connection_string từ khối trước. Hãy đảm bảo nối khối này vào sau khối Database.")
+conn_str = {conn_str!r}
 
 print("Đang kết nối CSDL và thực thi câu lệnh SQL...")
 engine = sqlalchemy.create_engine(conn_str)
@@ -1235,15 +1254,17 @@ df.to_excel(out_path, index=False)
 output_data = {{"status": "success", "file_path": out_path}}
 '''
                     success, output, error, duration = run_python_block_sync(
-                        project_id, bid, workflow_id, code, current_input, 
+                        project_id, bid, workflow_id, code, current_input,
                         timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
                         stop_event=stop_event
                     )
                     if not success:
-                        _finish_run(run_id, "error", start, error=error)
                         if log_fn:
                             log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                        return
+                        if handle_workflow_error(error, bid, label):
+                            return
+                        else:
+                            continue
                     current_input = output
             elif btype == "merge_excel":
                 header_rows = int(bdata.get("headerRows", 3))
@@ -1259,8 +1280,10 @@ output_data = {{"status": "success", "file_path": out_path}}
                 elif not selected_files:
                     if log_fn:
                         log_fn(bid, "error", f"❌ Merge Excel: Bạn chưa chọn file nào để gộp!")
-                    _finish_run(run_id, "error", start, error="No files selected")
-                    return
+                    if handle_workflow_error("No files selected", bid, label):
+                        return
+                    else:
+                        continue
                 
                 packages_to_install = ["pandas", "openpyxl"]
                 ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
@@ -1346,10 +1369,12 @@ output_data = {{"status": "success", "file_path": out_path}}
                     stop_event=stop_event
                 )
                 if not success:
-                    _finish_run(run_id, "error", start, error=error)
                     if log_fn:
                         log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                    return
+                    if handle_workflow_error(error, bid, label):
+                        return
+                    else:
+                        continue
                 current_input = output
             elif btype == "pivot_excel":
                 excel_filename = bdata.get("excelFileName", "pivot_result.xlsx").strip()
@@ -1372,8 +1397,10 @@ output_data = {{"status": "success", "file_path": out_path}}
                 if not selected_files:
                     if log_fn:
                         log_fn(bid, "error", f"❌ Pivot Excel: Bạn chưa chọn file nào để tổng hợp!")
-                    _finish_run(run_id, "error", start, error="No files selected")
-                    return
+                    if handle_workflow_error("No files selected", bid, label):
+                        return
+                    else:
+                        continue
                 
                 packages_to_install = ["pandas", "openpyxl"]
                 ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
@@ -1523,11 +1550,234 @@ output_data = {{"status": "success", "file_path": out_path}}
                     stop_event=stop_event
                 )
                 if not success:
-                    _finish_run(run_id, "error", start, error=error)
                     if log_fn:
                         log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                    return
+                    if handle_workflow_error(error, bid, label):
+                        return
+                    else:
+                        continue
                 current_input = output
+            elif btype == "excel_to_sql":
+                input_file = bdata.get("excelToSqlInputFile", "").strip()
+                saved_connection_id = bdata.get("excelToSqlSavedConnectionId", "").strip()
+                table_name = bdata.get("excelToSqlTableName", "").strip()
+                import_mode = bdata.get("excelToSqlImportMode", "append")
+                mapping = bdata.get("excelToSqlMapping", {})
+
+                header_row_str = str(bdata.get("excelToSqlHeaderRow", "1"))
+                h_parts = [p.strip() for p in header_row_str.replace('-', ',').split(',')]
+                h_indices = []
+                for p in h_parts:
+                    if p.isdigit():
+                        h_indices.append(max(0, int(p) - 1))
+                if not h_indices:
+                    header_row_val = 0
+                elif len(h_indices) == 1:
+                    header_row_val = h_indices[0]
+                else:
+                    header_row_val = h_indices
+
+                db_config = get_saved_db_connection(saved_connection_id)
+
+                if not input_file or not table_name:
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ Thiếu cấu hình: File nguồn hoặc Bảng đích")
+                    if handle_workflow_error("Chưa cấu hình đủ bảng đích hoặc file nguồn", bid, label):
+                        return
+                    else:
+                        continue
+                elif not db_config:
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ Block [{label}] chưa chọn Kết nối Database")
+                    if handle_workflow_error("Chưa chọn Kết nối Database cho khối Excel to SQL", bid, label):
+                        return
+                    else:
+                        continue
+
+                conn_str = build_conn_str(db_config)
+                db_type = db_config.get("db_type")
+                packages_to_install = ["pandas", "openpyxl", "sqlalchemy"]
+                if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
+                elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
+                else: packages_to_install.append("pyodbc")
+                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+
+                if log_fn:
+                    log_fn(bid, "info", "⚡ Đang Import Excel vào SQL Server: " + label + "...")
+
+                code = f'''
+import os
+import warnings
+import pandas as pd
+from sqlalchemy import create_engine, text
+
+# Suppress openpyxl style warnings (file không có default style vẫn đọc được)
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+
+input_file = {input_file!r}
+file_path = os.path.join(INPUT_DIR, input_file)
+if not os.path.exists(file_path):
+    file_path = os.path.join(OUTPUT_DIR, input_file)
+
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f"Không tìm thấy file Excel: {{input_file}}")
+
+print(f"Đang đọc file Excel (dòng tiêu đề = {header_row_str} theo Excel, pandas header={header_row_val})...")
+if file_path.endswith(".csv"):
+    df = pd.read_csv(file_path, header={header_row_val})
+else:
+    df = pd.read_excel(file_path, header={header_row_val})
+
+if isinstance(df.columns, pd.MultiIndex):
+    flat_cols = []
+    for col in df.columns:
+        clean_levels = [str(c).strip() for c in col if not str(c).startswith('Unnamed:')]
+        flat_cols.append('_'.join(clean_levels) if clean_levels else 'Unnamed')
+    df.columns = flat_cols
+
+conn_str = {conn_str!r}
+engine = create_engine(conn_str, fast_executemany=True)
+
+mapping = {mapping!r}
+print(f"File Excel có {{len(df)}} dòng dữ liệu, {{len(df.columns)}} cột.")
+print(f"10 cột đầu của Excel: {{list(df.columns[:10])}}")
+
+if mapping:
+    print(f"Đang chuẩn hóa dữ liệu theo Mapping: {{len(mapping)}} cột SQL...")
+    # Khởi tạo với đúng số dòng từ df (tránh lỗi 0 dòng khi cột không khớp)
+    sql_df = pd.DataFrame(index=range(len(df)))
+    matched_count = 0
+    unmatched = []
+    for sql_col, excel_col in mapping.items():
+        if excel_col and excel_col in df.columns:
+            sql_df[sql_col] = df[excel_col].values
+            matched_count += 1
+        elif excel_col:
+            sql_df[sql_col] = None
+            unmatched.append(f"'{{excel_col}}' -> '{{sql_col}}'")
+        else:
+            sql_df[sql_col] = None
+    print(f"Đã khớp {{matched_count}}/{{len(mapping)}} cột. Tổng dòng cần import: {{len(sql_df)}}")
+    if unmatched:
+        print(f"⚠ {{len(unmatched)}} cột Excel không khớp (sẽ để NULL): {{unmatched[:5]}}")
+else:
+    print("Không có Mapping cụ thể, đẩy toàn bộ dữ liệu Excel hiện có...")
+    sql_df = df.copy()
+
+table_name = {table_name!r}
+import_mode = {import_mode!r}
+
+from sqlalchemy import inspect
+insp = inspect(engine)
+try:
+    columns = insp.get_columns(table_name)
+    date_cols = [c['name'] for c in columns if 'DATE' in str(c['type']).upper() or 'TIME' in str(c['type']).upper()]
+    
+    if date_cols:
+        print(f"Phát hiện {{len(date_cols)}} cột thời gian trong SQL. Đang ép kiểu nghiêm ngặt (dayfirst=True)...")
+        for sql_col in date_cols:
+            if sql_col in sql_df.columns:
+                # errors='raise' để báo lỗi dừng khối ngay lập tức nếu format rác/sai
+                sql_df[sql_col] = pd.to_datetime(sql_df[sql_col], dayfirst=True, errors='raise')
+except Exception as e:
+    raise ValueError(f"Lỗi dữ liệu ngày tháng không hợp lệ (sai định dạng hoặc chứa chữ rác): {{str(e)}}")
+
+# Chuẩn hoá NaN -> None (cho cả các ô trống do pd.to_datetime tạo ra nếu có NaT)
+sql_df = sql_df.where(pd.notnull(sql_df), None)
+
+with engine.begin() as connection:
+    if import_mode == 'truncate':
+        print(f"Đang xoá trắng dữ liệu cũ trong bảng {{table_name}}...")
+        connection.execute(text(f"TRUNCATE TABLE [{{table_name}}]"))
+
+print(f"Đang Bulk Insert {{len(sql_df)}} dòng vào bảng {{table_name}}...")
+sql_df.to_sql(name=table_name, con=engine, if_exists='append', index=False, chunksize=10000)
+
+print(f"✅ Đã Import thành công {{len(sql_df)}} dòng.")
+output_data = {{"status": "success", "rows_inserted": len(sql_df), "table": table_name}}
+'''
+                success, output, error, duration = run_python_block_sync(
+                    project_id, bid, workflow_id, code, current_input, 
+                    timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                    stop_event=stop_event
+                )
+                if not success:
+                    if log_fn:
+                        log_fn("system", "error", f"❌ Import thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
+                    if handle_workflow_error(error, bid, label):
+                        return
+                    else:
+                        continue
+                else:
+                    current_input = output
+            elif btype == "run_sql_exec":
+                sql_command = bdata.get("sqlCommand", "").strip()
+                saved_connection_id = bdata.get("sqlExecSavedConnectionId", "").strip()
+
+                db_config = get_saved_db_connection(saved_connection_id)
+
+                if not sql_command:
+                    if log_fn:
+                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có câu lệnh SQL/EXEC")
+                    continue_branch = False
+                elif not db_config:
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ Block [{label}] chưa chọn Kết nối Database")
+                    if handle_workflow_error("Chưa chọn Kết nối Database cho khối Chạy Hàm SQL (EXEC)", bid, label):
+                        return
+                    else:
+                        continue
+                else:
+                    conn_str = build_conn_str(db_config)
+                    db_type = db_config.get("db_type")
+                    packages_to_install = ["sqlalchemy"]
+                    if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
+                    elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
+                    else: packages_to_install.append("pyodbc")
+
+                    ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+
+                    if log_fn:
+                        log_fn(bid, "info", "⚡ Đang chạy Hàm/Thủ tục SQL: " + label + "...")
+
+                    code = f'''
+from sqlalchemy import create_engine, text
+
+conn_str = {conn_str!r}
+engine = create_engine(conn_str)
+
+sql_command = {sql_command!r}
+print(f"Đang thực thi: {{sql_command}}")
+
+with engine.begin() as conn:
+    result = conn.execute(text(sql_command))
+    if result.returns_rows:
+        rows = [dict(r._mapping) for r in result.fetchall()]
+    else:
+        rows = []
+    row_count = len(rows) if rows else result.rowcount
+
+if rows:
+    print(f"✅ Thực thi thành công. {{len(rows)}} dòng kết quả trả về.")
+else:
+    print(f"✅ Thực thi thành công. {{row_count}} dòng bị ảnh hưởng.")
+
+output_data = {{"status": "success", "result": rows, "row_count": row_count}}
+'''
+                    success, output, error, duration = run_python_block_sync(
+                        project_id, bid, workflow_id, code, current_input,
+                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                        stop_event=stop_event
+                    )
+                    if not success:
+                        if log_fn:
+                            log_fn("system", "error", f"❌ Thực thi SQL thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
+                        if handle_workflow_error(error, bid, label):
+                            return
+                        else:
+                            continue
+                    else:
+                        current_input = output
             elif btype == "condition":
                 logical_op = bdata.get("logicalOperator", "AND").upper()
                 conditions = bdata.get("conditions")
@@ -1612,6 +1862,10 @@ output_data = {{"status": "success", "file_path": out_path}}
                 state = loop_states.setdefault(bid, {"runs": 0})
 
                 state["runs"] += 1
+                
+                if not isinstance(current_input, dict):
+                    current_input = {"previous_input": current_input}
+                current_input["loop_iteration"] = state["runs"]
                 
                 if mode == "count":
                     max_count = int(bdata.get("loopCount", 0))
@@ -1712,6 +1966,9 @@ output_data = {{"status": "success", "file_path": out_path}}
                         if log_fn:
                             log_fn(bid, "info", f"⏳ [Loop] Nghỉ {delay}s trước khi lặp lại...")
                         time.sleep(delay)
+
+                if isinstance(current_input, dict):
+                    workflow_env.update(current_input)
 
                 out_edges = edges_from.get(node_id, [])
                 for e in out_edges:

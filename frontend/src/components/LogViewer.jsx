@@ -85,7 +85,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
           <Terminal size={16} color="var(--accent-primary)" />
           <span style={{ fontWeight: 600 }}>Tiến trình chạy</span>
           {runId && (
-            <Tag bordered={false} style={{ margin: 0, fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
+            <Tag variant="filled" style={{ margin: 0, fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
               #{runId}
             </Tag>
           )}
@@ -95,7 +95,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
         </Space>
       }
       placement="bottom"
-      height="42vh"
+      size="42vh"
       onClose={onClose}
       open={true}
       mask={false}

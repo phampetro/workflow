@@ -140,6 +140,47 @@ class WorkflowRun(Base):
         }
 
 
+class Setting(Base):
+    __tablename__ = "setting"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {"key": self.key, "value": self.value}
+
+
+class DbConnection(Base):
+    __tablename__ = "db_connection"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, nullable=False, index=True)
+    label = Column(String, nullable=False)
+    db_type = Column(String, default="sqlserver")
+    host = Column(String, default="")
+    port = Column(String, default="")
+    username = Column(String, default="")
+    password = Column(String, default="")
+    dbname = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "project_id": self.project_id,
+            "label": self.label,
+            "db_type": self.db_type,
+            "host": self.host,
+            "port": self.port,
+            "username": self.username,
+            "password": self.password,
+            "dbname": self.dbname,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class RunStatus:
     PENDING = "pending"
     RUNNING = "running"

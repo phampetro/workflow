@@ -7,7 +7,7 @@ import uvicorn
 
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
-from routers import projects, workflows, users, dashboard, files, schedule_endpoints
+from routers import projects, workflows, users, dashboard, files, schedule_endpoints, ai_codegen, database
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("pyflow.main")
@@ -118,6 +118,8 @@ app.include_router(projects.router)
 app.include_router(workflows.router)
 app.include_router(files.router)
 app.include_router(schedule_endpoints.router)
+app.include_router(ai_codegen.router)
+app.include_router(database.router)
 
 @app.get("/health")
 def health_check():

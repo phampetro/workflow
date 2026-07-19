@@ -16,7 +16,7 @@ import {
   ArrowLeft, Play, Square, Calendar, Terminal, History,
   Save, Loader, CheckCircle, AlertCircle, Database, Table, Files, RefreshCw, Trash2
 } from 'lucide-react'
-import { Button, Drawer, Space, Input, message, Popconfirm, Tag } from 'antd'
+import { Button, Drawer, Space, Input, Popconfirm, Tag, App } from 'antd'
 import toast from 'react-hot-toast'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory } from '../api/client'
 import useStore from '../store/useStore'
@@ -31,9 +31,9 @@ const BLOCK_GROUPS = [
   { title: 'Python Code', items: ['python'] },
   { title: 'Tự động hóa Web', items: ['browser'] },
   { title: 'Xử lý Dữ liệu', items: ['merge_excel', 'pivot_excel'] },
-  { title: 'Cơ sở dữ liệu', items: ['database', 'sql_to_excel'] },
+  { title: 'Cơ sở dữ liệu', items: ['sql_to_excel', 'excel_to_sql', 'run_sql_exec'] },
   { title: 'Gửi tin nhắn', items: ['telegram', 'telegram_listener', 'email'] },
-  { title: 'Hệ thống', items: ['delete_files'] }
+  { title: 'Hệ thống', items: ['error_trigger', 'delete_files'] }
 ];
 
 const DEFAULT_GRAPH = {
@@ -49,6 +49,7 @@ const EDGE_STYLE = { stroke: '#6c63ff', strokeWidth: 2 }
 let nodeIdCounter = 100
 
 function WorkflowEditorInner({ workflow, project, onBack }) {
+  const { message } = App.useApp()
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [editingNode, setEditingNode] = useState(null)
@@ -431,11 +432,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           telegramListenerCommands: type === 'telegram_listener' ? [
             { command: '/hi', reply: 'Xin chào! 👋', runWorkflow: false }
           ] : undefined,
-          dbType: type === 'database' ? 'postgresql' : undefined,
-          dbHost: type === 'database' ? 'localhost' : undefined,
-          dbPort: type === 'database' ? 5432 : undefined,
           steps: type === 'browser' ? [] : undefined,
           debugMode: type === 'browser' ? false : undefined,
+          sqlCommand: type === 'run_sql_exec' ? '' : undefined,
+          sqlExecDbConfigKey: type === 'run_sql_exec' ? '' : undefined,
         },
       }
 
@@ -660,6 +660,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           onUpdate={handleUpdateNode}
           inputKeys={inputKeys}
           workflowId={wfData?.id}
+          projectId={project?.id}
         />
       )}
 
@@ -673,6 +674,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           }
         }}
         workflowId={wfData?.id}
+        projectId={project?.id}
         initialData={inputData}
       />
 

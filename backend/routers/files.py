@@ -217,7 +217,7 @@ async def open_output_file_os(workflow_id: str, filename: str, session: AsyncSes
 # ── Excel Columns & Data Analysis ─────────────────────────────
 
 @router.get("/{workflow_id}/file-columns")
-async def get_excel_columns(workflow_id: str, filename: str, header_row: int = 0, session: AsyncSession = Depends(get_session)):
+async def get_excel_columns(workflow_id: str, filename: str, header_row: str = "0", session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
@@ -236,17 +236,39 @@ async def get_excel_columns(workflow_id: str, filename: str, header_row: int = 0
         
     try:
         import pandas as pd
-        if str(file_path).endswith('.csv'):
-            df = pd.read_csv(file_path, header=header_row, nrows=0)
+        
+        # Parse header_row string
+        h_parts = [p.strip() for p in str(header_row).replace('-', ',').split(',')]
+        h_indices = []
+        for p in h_parts:
+            if p.isdigit():
+                h_indices.append(int(p))
+        if not h_indices:
+            h_val = 0
+        elif len(h_indices) == 1:
+            h_val = h_indices[0]
         else:
-            df = pd.read_excel(file_path, header=header_row, nrows=0)
+            h_val = h_indices
+
+        if str(file_path).endswith('.csv'):
+            df = pd.read_csv(file_path, header=h_val, nrows=0)
+        else:
+            df = pd.read_excel(file_path, header=h_val, nrows=0)
+            
+        if isinstance(df.columns, pd.MultiIndex):
+            flat_cols = []
+            for col in df.columns:
+                clean_levels = [str(c).strip() for c in col if not str(c).startswith('Unnamed:')]
+                flat_cols.append('_'.join(clean_levels) if clean_levels else 'Unnamed')
+            df.columns = flat_cols
+            
         return {"columns": list(df.columns)}
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @router.get("/{workflow_id}/file-column-values")
-async def get_excel_column_values(workflow_id: str, filename: str, col_name: str, header_row: int = 0, session: AsyncSession = Depends(get_session)):
+async def get_excel_column_values(workflow_id: str, filename: str, col_name: str, header_row: str = "0", session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
@@ -262,11 +284,34 @@ async def get_excel_column_values(workflow_id: str, filename: str, col_name: str
 
     try:
         import pandas as pd
-        if str(file_path).endswith('.csv'):
-            df = pd.read_csv(file_path, header=header_row, usecols=[col_name])
+        
+        h_parts = [p.strip() for p in str(header_row).replace('-', ',').split(',')]
+        h_indices = []
+        for p in h_parts:
+            if p.isdigit():
+                h_indices.append(int(p))
+        if not h_indices:
+            h_val = 0
+        elif len(h_indices) == 1:
+            h_val = h_indices[0]
         else:
-            df = pd.read_excel(file_path, header=header_row, usecols=[col_name])
+            h_val = h_indices
+
+        if str(file_path).endswith('.csv'):
+            df = pd.read_csv(file_path, header=h_val)
+        else:
+            df = pd.read_excel(file_path, header=h_val)
             
+        if isinstance(df.columns, pd.MultiIndex):
+            flat_cols = []
+            for col in df.columns:
+                clean_levels = [str(c).strip() for c in col if not str(c).startswith('Unnamed:')]
+                flat_cols.append('_'.join(clean_levels) if clean_levels else 'Unnamed')
+            df.columns = flat_cols
+
+        if col_name not in df.columns:
+            return {"values": []}
+
         # Lấy giá trị unique, loại bỏ null và convert sang list
         unique_vals = df[col_name].dropna().unique().tolist()
         # Trả về tối đa 1000 giá trị unique để tối ưu hiệu năng

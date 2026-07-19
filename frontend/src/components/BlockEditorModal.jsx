@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag } from 'lucide-react'
-import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert } from 'antd'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal } from 'lucide-react'
+import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col, Checkbox } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
 import { BLOCK_TYPES } from './BlockNode'
@@ -423,8 +423,7 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
       </div>
 
       {/* Footer hint */}
-      <Alert
-        message={<span>Dùng <Text code>{'{{key}}'}</Text> trong trường value để chèn dữ liệu từ <Text code>input_data</Text></span>}
+      <Alert title={<span>Dùng <Text code>{'{{key}}'}</Text> trong trường value để chèn dữ liệu từ <Text code>input_data</Text></span>}
         type="info"
         showIcon
         style={{ margin: '8px 16px', borderRadius: 8 }}
@@ -468,7 +467,7 @@ const PositionSelector = ({ value, onChange }) => {
   );
 };
 
-export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate, inputKeys = [], workflowId }) {
+export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate, inputKeys = [], workflowId, projectId }) {
   const theme = useStore(state => state.theme)
   const [form] = Form.useForm()
   const [code, setCode] = useState(node.data.code || BLOCK_TEMPLATES.python.default)
@@ -509,27 +508,178 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isDelay = node.data.type === 'delay'
   const isLoop = node.data.type === 'loop'
   const isEnd = node.data.type === 'end'
+  const isErrorTrigger = node.data.type === 'error_trigger'
   const isTelegram = node.data.type === 'telegram'
   const isTelegramListener = node.data.type === 'telegram_listener'
   const isEmail = node.data.type === 'email'
-  const isDatabase = node.data.type === 'database'
   const isSqlToExcel = node.data.type === 'sql_to_excel'
   const isMergeExcel = node.data.type === 'merge_excel'
   const isPivotExcel = node.data.type === 'pivot_excel'
   const isBrowser = node.data.type === 'browser'
   const isDeleteFiles = node.data.type === 'delete_files'
+  const isExcelToSql = node.data.type === 'excel_to_sql'
+  const isRunSqlExec = node.data.type === 'run_sql_exec'
+
+  // Excel to SQL states
+  const [dbTables, setDbTables] = useState([])
+  const [dbColumns, setDbColumns] = useState([])
+  const [excelColumns, setExcelColumns] = useState([])
+  const [loadingSchema, setLoadingSchema] = useState(false)
+  const [excelToSqlMapping, setExcelToSqlMapping] = useState(node.data.excelToSqlMapping || {})
+
+  // Danh sách kết nối Database đã lưu (dùng chung cho sql_to_excel/excel_to_sql/run_sql_exec)
+  const [dbConnections, setDbConnections] = useState([])
+  const [loadingDbConnections, setLoadingDbConnections] = useState(false)
+
+  const excelToSqlInputFile = Form.useWatch('excelToSqlInputFile', form)
+  const excelToSqlHeaderRow = Form.useWatch('excelToSqlHeaderRow', form)
+  const excelToSqlSavedConnectionId = Form.useWatch('excelToSqlSavedConnectionId', form)
+  const excelToSqlTableName = Form.useWatch('excelToSqlTableName', form)
 
   // Browser steps state
   const [browserSteps, setBrowserSteps] = useState(node.data.steps || [])
   const [expandedStep, setExpandedStep] = useState(null)
 
+  // AI Assistant states
+  const [aiPromptVisible, setAiPromptVisible] = useState(false)
+  const [aiPromptPosition, setAiPromptPosition] = useState({ top: 0, left: 0 })
+  const [aiInstruction, setAiInstruction] = useState('')
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiGeneratedCode, setAiGeneratedCode] = useState('')
+  const [aiSelection, setAiSelection] = useState(null)
+  
+  const editorRef = React.useRef(null)
+  const monacoRef = React.useRef(null)
+  const aiCancelFn = React.useRef(null)
+
+  const handleAiPromptOpen = () => {
+    if (!editorRef.current || !monacoRef.current) return;
+    const editor = editorRef.current;
+    
+    const position = editor.getPosition();
+    const selection = editor.getSelection();
+    
+    if (!selection.isEmpty()) {
+      setAiSelection(selection);
+    } else {
+      setAiSelection(null);
+    }
+
+    const scrolledPos = editor.getScrolledVisiblePosition(position);
+    if (scrolledPos) {
+      setAiPromptPosition({
+        top: Math.min(scrolledPos.top + 30, window.innerHeight - 200),
+        left: Math.min(scrolledPos.left + 20, window.innerWidth - 400)
+      });
+    }
+
+    setAiInstruction('');
+    setAiGeneratedCode('');
+    setAiPromptVisible(true);
+  };
+
+  const closeAiPrompt = () => {
+    setAiPromptVisible(false);
+    setAiInstruction('');
+    setAiGeneratedCode('');
+    setAiSelection(null);
+    if (aiCancelFn.current) {
+      aiCancelFn.current();
+      aiCancelFn.current = null;
+    }
+    setAiGenerating(false);
+    if (editorRef.current) editorRef.current.focus();
+  };
+
+  const handleAiSubmit = async () => {
+    if (!aiInstruction.trim() || aiGenerating) return;
+    
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    let selectedText = '';
+    if (aiSelection) {
+      selectedText = editor.getModel().getValueInRange(aiSelection);
+    }
+
+    setAiGenerating(true);
+    setAiGeneratedCode('');
+
+    try {
+      const cancel = streamAiCodegen({
+        instruction: aiInstruction,
+        code: isPython ? code : sqlCode,
+        selection: selectedText,
+        language: isPython ? 'python' : 'sql'
+      }, {
+        onToken: (token) => {
+          setAiGeneratedCode(prev => prev + token);
+        },
+        onDone: () => {
+          setAiGenerating(false);
+          aiCancelFn.current = null;
+        },
+        onError: (err) => {
+          toast.error("Lỗi AI: " + err.message);
+          setAiGenerating(false);
+          aiCancelFn.current = null;
+        }
+      });
+      aiCancelFn.current = cancel;
+    } catch (err) {
+      setAiGenerating(false);
+    }
+  };
+
+  const acceptAiCode = () => {
+    if (!aiGeneratedCode) return;
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    let range;
+    if (aiSelection) {
+      range = aiSelection;
+    } else {
+      const pos = editor.getPosition();
+      range = new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column);
+    }
+
+    editor.executeEdits("ai-assistant", [{
+      range: range,
+      text: aiGeneratedCode,
+      forceMoveMarkers: true
+    }]);
+
+    if (isPython) {
+      setCode(editor.getValue());
+    } else {
+      setSqlCode(editor.getValue());
+    }
+    
+    closeAiPrompt();
+  };
+
+  const handleAiKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      closeAiPrompt();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (aiGeneratedCode && !aiGenerating) {
+        acceptAiCode();
+      } else if (!aiGenerating && aiInstruction.trim()) {
+        handleAiSubmit();
+      }
+    }
+  };
+
   const hasCodeEditor = isPython || isSqlToExcel
-  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isDatabase || isTelegram || isTelegramListener || isBrowser
+  const hasRightPanel = hasCodeEditor || isEmail || isPivotExcel || isMergeExcel || isTelegram || isTelegramListener || isBrowser || isExcelToSql || isRunSqlExec
 
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
   useEffect(() => {
-    if ((isMergeExcel || isEmail || isPivotExcel) && open && workflowId) {
+    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql) && open && workflowId) {
       const fetchFiles = async () => {
         setLoadingFiles(true)
         try {
@@ -538,7 +688,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             getWorkflowOutputFiles(workflowId).catch(() => ({ data: [] }))
           ])
           let files = [...(inRes.data || []), ...(outRes.data || [])]
-          if (isMergeExcel || isPivotExcel) {
+          if (isMergeExcel || isPivotExcel || isExcelToSql) {
             files = files.filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.csv'))
           }
           setAvailableFiles(files)
@@ -550,7 +700,18 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       }
       fetchFiles()
     }
-  }, [isMergeExcel, isEmail, isPivotExcel, open, workflowId])
+  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, open, workflowId])
+
+  // Fetch danh sách kết nối Database đã lưu (cho các khối cần chọn kết nối)
+  useEffect(() => {
+    if ((isSqlToExcel || isExcelToSql || isRunSqlExec) && open && projectId) {
+      setLoadingDbConnections(true)
+      getDbConnections(projectId)
+        .then(res => setDbConnections(res.data || []))
+        .catch(() => setDbConnections([]))
+        .finally(() => setLoadingDbConnections(false))
+    }
+  }, [isSqlToExcel, isExcelToSql, isRunSqlExec, open, projectId])
 
   // Fetch output files cho Telegram attachment
   useEffect(() => {
@@ -667,6 +828,97 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   }, [isPivotExcel, open, workflowId, pivotEnableSort, pivotSortColumn, pivotSortOrder, pivotInputFile, pivotHeaderRow])
 
 
+  const getSelectedDbConfig = (connectionId) => {
+    const conn = dbConnections.find(c => c.id === connectionId);
+    if (!conn) {
+      throw new Error("Vui lòng chọn Kết nối Database");
+    }
+    return {
+      project_id: projectId,
+      db_type: conn.db_type,
+      server: conn.host,
+      port: conn.port,
+      dbname: conn.dbname,
+      username: conn.username,
+      password: conn.password,
+    };
+  };
+
+  const renderDbConnectionField = (fieldName) => (
+    <Form.Item name={fieldName} label="Kết nối Database" rules={[{ required: true, message: 'Chọn kết nối Database' }]} style={{ marginBottom: 16 }}>
+      <Select
+        loading={loadingDbConnections}
+        placeholder="Chọn kết nối đã lưu (Dữ liệu Workflow → tab Database)"
+        options={dbConnections.map(c => ({ value: c.id, label: c.label }))}
+        notFoundContent={loadingDbConnections ? 'Đang tải...' : 'Chưa có kết nối nào — thêm ở tab Database trong Dữ liệu Workflow'}
+      />
+    </Form.Item>
+  );
+
+  const fetchDbTables = async () => {
+    if (!workflowId) return;
+    setLoadingSchema(true);
+    try {
+      const dbConfig = getSelectedDbConfig(excelToSqlSavedConnectionId);
+      const res = await getDatabaseTables(dbConfig);
+      setDbTables(res.data?.tables || []);
+      toast.success('Kiểm tra connect thành công! Đã tải danh sách bảng');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.message);
+    } finally {
+      setLoadingSchema(false);
+    }
+  }
+
+  const fetchDbColumns = async () => {
+    if (!workflowId || !excelToSqlTableName) {
+      toast.error('Vui lòng nhập hoặc chọn bảng đích');
+      return;
+    }
+    setLoadingSchema(true);
+    try {
+      const dbConfig = getSelectedDbConfig(excelToSqlSavedConnectionId);
+
+      const colRes = await getDatabaseColumns({ config: dbConfig, table_name: excelToSqlTableName });
+      const cols = colRes.data?.columns || [];
+      setDbColumns(cols);
+      
+      let excCols = [];
+      if (excelToSqlInputFile) {
+        try {
+          // API nhận header_row theo pandas (0-indexed), user nhập theo Excel (1-indexed) → trừ 1
+          const headerRowStr = String(excelToSqlHeaderRow || '1');
+          const headerParts = headerRowStr.replace(/-/g, ',').split(',').map(s => {
+            const val = parseInt(s.trim(), 10) - 1;
+            return isNaN(val) ? -1 : val;
+          }).filter(n => n >= 0);
+          const backendHeader = headerParts.length > 0 ? headerParts.join(',') : '0';
+          const excRes = await getFileColumns(workflowId, excelToSqlInputFile, backendHeader);
+          excCols = excRes.data?.columns || [];
+          setExcelColumns(excCols);
+        } catch(e) {
+           toast.error('Lỗi đọc file Excel: ' + e.message);
+        }
+      }
+      
+      setExcelToSqlMapping(prev => {
+        const newMap = { ...prev };
+        cols.forEach(c => {
+          if (newMap[c.name] === undefined) {
+             newMap[c.name] = null;
+          }
+        });
+        return newMap;
+      });
+      
+      toast.success('Đã tải cấu trúc bảng và file');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.message);
+    } finally {
+      setLoadingSchema(false);
+    }
+  }
+
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
@@ -677,6 +929,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
         ...(isBrowser ? { steps: browserSteps } : {}),
         ...(isTelegramListener ? { telegramListenerCommands: listenerCommands } : {}),
+        ...(isExcelToSql ? { excelToSqlMapping } : {}),
         ...(isEmail ? {
           mailTo: (values.mailTo || []).join(','),
           mailCc: (values.mailCc || []).join(','),
@@ -696,9 +949,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const getDrawerWidth = () => {
     const type = node.data.type
     // Mẫu 1: 1/3 màn hình
-    if (['start', 'end', 'condition', 'loop', 'delay', 'delete_files'].includes(type)) return '33vw'
-    // Mẫu 2: 1/2 màn hình (dự phòng)
-    // if (['some_future_type'].includes(type)) return '50vw'
+    if (['start', 'end', 'condition', 'loop', 'delay', 'delete_files', 'error_trigger'].includes(type)) return '33vw'
+    // Mẫu 2: 1/2 màn hình
+    if (['run_sql_exec'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
@@ -706,7 +959,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   return (
     <Drawer
       title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
-      width={getDrawerWidth()}
+      size={getDrawerWidth()}
       onClose={onClose}
       open={true}
       maskClosable={false}
@@ -758,12 +1011,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             telegramAction: node.data.telegramAction || 'send',
             telegramMessageId: node.data.telegramMessageId || '',
             telegramListenerToken: node.data.telegramListenerToken || '',
-            dbType: node.data.dbType || 'postgresql',
-            dbHost: node.data.dbHost || '',
-            dbPort: node.data.dbPort || '',
-            dbUser: node.data.dbUser || '',
-            dbPassword: node.data.dbPassword || '',
-            dbName: node.data.dbName || '',
             excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged.xlsx' : 'export.xlsx'),
             headerRows: node.data.headerRows || 3,
             selectedFiles: node.data.selectedFiles || [],
@@ -794,6 +1041,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             loopPosition: node.data.loopPosition || (isLoop ? 'bottom' : 'right'),
             donePosition: node.data.donePosition || (isLoop ? 'bottom' : 'right'),
             debugMode: node.data.debugMode || false,
+            excelToSqlInputFile: node.data.excelToSqlInputFile || '',
+            excelToSqlHeaderRow: node.data.excelToSqlHeaderRow || '1',
+            excelToSqlTableName: node.data.excelToSqlTableName || '',
+            excelToSqlImportMode: node.data.excelToSqlImportMode || 'append',
+            excelToSqlSavedConnectionId: node.data.excelToSqlSavedConnectionId || undefined,
+            sqlToExcelSavedConnectionId: node.data.sqlToExcelSavedConnectionId || undefined,
+            sqlExecSavedConnectionId: node.data.sqlExecSavedConnectionId || undefined,
+            sqlCommand: node.data.sqlCommand || '',
           }}
         >
           <div style={{ width: hasRightPanel ? '33.333%' : '100%', height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
@@ -844,12 +1099,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
           {isLoop && (
             <>
-              <Alert 
-                message="Điều kiện ĐÚNG sẽ thoát (rẽ nhánh TRUE). Điều kiện SAI sẽ lặp (rẽ nhánh LOOP). Hết lượt cho phép (rẽ nhánh ENDLOOP)." 
+              <Alert title="Điều kiện ĐÚNG sẽ thoát (rẽ nhánh TRUE). Điều kiện SAI sẽ lặp (rẽ nhánh LOOP). Hết lượt cho phép (rẽ nhánh ENDLOOP)." 
                 type="info" 
                 showIcon 
                 style={{ marginBottom: 16 }} 
               />
+              <Alert title={<span>Khi chạy vòng lặp, khối này tự động xuất ra biến <Text code>{`{{loop_iteration}}`}</Text> (số đếm vòng lặp hiện tại: 1, 2, 3...) để các khối sau sử dụng.</span>} type="success" showIcon style={{ marginBottom: 16 }} />
               <Form.Item name="loopMode" label="Chế độ lặp">
                 <Select>
                   <Select.Option value="count">Lặp theo số lần cố định</Select.Option>
@@ -941,7 +1196,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   </>
                 )}
               </Form.List>
-              <Alert message={<span>Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.</span>} type="info" showIcon style={{ marginBottom: 24 }} />
+              <Alert title={<span>Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.</span>} type="info" showIcon style={{ marginBottom: 24 }} />
             </>
           )}
 
@@ -952,11 +1207,36 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           )}
 
           {isEnd && (
-            <Alert message="Khi workflow chạy đến khối này, nó sẽ kết thúc." type="info" showIcon style={{ marginBottom: 16 }} />
+            <Alert title="Khi workflow chạy đến khối này, nó sẽ kết thúc." type="info" showIcon style={{ marginBottom: 16 }} />
+          )}
+
+          {isErrorTrigger && (
+            <Alert 
+              description={
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span>Khi có bất kỳ khối nào bị lỗi, khối này sẽ được kích hoạt.</span>
+                  <span>Cung cấp 3 biến để các khối sau sử dụng:</span>
+                  <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                    <li><Text code>{`{{error_detail}}`}</Text>: Chi tiết mã lỗi báo về</li>
+                    <li><Text code>{`{{failed_block}}`}</Text>: Tên của khối bị lỗi</li>
+                    <li><Text code>{`{{status}}`}</Text>: Luôn là "error"</li>
+                  </ul>
+                </div>
+              }
+              type="error" 
+              showIcon 
+              style={{ marginBottom: 16 }} 
+            />
           )}
 
           {isTelegram && (
             <>
+              <Alert 
+                description={<span>Khi chạy thành công, khối này xuất ra 2 biến: <Text code>{`{{chat_id}}`}</Text> và <Text code>{`{{sent_message_id}}`}</Text> để các khối sau sử dụng.</span>} 
+                type="info" 
+                showIcon 
+                style={{ marginBottom: 16 }} 
+              />
               <Form.Item label="Chế độ" name="telegramAction">
                 <Select>
                   <Select.Option value="send">📤 Gửi mới</Select.Option>
@@ -971,8 +1251,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <AutoComplete options={autoCompleteOptions} placeholder="Nhập ID hoặc chọn biến" allowClear />
               </Form.Item>
               {(telegramAction === 'edit' || telegramAction === 'reply') && (
-                <Form.Item label="Message ID" name="telegramMessageId" rules={[{ required: true, message: 'Nhập Message ID' }]} tooltip="Dùng biến {message_id} từ block Telegram trước đó.">
-                  <AutoComplete options={[{ value: '{message_id}' }, ...autoCompleteOptions]} placeholder="{message_id} hoặc nhập số" allowClear />
+                <Form.Item label="Message ID" name="telegramMessageId" rules={[{ required: true, message: 'Nhập Message ID' }]} tooltip="Dùng biến {{message_id}} từ block Telegram trước đó.">
+                  <AutoComplete options={[{ value: '{{message_id}}' }, ...autoCompleteOptions]} placeholder="{{message_id}} hoặc nhập số" allowClear />
                 </Form.Item>
               )}
               <Form.Item label="Nội dung tin nhắn" name="telegramMessage" rules={[{ required: true, message: 'Nhập nội dung' }]} tooltip="Gõ {{TEN_BIEN}} để chèn dữ liệu cấu hình.">
@@ -997,7 +1277,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                       ))}
                     </Select>
                   </Form.Item>
-                  <Alert message="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter." type="info" showIcon style={{ marginBottom: 16 }} />
+                  <Alert title="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter." type="info" showIcon style={{ marginBottom: 16 }} />
                 </>
               )}
             </>
@@ -1008,44 +1288,30 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Bot Token" name="telegramListenerToken" rules={[{ required: true, message: 'Nhập Bot Token' }]}>
                 <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
               </Form.Item>
-              <Alert message="Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe." type="info" showIcon style={{ marginBottom: 16 }} />
-            </>
-          )}
-
-          {isDatabase && (
-            <>
-              <Form.Item label="Loại Database" name="dbType" rules={[{ required: true, message: 'Chọn loại Database' }]}>
-                <Select>
-                  <Select.Option value="postgresql">PostgreSQL</Select.Option>
-                  <Select.Option value="mysql">MySQL</Select.Option>
-                  <Select.Option value="sqlite">SQLite</Select.Option>
-                  <Select.Option value="sqlserver">SQL Server</Select.Option>
-                </Select>
-              </Form.Item>
-              <Form.Item label="Host (VD: localhost hoặc biến môi trường)" name="dbHost">
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập Host hoặc biến" allowClear />
-              </Form.Item>
-              <Form.Item label="Port" name="dbPort">
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập Port hoặc biến" allowClear />
-              </Form.Item>
-              <Form.Item label="User" name="dbUser">
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập User hoặc biến" allowClear />
-              </Form.Item>
-              <Form.Item label="Password" name="dbPassword">
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập Password hoặc biến" allowClear />
-              </Form.Item>
-              <Form.Item label="Tên Database" name="dbName">
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập tên DB hoặc biến" allowClear />
-              </Form.Item>
+              <Alert title="Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe." type="info" showIcon style={{ marginBottom: 16 }} />
             </>
           )}
 
           {isSqlToExcel && (
             <>
+              {renderDbConnectionField('sqlToExcelSavedConnectionId')}
               <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
                 <Input placeholder="VD: bao_cao_thang.xlsx" />
               </Form.Item>
-              <Alert message={<span><b>Yêu cầu:</b> Khối này phải được nối phía sau khối <b>Cơ sở dữ liệu</b> để nhận cấu hình kết nối tự động.</span>} type="warning" showIcon style={{ marginTop: 16 }} />
+            </>
+          )}
+
+          {isRunSqlExec && (
+            <>
+              {renderDbConnectionField('sqlExecSavedConnectionId')}
+              <Alert title="Biến trả về (Output)"
+                description={
+                  <div style={{ marginTop: 4 }}>
+                    Khối này xuất ra 3 biến: <Text code>{`{{status}}`}</Text> (success/error), <Text code>{`{{result}}`}</Text> (mảng kết quả nếu có, dạng danh sách object), và <Text code>{`{{row_count}}`}</Text> (số dòng kết quả hoặc số dòng bị ảnh hưởng).
+                  </div>
+                }
+                type="info" showIcon
+              />
             </>
           )}
 
@@ -1072,7 +1338,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item name="pivotHeaderRow" label="Dòng chứa Tiêu đề (Header)" rules={[{ required: true, message: 'Nhập vị trí dòng tiêu đề' }]}>
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="VD: 1" />
               </Form.Item>
-              <Alert message="Gõ 1 nếu tiêu đề nằm ở dòng đầu tiên." type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Gõ 1 nếu tiêu đề nằm ở dòng đầu tiên." type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
                 <Input placeholder="VD: pivot_result.xlsx" />
               </Form.Item>
@@ -1121,11 +1387,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item name="delete_input" valuePropName="checked" label="Thư mục Input">
                 <Switch checkedChildren="Xóa" unCheckedChildren="Giữ lại" />
               </Form.Item>
-              <Alert message="Xóa toàn bộ tập tin trong thư mục dữ liệu đầu vào (Không xóa file input.json)" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Xóa toàn bộ tập tin trong thư mục dữ liệu đầu vào (Không xóa file input.json)" type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item name="delete_output" valuePropName="checked" label="Thư mục Output">
                 <Switch checkedChildren="Xóa" unCheckedChildren="Giữ lại" />
               </Form.Item>
-              <Alert message="Xóa toàn bộ tập tin trong thư mục kết quả đầu ra" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Xóa toàn bộ tập tin trong thư mục kết quả đầu ra" type="info" showIcon style={{ marginBottom: 16 }} />
             </>
           )}
 
@@ -1135,9 +1401,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item name="debugMode" label="Chế độ Debug" valuePropName="checked">
                 <Switch checkedChildren="Headed" unCheckedChildren="Headless" />
               </Form.Item>
-              <Alert message="Bật để hiển thị cửa sổ trình duyệt khi chạy" type="info" showIcon style={{ marginBottom: 16 }} />
-              <Alert
-                message="Hướng dẫn Selector"
+              <Alert title="Bật để hiển thị cửa sổ trình duyệt khi chạy" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Hướng dẫn Selector"
                 description={
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                     <Text>• CSS: <Text code>#login-btn</Text>, <Text code>.btn-submit</Text></Text>
@@ -1180,67 +1445,124 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             </div>
           </>
         )}
+
+        {isExcelToSql && (
+          <>
+            <Divider style={{ margin: '24px 0' }} />
+            <Alert title="Biến trả về (Output)"
+              description={
+                <div style={{ marginTop: 4 }}>
+                  Khối này xuất ra 3 biến: <Text code>{`{{status}}`}</Text> (success/error), <Text code>{`{{rows_inserted}}`}</Text> (số dòng đã chèn), và <Text code>{`{{table}}`}</Text> (tên bảng).
+                </div>
+              }
+              type="info" showIcon style={{ marginBottom: 16 }} 
+            />
+            <Title level={5} style={{ margin: '0 0 16px 0' }}><Database size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2 }}/> Cấu hình Nguồn</Title>
+            {renderDbConnectionField('excelToSqlSavedConnectionId')}
+            <Form.Item name="excelToSqlInputFile" label="Nguồn file Excel" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+              <AutoComplete placeholder="Chọn file hoặc nhập biến (VD: {{ten}})" options={availableFiles.map(f => ({ value: f.name }))} />
+            </Form.Item>
+            <Form.Item name="excelToSqlHeaderRow" label="Dòng tiêu đề (vd: 1 hoặc 3,4)" style={{ marginBottom: 16 }}>
+              <Input placeholder="Mặc định: 1" />
+            </Form.Item>
+            <Button type="primary" block onClick={fetchDbTables} loading={loadingSchema}>
+              Kiểm tra connect & Lấy bảng
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Code Editor Panel or Email/Pivot/Database Right Panel */}
         {hasRightPanel && (
           <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)', minWidth: 0, minHeight: 0, overflowY: isBrowser ? 'hidden' : 'auto' }}>
-            {isDatabase ? (
-            <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-                <Database size="1.5rem" color="var(--accent-primary)" />
-                <Title level={4} style={{ margin: 0 }}>Tài liệu Khối Database</Title>
-              </div>
-              
-              <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24 }}>
-                <Title level={5} style={{ margin: '0 0 12px 0' }}>Mô tả Output (Dữ liệu trả về)</Title>
-                <p style={{ margin: '0 0 16px 0', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  Khi khối này chạy thành công, nó sẽ cung cấp các biến cấu hình kết nối (được mã hóa bảo mật) sang khối tiếp theo thông qua biến hệ thống <Text code>input_data</Text>.
-                </p>
+            {isExcelToSql ? (
+              <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                  <Database size="1.5rem" color="#0ea5e9" />
+                  <Title level={4} style={{ margin: 0 }}>Bảng đích & Mapping</Title>
+                </div>
                 
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey="key"
-                  columns={[
-                    { title: 'Tên biến (Key)', dataIndex: 'key', width: '35%', render: t => <Text code>{t}</Text> },
-                    { title: 'Mô tả', dataIndex: 'desc' }
-                  ]}
-                  dataSource={[
-                    { key: 'db_type', desc: 'Loại database (VD: sqlserver, mysql, postgresql)' },
-                    { key: 'host', desc: 'Địa chỉ máy chủ (IP/Domain)' },
-                    { key: 'port', desc: 'Cổng kết nối (Port)' },
-                    { key: 'db_name', desc: 'Tên cơ sở dữ liệu' },
-                    { key: 'user', desc: 'Tên đăng nhập (Username)' },
-                    { key: 'password', desc: 'Mật khẩu' },
-                    { key: 'connection_string', desc: 'Chuỗi kết nối chuẩn SQLAlchemy' }
-                  ]}
-                />
-              </div>
-              
-              <Alert
-                message="Cách kết nối ở khối Python kế tiếp"
-                description={
-                  <pre style={{ margin: '8px 0 0 0', background: '#1e1e1e', padding: 12, borderRadius: 6, fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.1)', overflowX: 'auto' }}>
-<code style={{ color: '#d4d4d4' }}>{`# Lấy thông tin cấu hình từ khối Database truyền sang
-server = input_data.get("host")
-port = input_data.get("port")
-database = input_data.get("db_name")
-user = input_data.get("user")
-password = input_data.get("password")
+                <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', flex: 1, overflowY: 'auto' }}>
+                  {(dbTables.length > 0 || (node.data && node.data.excelToSqlTableName)) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                      <Form.Item name="excelToSqlTableName" label="Tên bảng (Table Name)" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+                        <Select
+                          showSearch
+                          filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                          placeholder="Chọn hoặc tìm kiếm tên bảng..."
+                          options={
+                            dbTables.length > 0
+                              ? dbTables.map(t => ({label: t, value: t}))
+                              : (node.data.excelToSqlTableName ? [{ label: node.data.excelToSqlTableName, value: node.data.excelToSqlTableName }] : [])
+                          }
+                        />
+                      </Form.Item>
+                      
+                      <Form.Item name="excelToSqlImportMode" label="Chế độ ghi" style={{ marginBottom: 12 }}>
+                        <Select options={[
+                          { label: 'Thêm vào cuối (Append)', value: 'append' },
+                          { label: 'Xoá và chèn lại (Truncate)', value: 'truncate' }
+                        ]} />
+                      </Form.Item>
 
-# Cú pháp tự nối chuỗi cho SQL Server (Tránh lỗi IM002)
-server_part = f"{server},{port}" if port else server
-conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID={user};PWD={{{password}}};TrustServerCertificate=yes;"
-`}</code>
-                  </pre>
-                }
-                type="info"
-                showIcon
-                style={{ marginTop: 24 }}
-              />
-            </div>
-          ) : isTelegramListener ? (
+                      <Button type="primary" onClick={fetchDbColumns} loading={loadingSchema} style={{ width: '100%', marginBottom: 12 }}>
+                        Lấy cấu trúc Cột & File
+                      </Button>
+
+                      {dbColumns.length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <Text strong>Bảng ghép cột (Mapping):</Text>
+                          <Table
+                            size="small"
+                            pagination={false}
+                            rowKey="name"
+                            dataSource={dbColumns}
+                            columns={[
+                              { title: 'Cột SQL', dataIndex: 'name', render: t => <Text code>{t}</Text> },
+                              { title: 'Kiểu DB', dataIndex: 'type', render: t => <Text type="secondary">{t}</Text> },
+                              { 
+                                title: 'Cột Excel tương ứng', 
+                                dataIndex: 'name',
+                                render: (sqlCol) => (
+                                  <Select
+                                    style={{ width: '100%' }}
+                                    allowClear
+                                    showSearch
+                                    filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                                    placeholder="[ Bỏ qua / NULL ]"
+                                    value={excelToSqlMapping[sqlCol]}
+                                    onChange={(val) => setExcelToSqlMapping(prev => ({...prev, [sqlCol]: val}))}
+                                    options={excelColumns.map(c => ({label: c, value: c}))}
+                                  />
+                                )
+                              }
+                            ]}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '300px', textAlign: 'center' }}>
+                      <Database size={48} color="var(--border-strong)" style={{ marginBottom: 16, opacity: 0.5 }} />
+                      <Text type="secondary">Vui lòng <strong>Kiểm tra connect</strong> ở cột bên trái trước để cấu hình Mapping.</Text>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : isRunSqlExec ? (
+              <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                  <Terminal size="1.5rem" color="#14b8a6" />
+                  <Title level={4} style={{ margin: 0 }}>Câu lệnh SQL / EXEC</Title>
+                </div>
+                <Form.Item name="sqlCommand" rules={[{ required: true, message: 'Nhập câu lệnh cần thực thi' }]} style={{ flex: 1, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
+                  <Input.TextArea
+                    placeholder={'VD: EXEC ten_ham\nhoặc: EXEC ten_ham @tham_so = {{bien}}'}
+                    style={{ fontFamily: 'var(--font-mono)', flex: 1, minHeight: '100%', resize: 'none' }}
+                  />
+                </Form.Item>
+              </div>
+            ) : isTelegramListener ? (
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
               {/* Header + Status (chỉ hiển thị - Listener bật/tắt theo nút Chạy/Dừng của workflow) */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -1309,8 +1631,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               </Button>
 
               <Divider style={{ margin: '24px 0' }} />
-              <Alert
-                message="Hướng dẫn cơ bản"
+              <Alert title="Hướng dẫn cơ bản"
                 description={
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                     <Text>• <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <Text code>/</Text> (vd: <Text code>/start</Text>). Nhập <Text code>*</Text> hoặc để trống để bắt <b>mọi tin nhắn</b>.</Text>
@@ -1357,8 +1678,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24, overflowX: 'auto' }}>
                 {(!telegramParseMode || telegramParseMode === 'None') ? (
-                  <Alert
-                    message="Chế độ định dạng đang tắt"
+                  <Alert title="Chế độ định dạng đang tắt"
                     description={
                       <Text>
                         Tin nhắn sẽ hiển thị văn bản thuần túy (Raw Text).<br/>
@@ -1421,14 +1741,14 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               >
                 <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email rồi bấm Enter..." />
               </Form.Item>
-              <Alert message="Gõ Email (hoặc biến {email}) rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Gõ Email (hoặc biến {email}) rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item
                 label="Người nhận (CC)"
                 name="mailCc"
               >
                 <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email CC rồi bấm Enter..." />
               </Form.Item>
-              <Alert message="Gõ Email rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Gõ Email rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item label="Tiêu đề Email (Subject)" name="mailSubject" rules={[{ required: true, message: 'Vui lòng nhập Tiêu đề' }]}>
                 <Input placeholder="Nhập tiêu đề (Hỗ trợ định dạng biến {name})" />
               </Form.Item>
@@ -1442,7 +1762,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                   ))}
                 </Select>
               </Form.Item>
-              <Alert message="Mẹo: Gõ tên file bất kỳ (VD: merged.xlsx, bao_cao.pdf) và bấm phím Enter. Hệ thống sẽ tự động tìm file đó ở thư mục Đầu vào hoặc Đầu ra khi chạy." type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Mẹo: Gõ tên file bất kỳ (VD: merged.xlsx, bao_cao.pdf) và bấm phím Enter. Hệ thống sẽ tự động tìm file đó ở thư mục Đầu vào hoặc Đầu ra khi chạy." type="info" showIcon style={{ marginBottom: 16 }} />
             </div>
           ) : isMergeExcel ? (
             <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
@@ -1482,7 +1802,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                     <Radio.Button value="output" style={{ flex: 1, textAlign: 'center' }}>File Đầu ra (Output)</Radio.Button>
                   </Radio.Group>
 
-                  <Alert message={<span><b>Ghi chú:</b> File đầu tiên được chọn sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau sẽ bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16 }} />
+                  <Alert title={<span><b>Ghi chú:</b> File đầu tiên được chọn sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau sẽ bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16 }} />
 
                   <Form.Item
                     name="selectedFiles"
@@ -1501,12 +1821,11 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               {mergeAllInput && (
                 <div style={{ marginTop: 16 }}>
                   {loadingFiles ? (
-                    <Alert message="Đang tải..." type="info" showIcon />
+                    <Alert title="Đang tải..." type="info" showIcon />
                   ) : availableFiles.filter(f => f.type === 'input').length === 0 ? (
-                    <Alert message="Chưa có file nào trong thư mục Input." type="warning" showIcon />
+                    <Alert title="Chưa có file nào trong thư mục Input." type="warning" showIcon />
                   ) : (
-                    <Alert
-                      message="File sẽ được ghép (tất cả Input):"
+                    <Alert title="File sẽ được ghép (tất cả Input):"
                       description={
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
                           {availableFiles.filter(f => f.type === 'input').map((f, i) => (
@@ -1529,7 +1848,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
               </div>
 
               {columnError && (
-                <Alert message={columnError} type="warning" showIcon style={{ marginBottom: 16 }} />
+                <Alert title={columnError} type="warning" showIcon style={{ marginBottom: 16 }} />
               )}
               
               <Form.Item label="Trường Dòng (Rows)" name="pivotIndex">
@@ -1537,7 +1856,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
-              <Alert message="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Khu Vực, A, B)" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Khu Vực, A, B)" type="info" showIcon style={{ marginBottom: 16 }} />
               
               <Form.Item label="Trường Cột (Columns)" name="pivotColumns">
                 <Select 
@@ -1554,14 +1873,14 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
-              <Alert message="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Nhóm Hàng, C)" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Nhóm Hàng, C)" type="info" showIcon style={{ marginBottom: 16 }} />
               
               <Form.Item label="Trường Giá trị (Values)" name="pivotValues" rules={[{ required: true, message: 'Nhập ít nhất 1 trường Giá trị' }]}>
                 <Select mode="tags" loading={loadingColumns} placeholder="Click để chọn cột hoặc gõ chữ cái A, B, C... và Enter">
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
-              <Alert message="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Sản Lượng, D)" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Sản Lượng, D)" type="info" showIcon style={{ marginBottom: 16 }} />
 
               <Form.Item label="Phép tính (AggFunc)" name="pivotAgg">
                 <Select>
@@ -1614,7 +1933,7 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                           {customSortValues.map(v => <Select.Option key={v} value={v}>{v}</Select.Option>)}
                         </Select>
                       </Form.Item>
-                      <Alert message="Hệ thống tự quét dữ liệu trong file. Bạn có thể xóa/sắp xếp lại các thẻ để định hình thứ tự." type="info" showIcon style={{ marginBottom: 16 }} />
+                      <Alert title="Hệ thống tự quét dữ liệu trong file. Bạn có thể xóa/sắp xếp lại các thẻ để định hình thứ tự." type="info" showIcon style={{ marginBottom: 16 }} />
                     </>
                   )}
                 </div>
@@ -1625,22 +1944,33 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
           ) : (
             <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {isPython ? 'Python Code' : 'SQL Query'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {isPython ? 'Python Code' : 'SQL Query'}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                <Sparkles size={12} color="var(--accent-primary)" />
+                Ctrl+I: AI viết code
+              </span>
+            </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57', boxShadow: 'inset 0 0 2px rgba(0,0,0,0.2)' }} />
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e', boxShadow: 'inset 0 0 2px rgba(0,0,0,0.2)' }} />
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840', boxShadow: 'inset 0 0 2px rgba(0,0,0,0.2)' }} />
             </div>
           </div>
-          <div style={{ flex: 1, background: 'var(--bg-base)' }}>
+          <div style={{ flex: 1, background: 'var(--bg-base)', position: 'relative' }}>
             <Editor
               height="100%"
               language={isPython ? "python" : "sql"}
               theme={theme === 'light' ? "light" : "vs-dark"}
               value={isPython ? code : sqlCode}
               onChange={(value) => isPython ? setCode(value) : setSqlCode(value)}
+              onMount={(editor, monaco) => {
+                editorRef.current = editor;
+                monacoRef.current = monaco;
+                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, handleAiPromptOpen);
+              }}
               options={{
                 fontSize: 13,
                 fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -1659,7 +1989,79 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
                 insertSpaces: true,
                 bracketPairColorization: { enabled: true },
               }}
-              />
+            />
+
+            {/* Khung nhập AI Prompt */}
+            {aiPromptVisible && (
+              <div 
+                style={{ 
+                  position: 'absolute', 
+                  top: aiPromptPosition.top, 
+                  left: aiPromptPosition.left, 
+                  zIndex: 1000,
+                  width: 450,
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--accent-primary)',
+                  borderRadius: 8,
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Input area */}
+                <div style={{ display: 'flex', padding: '8px 12px', borderBottom: aiGeneratedCode ? '1px solid var(--border-default)' : 'none', alignItems: 'center' }}>
+                  <Sparkles size={16} color="var(--accent-primary)" style={{ marginRight: 8, flexShrink: 0 }} />
+                  <Input.TextArea
+                    autoFocus
+                    placeholder="VD: Viết hàm đọc file Excel và lọc các dòng bị trống..."
+                    value={aiInstruction}
+                    onChange={(e) => setAiInstruction(e.target.value)}
+                    onKeyDown={handleAiKeyDown}
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    bordered={false}
+                    disabled={aiGenerating}
+                    style={{ flex: 1, padding: '4px 0', boxShadow: 'none', background: 'transparent' }}
+                  />
+                  <Button 
+                    type="text" 
+                    icon={aiGenerating ? <Square size={16} /> : <Send size={16} />} 
+                    onClick={aiGenerating ? closeAiPrompt : handleAiSubmit}
+                    style={{ marginLeft: 8, flexShrink: 0, color: aiGenerating ? '#ff4d4f' : 'var(--accent-primary)' }}
+                  />
+                </div>
+
+                {/* Preview area */}
+                {aiGeneratedCode && (
+                  <div style={{ padding: '8px 12px', background: 'var(--bg-surface)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                      Preview (Nhấn Enter để chèn, Esc để huỷ)
+                    </div>
+                    <div style={{ 
+                      maxHeight: 200, 
+                      overflowY: 'auto', 
+                      background: 'var(--bg-base)', 
+                      padding: 8, 
+                      borderRadius: 4,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '0.8rem',
+                      whiteSpace: 'pre-wrap',
+                      border: '1px solid var(--border-default)'
+                    }}>
+                      {aiGeneratedCode}
+                      {aiGenerating && <span style={{ display: 'inline-block', width: 4, height: 12, background: 'var(--accent-primary)', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />}
+                    </div>
+                    
+                    {!aiGenerating && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                        <Button size="small" icon={<X size={14} />} onClick={closeAiPrompt}>Huỷ bỏ</Button>
+                        <Button size="small" type="primary" icon={<Check size={14} />} onClick={acceptAiCode}>Chấp nhận</Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             </div>
             </>
           )}
@@ -1669,3 +2071,4 @@ conn_str = f"DRIVER={{SQL Server}};SERVER={server_part};DATABASE={database};UID=
     </Drawer>
   )
 }
+

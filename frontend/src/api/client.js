@@ -116,6 +116,67 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
   return () => es.close()
 }
 
+// ── Database ────────────────────────────────────────────────
+export const getDatabaseTables = (config) => api.post('/api/database/tables', config)
+export const getDatabaseColumns = (payload) => api.post('/api/database/columns', payload)
+export const getDbConnections = (projectId) => api.get('/api/database/connections', { params: { project_id: projectId } })
+export const createDbConnection = (data) => api.post('/api/database/connections', data)
+export const updateDbConnection = (id, data) => api.put(`/api/database/connections/${id}`, data)
+export const deleteDbConnection = (id) => api.delete(`/api/database/connections/${id}`)
+
+// ── AI Code Assistant ─────────────────────────────────────
+export const getAiSettings   = ()      => api.get('/api/ai/settings')
+export const saveAiSettings  = (data)  => api.put('/api/ai/settings', data)
+export const testAiSettings  = ()      => api.post('/api/ai/test')
+
+// Stream sinh code qua fetch + ReadableStream (POST body lớn, không dùng EventSource).
+// Trả về hàm cancel() để dừng giữa chừng.
+export const streamAiCodegen = (payload, { onToken, onDone, onError } = {}) => {
+  const controller = new AbortController()
+  ;(async () => {
+    try {
+      const res = await fetch(`${api.defaults.baseURL}/api/ai/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`
+        try { const j = await res.json(); msg = j.detail || msg } catch (_) {}
+        onError?.(new Error(msg))
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // Tách theo khung SSE "\n\n"
+        let idx
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 2)
+          const line = frame.split('\n').find(l => l.startsWith('data:'))
+          if (!line) continue
+          try {
+            const data = JSON.parse(line.slice(5).trim())
+            if (data.token) onToken?.(data.token)
+            else if (data.error) { onError?.(new Error(data.error)); return }
+            else if (data.done) { onDone?.(); return }
+          } catch (_) {}
+        }
+      }
+      onDone?.()
+    } catch (err) {
+      if (err.name !== 'AbortError') onError?.(err)
+    }
+  })()
+  return () => controller.abort()
+}
+
 // ── Health ────────────────────────────────────────────────
 export const checkHealth = () => api.get('/health')
 
