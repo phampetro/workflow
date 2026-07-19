@@ -284,6 +284,7 @@ const BlockNode = memo(({ id, data, selected }) => {
               id="default"
               className="block-handle block-handle-source"
               style={{ background: type.color }}
+              title="Cổng ra (OUT)"
             />
           )}
           {data.type === 'condition' && (

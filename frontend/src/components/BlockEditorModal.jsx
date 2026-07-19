@@ -94,7 +94,7 @@ const TEMPLATE_OPTIONS = [
 ]
 
 const DEFAULT_SQL_QUERY = `-- Nhập câu lệnh SQL của bạn tại đây
--- Biến output_data sẽ tự động chứa {"status": "success", "file_path": "..."}
+-- Kết quả trả về: {"file_name": "tên file Excel đã xuất"}
 SELECT * FROM my_table;
 `
 
@@ -519,6 +519,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isDeleteFiles = node.data.type === 'delete_files'
   const isExcelToSql = node.data.type === 'excel_to_sql'
   const isRunSqlExec = node.data.type === 'run_sql_exec'
+  // Không áp dụng cho Browser: mỗi bước đã có key_name riêng để tự đặt tên field,
+  // và outputVarName chỉ bọc được nguyên object (không truy cập được từng field con
+  // qua {{...}}), nên không giải quyết đúng vấn đề trùng tên cho khối nhiều field này.
+  // Các khối trả về >1 giá trị (Telegram, Telegram Listener, Excel to SQL, Chạy Hàm SQL EXEC)
+  // có field đặt tên biến riêng cho từng giá trị, không dùng field chung này.
+  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel
 
   // Excel to SQL states
   const [dbTables, setDbTables] = useState([])
@@ -855,6 +861,23 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     </Form.Item>
   );
 
+  const renderVarNameField = (fieldName, label, tooltip, placeholder, style) => (
+    <Form.Item
+      name={fieldName}
+      label={
+        <Space size={4}>
+          {label}
+          <Tooltip title={tooltip}>
+            <Info size={14} style={{ cursor: 'help', color: 'var(--text-muted)' }} />
+          </Tooltip>
+        </Space>
+      }
+      style={style}
+    >
+      <Input placeholder={placeholder} />
+    </Form.Item>
+  );
+
   const fetchDbTables = async () => {
     if (!workflowId) return;
     setLoadingSchema(true);
@@ -949,17 +972,20 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const getDrawerWidth = () => {
     const type = node.data.type
     // Mẫu 1: 1/3 màn hình
-    if (['start', 'end', 'condition', 'loop', 'delay', 'delete_files', 'error_trigger'].includes(type)) return '33vw'
+    if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
-    if (['run_sql_exec'].includes(type)) return '50vw'
+    if (['run_sql_exec', 'loop'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
 
+  const drawerWidthStr = getDrawerWidth()
+  const leftPanelWidth = hasRightPanel ? (drawerWidthStr === '50vw' ? '50%' : '33.333%') : '100%'
+
   return (
     <Drawer
       title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
-      size={getDrawerWidth()}
+      size={drawerWidthStr}
       onClose={onClose}
       open={true}
       maskClosable={false}
@@ -982,6 +1008,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         initialValues={{
             label: node.data.label || '',
             description: node.data.description || '',
+            outputVarName: node.data.outputVarName || ((node.data.type === 'merge_excel' || node.data.type === 'pivot_excel' || node.data.type === 'sql_to_excel') ? 'file_name' : ''),
             ...((node.data.type === 'condition' || node.data.type === 'loop') ? (() => {
               let logicalOp = node.data.logicalOperator || 'AND';
               let conditions = node.data.conditions;
@@ -1011,7 +1038,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             telegramAction: node.data.telegramAction || 'send',
             telegramMessageId: node.data.telegramMessageId || '',
             telegramListenerToken: node.data.telegramListenerToken || '',
-            excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged.xlsx' : 'export.xlsx'),
+            excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged.xlsx' : isPivotExcel ? 'pivot.xlsx' : isSqlToExcel ? 'sqltoexcel.xlsx' : 'export.xlsx'),
             headerRows: node.data.headerRows || 3,
             selectedFiles: node.data.selectedFiles || [],
             mailProvider: node.data.mailProvider || 'custom',
@@ -1045,20 +1072,30 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             excelToSqlHeaderRow: node.data.excelToSqlHeaderRow || '1',
             excelToSqlTableName: node.data.excelToSqlTableName || '',
             excelToSqlImportMode: node.data.excelToSqlImportMode || 'append',
+            excelToSqlRowsVarName: node.data.excelToSqlRowsVarName || (isExcelToSql ? 'rows_inserted' : ''),
+            excelToSqlTableVarName: node.data.excelToSqlTableVarName || (isExcelToSql ? 'table' : ''),
+            sqlExecResultVarName: node.data.sqlExecResultVarName || (isRunSqlExec ? 'result' : ''),
+            sqlExecRowCountVarName: node.data.sqlExecRowCountVarName || (isRunSqlExec ? 'row_count' : ''),
+            telegramSentMessageIdVarName: node.data.telegramSentMessageIdVarName || (isTelegram ? 'sent_message_id' : ''),
+            telegramChatIdVarName: node.data.telegramChatIdVarName || (isTelegram ? 'chat_id' : ''),
+            telegramListenerChatIdVarName: node.data.telegramListenerChatIdVarName || (isTelegramListener ? 'chat_id' : ''),
+            telegramListenerMessageIdVarName: node.data.telegramListenerMessageIdVarName || (isTelegramListener ? 'message_id' : ''),
+            telegramListenerTextVarName: node.data.telegramListenerTextVarName || (isTelegramListener ? 'text' : ''),
+            telegramListenerSenderNameVarName: node.data.telegramListenerSenderNameVarName || (isTelegramListener ? 'sender_name' : ''),
             excelToSqlSavedConnectionId: node.data.excelToSqlSavedConnectionId || undefined,
             sqlToExcelSavedConnectionId: node.data.sqlToExcelSavedConnectionId || undefined,
             sqlExecSavedConnectionId: node.data.sqlExecSavedConnectionId || undefined,
             sqlCommand: node.data.sqlCommand || '',
           }}
         >
-          <div style={{ width: hasRightPanel ? '33.333%' : '100%', height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
+          <div style={{ width: leftPanelWidth, height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
             <Form.Item name="inPosition" label={<span>Cổng vào (IN) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
               <PositionSelector />
             </Form.Item>
             
             {!isLoop && !isCondition && (
-              <Form.Item name="outPosition" label="Cổng ra (OUT)" style={{ marginBottom: 0 }}>
+              <Form.Item name="outPosition" label={<span>Cổng ra (OUT) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                 <PositionSelector />
               </Form.Item>
             )}
@@ -1096,6 +1133,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           <Form.Item name="description" label="Mô tả">
             <Input.TextArea placeholder="Mô tả ngắn về block này" rows={2} />
           </Form.Item>
+
+
 
           {isLoop && (
             <>
@@ -1215,11 +1254,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               description={
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <span>Khi có bất kỳ khối nào bị lỗi, khối này sẽ được kích hoạt.</span>
-                  <span>Cung cấp 3 biến để các khối sau sử dụng:</span>
+                  <span>Cung cấp 4 biến để các khối sau sử dụng:</span>
                   <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                    <li><Text code>{`{{status}}`}</Text>: Luôn là "error"</li>
                     <li><Text code>{`{{error_detail}}`}</Text>: Chi tiết mã lỗi báo về</li>
                     <li><Text code>{`{{failed_block}}`}</Text>: Tên của khối bị lỗi</li>
-                    <li><Text code>{`{{status}}`}</Text>: Luôn là "error"</li>
+                    <li><Text code>{`{{failed_block_id}}`}</Text>: ID của khối bị lỗi</li>
                   </ul>
                 </div>
               }
@@ -1231,12 +1271,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
           {isTelegram && (
             <>
-              <Alert 
-                description={<span>Khi chạy thành công, khối này xuất ra 2 biến: <Text code>{`{{chat_id}}`}</Text> và <Text code>{`{{sent_message_id}}`}</Text> để các khối sau sử dụng.</span>} 
-                type="info" 
-                showIcon 
-                style={{ marginBottom: 16 }} 
-              />
               <Form.Item label="Chế độ" name="telegramAction">
                 <Select>
                   <Select.Option value="send">📤 Gửi mới</Select.Option>
@@ -1255,9 +1289,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <AutoComplete options={[{ value: '{{message_id}}' }, ...autoCompleteOptions]} placeholder="{{message_id}} hoặc nhập số" allowClear />
                 </Form.Item>
               )}
-              <Form.Item label="Nội dung tin nhắn" name="telegramMessage" rules={[{ required: true, message: 'Nhập nội dung' }]} tooltip="Gõ {{TEN_BIEN}} để chèn dữ liệu cấu hình.">
-                <Input.TextArea rows={4} placeholder="Nội dung tin nhắn..." />
-              </Form.Item>
+
               <Form.Item label="Định dạng văn bản (Parse Mode)" name="telegramParseMode">
                 <Select>
                   <Select.Option value="HTML">HTML</Select.Option>
@@ -1280,6 +1312,15 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <Alert title="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter." type="info" showIcon style={{ marginBottom: 16 }} />
                 </>
               )}
+              <Divider style={{ margin: '16px 0 12px' }} />
+              <Alert
+                description={<span>Khi chạy thành công, khối này luôn có sẵn <Text code>{`{{chat_id}}`}</Text> và <Text code>{`{{sent_message_id}}`}</Text> cho khối sau (nếu dữ liệu đầu vào chưa từng là object, sẽ có thêm <Text code>{`{{message_id}}`}</Text> giống <Text code>{`{{sent_message_id}}`}</Text>). Muốn dùng tên riêng (tránh bị khối Telegram khác ghi đè), đặt tên ở 2 ô bên dưới.</span>}
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+              {renderVarNameField('telegramSentMessageIdVarName', 'Lưu sent_message_id vào biến', 'Mặc định trùng tên biến trả về ({{sent_message_id}}). Nếu workflow có nhiều khối Telegram và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: sent_message_id', { marginBottom: 12 })}
+              {renderVarNameField('telegramChatIdVarName', 'Lưu chat_id vào biến', 'Mặc định trùng tên biến trả về ({{chat_id}}). Nếu workflow có nhiều khối Telegram và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: chat_id', { marginBottom: 16 })}
             </>
           )}
 
@@ -1289,6 +1330,16 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
               </Form.Item>
               <Alert title="Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe." type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert
+                description={<span>Khi có tin nhắn khớp lệnh, khối này luôn có sẵn <Text code>{`{{chat_id}}`}</Text>, <Text code>{`{{message_id}}`}</Text>, <Text code>{`{{text}}`}</Text>, <Text code>{`{{sender_name}}`}</Text>. Muốn dùng tên riêng, đặt tên ở các ô bên dưới.</span>}
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+              {renderVarNameField('telegramListenerChatIdVarName', 'Lưu chat_id vào biến', 'Mặc định trùng tên biến trả về ({{chat_id}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: chat_id', { marginBottom: 12 })}
+              {renderVarNameField('telegramListenerMessageIdVarName', 'Lưu message_id vào biến', 'Mặc định trùng tên biến trả về ({{message_id}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: message_id', { marginBottom: 12 })}
+              {renderVarNameField('telegramListenerTextVarName', 'Lưu text vào biến', 'Mặc định trùng tên biến trả về ({{text}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: text', { marginBottom: 12 })}
+              {renderVarNameField('telegramListenerSenderNameVarName', 'Lưu sender_name vào biến', 'Mặc định trùng tên biến trả về ({{sender_name}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: sender_name', { marginBottom: 16 })}
             </>
           )}
 
@@ -1296,7 +1347,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <>
               {renderDbConnectionField('sqlToExcelSavedConnectionId')}
               <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
-                <Input placeholder="VD: bao_cao_thang.xlsx" />
+                <Input placeholder="VD: sqltoexcel.xlsx" />
               </Form.Item>
             </>
           )}
@@ -1304,14 +1355,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           {isRunSqlExec && (
             <>
               {renderDbConnectionField('sqlExecSavedConnectionId')}
-              <Alert title="Biến trả về (Output)"
-                description={
-                  <div style={{ marginTop: 4 }}>
-                    Khối này xuất ra 3 biến: <Text code>{`{{status}}`}</Text> (success/error), <Text code>{`{{result}}`}</Text> (mảng kết quả nếu có, dạng danh sách object), và <Text code>{`{{row_count}}`}</Text> (số dòng kết quả hoặc số dòng bị ảnh hưởng).
-                  </div>
-                }
-                type="info" showIcon
-              />
+              {renderVarNameField('sqlExecResultVarName', 'Lưu kết quả (rows) vào biến', 'Mặc định trùng tên biến trả về ({{result}}, dạng danh sách object). Nếu workflow có nhiều khối Chạy Hàm SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: result', { marginBottom: 12 })}
+              {renderVarNameField('sqlExecRowCountVarName', 'Lưu số dòng vào biến', 'Mặc định trùng tên biến trả về ({{row_count}}). Nếu workflow có nhiều khối Chạy Hàm SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: row_count', { marginBottom: 16 })}
             </>
           )}
 
@@ -1340,7 +1385,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               </Form.Item>
               <Alert title="Gõ 1 nếu tiêu đề nằm ở dòng đầu tiên." type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
-                <Input placeholder="VD: pivot_result.xlsx" />
+                <Input placeholder="VD: pivot.xlsx" />
               </Form.Item>
             </>
           )}
@@ -1349,6 +1394,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <>
               <Form.Item label="Nền tảng Email" name="mailProvider">
                 <Select
+                  style={{ fontSize: '0.85rem' }}
+                  popupClassName="small-text-dropdown"
                   onChange={(val) => {
                     if (val === 'gmail') {
                       form.setFieldsValue({ mailHost: 'smtp.gmail.com', mailPort: 465 })
@@ -1357,9 +1404,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     }
                   }}
                 >
-                  <Select.Option value="gmail">Gmail</Select.Option>
-                  <Select.Option value="outlook">Outlook / Hotmail</Select.Option>
-                  <Select.Option value="custom">Tùy chỉnh (Custom SMTP)</Select.Option>
+                  <Select.Option value="gmail" style={{ fontSize: '0.85rem' }}>Gmail</Select.Option>
+                  <Select.Option value="outlook" style={{ fontSize: '0.85rem' }}>Outlook / Hotmail</Select.Option>
+                  <Select.Option value="custom" style={{ fontSize: '0.85rem' }}>Tùy chỉnh (Custom SMTP)</Select.Option>
                 </Select>
               </Form.Item>
               <Form.Item label="Host (Máy chủ SMTP)" name="mailHost" rules={[{ required: true, message: 'Vui lòng nhập Host' }]}>
@@ -1401,19 +1448,19 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item name="debugMode" label="Chế độ Debug" valuePropName="checked">
                 <Switch checkedChildren="Headed" unCheckedChildren="Headless" />
               </Form.Item>
-              <Alert title="Bật để hiển thị cửa sổ trình duyệt khi chạy" type="info" showIcon style={{ marginBottom: 16 }} />
-              <Alert title="Hướng dẫn Selector"
+              <Alert title={<span style={{ fontSize: '0.85rem' }}>Bật để hiển thị cửa sổ trình duyệt khi chạy</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
+              <Alert title={<span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Hướng dẫn Selector</span>}
                 description={
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                    <Text>• CSS: <Text code>#login-btn</Text>, <Text code>.btn-submit</Text></Text>
-                    <Text>• XPath: <Text code>//button[@type='submit']</Text></Text>
-                    <Text>• Text: <Text code>text=Đăng nhập</Text></Text>
-                    <Text>• Label: <Text code>label=Tên đăng nhập</Text></Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <div>• CSS: <Text code style={{ fontSize: '0.75rem' }}>#login-btn</Text>, <Text code style={{ fontSize: '0.75rem' }}>.btn-submit</Text></div>
+                    <div>• XPath: <Text code style={{ fontSize: '0.75rem' }}>//button[@type='submit']</Text></div>
+                    <div>• Text: <Text code style={{ fontSize: '0.75rem' }}>text=Đăng nhập</Text></div>
+                    <div>• Label: <Text code style={{ fontSize: '0.75rem' }}>label=Tên đăng nhập</Text></div>
                   </div>
                 }
                 type="info"
                 showIcon
-                style={{ marginBottom: 16 }}
+                style={{ marginBottom: 16, padding: '8px 12px' }}
               />
             </>
           )}
@@ -1438,8 +1485,16 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Thư mục lưu trữ file đầu ra an toàn</div>
                 </div>
                 <div>
+                  <Tag color="gold" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>INPUT_DIR</Tag>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Thư mục chứa file đầu vào (đã tải lên ở Dữ liệu Workflow)</div>
+                </div>
+                <div>
                   <Tag color="default" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>workflow_id</Tag>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>ID của workflow hiện tại</div>
+                </div>
+                <div>
+                  <Tag color="default" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>block_id</Tag>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>ID của khối Python này</div>
                 </div>
               </div>
             </div>
@@ -1449,14 +1504,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         {isExcelToSql && (
           <>
             <Divider style={{ margin: '24px 0' }} />
-            <Alert title="Biến trả về (Output)"
-              description={
-                <div style={{ marginTop: 4 }}>
-                  Khối này xuất ra 3 biến: <Text code>{`{{status}}`}</Text> (success/error), <Text code>{`{{rows_inserted}}`}</Text> (số dòng đã chèn), và <Text code>{`{{table}}`}</Text> (tên bảng).
-                </div>
-              }
-              type="info" showIcon style={{ marginBottom: 16 }} 
-            />
             <Title level={5} style={{ margin: '0 0 16px 0' }}><Database size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2 }}/> Cấu hình Nguồn</Title>
             {renderDbConnectionField('excelToSqlSavedConnectionId')}
             <Form.Item name="excelToSqlInputFile" label="Nguồn file Excel" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
@@ -1468,6 +1515,28 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <Button type="primary" block onClick={fetchDbTables} loading={loadingSchema}>
               Kiểm tra connect & Lấy bảng
             </Button>
+            <Divider style={{ margin: '24px 0' }} />
+            {renderVarNameField('excelToSqlRowsVarName', 'Lưu số dòng đã import vào biến', 'Mặc định trùng tên biến trả về ({{rows_inserted}}). Nếu workflow có nhiều khối Excel to SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: rows_inserted', { marginBottom: 12 })}
+            {renderVarNameField('excelToSqlTableVarName', 'Lưu tên bảng đích vào biến', 'Mặc định trùng tên biến trả về ({{table}}). Nếu workflow có nhiều khối Excel to SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: table', { marginBottom: 16 })}
+          </>
+        )}
+
+        {hasOutputVarField && (
+          <>
+            <Divider style={{ margin: '24px 0' }} />
+            <Form.Item
+              name="outputVarName"
+              label={
+                <Space size={4}>
+                  Lưu tên file kết quả vào biến
+                  <Tooltip title="Mặc định trùng tên biến trả về ({{file_name}}). Nếu workflow có nhiều khối cùng loại và muốn tránh bị ghi đè, đổi thành tên riêng.">
+                    <Info size={14} style={{ cursor: 'help', color: 'var(--text-muted)' }} />
+                  </Tooltip>
+                </Space>
+              }
+            >
+              <Input placeholder="VD: file_name" />
+            </Form.Item>
           </>
         )}
       </div>
@@ -1631,18 +1700,18 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               </Button>
 
               <Divider style={{ margin: '24px 0' }} />
-              <Alert title="Hướng dẫn cơ bản"
+              <Alert title={<span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Hướng dẫn cơ bản</span>}
                 description={
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                    <Text>• <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <Text code>/</Text> (vd: <Text code>/start</Text>). Nhập <Text code>*</Text> hoặc để trống để bắt <b>mọi tin nhắn</b>.</Text>
-                    <Text>• <b>Reply</b>: Bot trả lời ngay, không chạy workflow</Text>
-                    <Text>• <b>WF</b>: Bot trả lời + chạy các block phía sau</Text>
-                    <Text>• Dữ liệu truyền vào workflow: <Text code>{'{command}'}</Text>, <Text code>{'{from_name}'}</Text>, <Text code>{'{chat_id}'}</Text>, <Text code>{'{message_id}'}</Text>, <Text code>{'{text}'}</Text></Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <div>• <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <Text code style={{ fontSize: '0.75rem' }}>/</Text> (vd: <Text code style={{ fontSize: '0.75rem' }}>/start</Text>). Nhập <Text code style={{ fontSize: '0.75rem' }}>*</Text> hoặc để trống để bắt <b>mọi tin nhắn</b>.</div>
+                    <div>• <b>Reply</b>: Bot trả lời ngay, không chạy workflow</div>
+                    <div>• <b>WF</b>: Bot trả lời + chạy các block phía sau</div>
+                    <div>• Dữ liệu truyền vào workflow: <Text code style={{ fontSize: '0.75rem' }}>{'{chat_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{message_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{text}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{sender_name}'}</Text> (không có <Text code style={{ fontSize: '0.75rem' }}>{'{command}'}</Text> — tên lệnh chỉ dùng nội bộ để định tuyến, không truyền vào biến)</div>
                   </div>
                 }
                 type="info"
                 showIcon
-                style={{ marginBottom: 16 }}
+                style={{ marginBottom: 16, padding: '8px 12px' }}
               />
 
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', overflowX: 'auto' }}>
@@ -1671,9 +1740,16 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             </div>
           ) : isTelegram ? (
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <MessageCircle size="1.5rem" color="var(--accent-primary)" />
-                <Title level={4} style={{ margin: 0 }}>Hướng dẫn Định dạng Telegram ({telegramParseMode || 'HTML'})</Title>
+                <Title level={4} style={{ margin: 0 }}>Nội dung tin nhắn gửi đi</Title>
+              </div>
+              <Form.Item name="telegramMessage" rules={[{ required: true, message: 'Nhập nội dung tin nhắn' }]}>
+                <Input.TextArea rows={12} placeholder="Nhập nội dung tin nhắn gửi đi... (có thể dùng biến {{biến_toàn_cục}})" style={{ fontFamily: 'monospace' }} />
+              </Form.Item>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, marginTop: 16 }}>
+                <Title level={5} style={{ margin: 0 }}>Hướng dẫn Định dạng Telegram ({telegramParseMode || 'HTML'})</Title>
               </div>
               
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24, overflowX: 'auto' }}>
@@ -1771,7 +1847,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               </div>
 
               {/* Toggle chọn tất cả Input */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-default)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '8px 12px', background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-default)' }}>
                 <Switch
                   checked={mergeAllInput}
                   onChange={(checked) => {
@@ -1784,8 +1860,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   }}
                 />
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Chọn tất cả file đầu vào (Input)</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tự động ghép tất cả file trong thư mục Input theo thứ tự tên</div>
+                  <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Chọn tất cả file đầu vào (Input)</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tự động ghép tất cả file trong thư mục Input theo thứ tự tên</div>
                 </div>
               </div>
 
@@ -1795,14 +1871,15 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <Radio.Group 
                     value={mergeFileSource} 
                     onChange={e => setMergeFileSource(e.target.value)} 
-                    style={{ display: 'flex', marginBottom: 14 }}
+                    style={{ marginBottom: 14 }}
                     buttonStyle="solid"
+                    size="small"
                   >
-                    <Radio.Button value="input" style={{ flex: 1, textAlign: 'center' }}>File Đầu vào (Input)</Radio.Button>
-                    <Radio.Button value="output" style={{ flex: 1, textAlign: 'center' }}>File Đầu ra (Output)</Radio.Button>
+                    <Radio.Button value="input">File Đầu vào (Input)</Radio.Button>
+                    <Radio.Button value="output">File Đầu ra (Output)</Radio.Button>
                   </Radio.Group>
 
-                  <Alert title={<span><b>Ghi chú:</b> File đầu tiên được chọn sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau sẽ bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16 }} />
+                  <Alert title={<span style={{ fontSize: '0.85rem' }}><b>Ghi chú:</b> File đầu tiên được chọn sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau sẽ bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
 
                   <Form.Item
                     name="selectedFiles"
@@ -1825,17 +1902,19 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   ) : availableFiles.filter(f => f.type === 'input').length === 0 ? (
                     <Alert title="Chưa có file nào trong thư mục Input." type="warning" showIcon />
                   ) : (
-                    <Alert title="File sẽ được ghép (tất cả Input):"
-                      description={
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-                          {availableFiles.filter(f => f.type === 'input').map((f, i) => (
-                            <Text key={f.name}><Text strong style={{ color: 'var(--accent-primary)', display: 'inline-block', width: 24 }}>{i + 1}.</Text> {f.name}</Text>
-                          ))}
-                        </div>
-                      }
-                      type="info"
-                      showIcon
-                    />
+                    <div style={{ background: 'rgba(14, 165, 233, 0.05)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0ea5e9', fontWeight: 600, fontSize: '0.85rem' }}>
+                        <Info size={14} /> File sẽ được ghép (tất cả Input):
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8, fontSize: '0.8rem' }}>
+                        {availableFiles.filter(f => f.type === 'input').map((f, i) => (
+                          <div key={f.name} style={{ display: 'flex', gap: 8 }}>
+                            <span style={{ color: 'var(--accent-primary)', fontWeight: 600, minWidth: 20 }}>{i + 1}.</span>
+                            <span style={{ color: 'var(--text-primary)' }}>{f.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}

@@ -696,6 +696,16 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     if log_fn:
                         log_fn(bid, "info", f"🎧 [Telegram Listener] {label} - Đã nhận tin nhắn và chạy workflow")
                     current_input = bdata["_initial_input"]
+                    if isinstance(current_input, dict):
+                        for field_key, bdata_key in (
+                            ("chat_id", "telegramListenerChatIdVarName"),
+                            ("message_id", "telegramListenerMessageIdVarName"),
+                            ("text", "telegramListenerTextVarName"),
+                            ("sender_name", "telegramListenerSenderNameVarName"),
+                        ):
+                            var_name = bdata.get(bdata_key, "").strip()
+                            if var_name:
+                                workflow_env[var_name] = current_input.get(field_key)
                 else:
                     # Manual run (bấm nút Chạy/Start) → bật Listener, workflow giữ RUNNING chờ tin nhắn
                     if log_fn:
@@ -990,7 +1000,14 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             current_input["sent_message_id"] = last_message_id
                             current_input["chat_id"] = chat_id
                         else:
-                            current_input = {"sent_message_id": last_message_id, "message_id": last_message_id, "chat_id": chat_id, "previous_input": current_input}
+                            current_input = {"sent_message_id": last_message_id, "message_id": last_message_id, "chat_id": chat_id}
+
+                        sent_id_var = bdata.get("telegramSentMessageIdVarName", "").strip()
+                        if sent_id_var:
+                            workflow_env[sent_id_var] = current_input.get("sent_message_id")
+                        chat_id_var = bdata.get("telegramChatIdVarName", "").strip()
+                        if chat_id_var:
+                            workflow_env[chat_id_var] = current_input.get("chat_id")
                 except Exception as e:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Telegram] {label} - Gửi thất bại: {str(e)}")
@@ -1203,10 +1220,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     current_input = output
             elif btype == "sql_to_excel":
                 sql_query = bdata.get("sqlQuery", "").strip()
-                excel_filename = bdata.get("excelFileName", "export.xlsx").strip()
+                excel_filename = bdata.get("excelFileName", "sqltoexcel.xlsx").strip()
                 saved_connection_id = bdata.get("sqlToExcelSavedConnectionId", "").strip()
                 if not excel_filename:
-                    excel_filename = "export.xlsx"
+                    excel_filename = "sqltoexcel.xlsx"
 
                 db_config = get_saved_db_connection(saved_connection_id)
 
@@ -1245,13 +1262,13 @@ print("Đang kết nối CSDL và thực thi câu lệnh SQL...")
 engine = sqlalchemy.create_engine(conn_str)
 df = pd.read_sql("""{sql_query}""", engine)
 
-file_name = {excel_filename!r}
-out_path = os.path.join(OUTPUT_DIR, file_name)
+out_file = {excel_filename!r}
+out_path = os.path.join(OUTPUT_DIR, out_file)
 
 print(f"Đã tải {{len(df)}} dòng dữ liệu! Đang lưu vào {{out_path}}...")
 df.to_excel(out_path, index=False)
 
-output_data = {{"status": "success", "file_path": out_path}}
+output_data = {{"file_name": out_file}}
 '''
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
@@ -1361,10 +1378,10 @@ try:
     wb.save(out_path)
 except PermissionError:
     raise PermissionError(f"Không thể lưu đè file {{out_file}} do file này đang được mở trong Excel. Vui lòng đóng file Excel và chạy lại.")
-output_data = {{"status": "success", "file_path": out_path}}
+output_data = {{"file_name": out_file}}
 '''
                 success, output, error, duration = run_python_block_sync(
-                    project_id, bid, workflow_id, code, current_input, 
+                    project_id, bid, workflow_id, code, current_input,
                     timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
                     stop_event=stop_event
                 )
@@ -1377,7 +1394,7 @@ output_data = {{"status": "success", "file_path": out_path}}
                         continue
                 current_input = output
             elif btype == "pivot_excel":
-                excel_filename = bdata.get("excelFileName", "pivot_result.xlsx").strip()
+                excel_filename = bdata.get("excelFileName", "pivot.xlsx").strip()
                 selected_files = bdata.get("pivotInputFiles", [])
                 pivot_index = bdata.get("pivotIndex", "")
                 pivot_columns = bdata.get("pivotColumns", "")
@@ -1392,7 +1409,7 @@ output_data = {{"status": "success", "file_path": out_path}}
                 pivot_sort_custom = bdata.get("pivotSortCustom", [])
                 
                 if not excel_filename:
-                    excel_filename = "pivot_result.xlsx"
+                    excel_filename = "pivot.xlsx"
                 
                 if not selected_files:
                     if log_fn:
@@ -1542,10 +1559,10 @@ try:
 except PermissionError:
     raise PermissionError(f"Không thể lưu đè file {{out_file}} do file này đang được mở trong Excel.")
 
-output_data = {{"status": "success", "file_path": out_path}}
+output_data = {{"file_name": out_file}}
 '''
                 success, output, error, duration = run_python_block_sync(
-                    project_id, bid, workflow_id, code, current_input, 
+                    project_id, bid, workflow_id, code, current_input,
                     timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
                     stop_event=stop_event
                 )
@@ -1694,10 +1711,10 @@ print(f"Đang Bulk Insert {{len(sql_df)}} dòng vào bảng {{table_name}}...")
 sql_df.to_sql(name=table_name, con=engine, if_exists='append', index=False, chunksize=10000)
 
 print(f"✅ Đã Import thành công {{len(sql_df)}} dòng.")
-output_data = {{"status": "success", "rows_inserted": len(sql_df), "table": table_name}}
+output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
 '''
                 success, output, error, duration = run_python_block_sync(
-                    project_id, bid, workflow_id, code, current_input, 
+                    project_id, bid, workflow_id, code, current_input,
                     timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
                     stop_event=stop_event
                 )
@@ -1710,6 +1727,13 @@ output_data = {{"status": "success", "rows_inserted": len(sql_df), "table": tabl
                         continue
                 else:
                     current_input = output
+                    if isinstance(current_input, dict):
+                        rows_var = bdata.get("excelToSqlRowsVarName", "").strip()
+                        if rows_var:
+                            workflow_env[rows_var] = current_input.get("rows_inserted")
+                        table_var = bdata.get("excelToSqlTableVarName", "").strip()
+                        if table_var:
+                            workflow_env[table_var] = current_input.get("table")
             elif btype == "run_sql_exec":
                 sql_command = bdata.get("sqlCommand", "").strip()
                 saved_connection_id = bdata.get("sqlExecSavedConnectionId", "").strip()
@@ -1762,7 +1786,7 @@ if rows:
 else:
     print(f"✅ Thực thi thành công. {{row_count}} dòng bị ảnh hưởng.")
 
-output_data = {{"status": "success", "result": rows, "row_count": row_count}}
+output_data = {{"result": rows, "row_count": row_count}}
 '''
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
@@ -1778,6 +1802,13 @@ output_data = {{"status": "success", "result": rows, "row_count": row_count}}
                             continue
                     else:
                         current_input = output
+                        if isinstance(current_input, dict):
+                            result_var = bdata.get("sqlExecResultVarName", "").strip()
+                            if result_var:
+                                workflow_env[result_var] = current_input.get("result")
+                            row_count_var = bdata.get("sqlExecRowCountVarName", "").strip()
+                            if row_count_var:
+                                workflow_env[row_count_var] = current_input.get("row_count")
             elif btype == "condition":
                 logical_op = bdata.get("logicalOperator", "AND").upper()
                 conditions = bdata.get("conditions")
@@ -1969,6 +2000,12 @@ output_data = {{"status": "success", "result": rows, "row_count": row_count}}
 
                 if isinstance(current_input, dict):
                     workflow_env.update(current_input)
+                    # Nếu khối có đặt tên biến riêng (outputVarName), lưu thêm nguyên object
+                    # kết quả dưới key đó - tránh bị các khối khác đè mất khi dùng chung
+                    # tên key phẳng (status/result/table...) như cơ chế update() ở trên.
+                    output_var_name = bdata.get("outputVarName", "").strip()
+                    if output_var_name:
+                        workflow_env[output_var_name] = current_input
 
                 out_edges = edges_from.get(node_id, [])
                 for e in out_edges:
