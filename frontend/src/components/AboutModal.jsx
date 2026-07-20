@@ -130,47 +130,45 @@ export default function AboutModal({ open, onClose }) {
         </div>
       </div>
 
-      <div style={{ background: 'var(--bg-surface)', padding: 12, borderRadius: 8, border: '1px solid var(--border-default)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: updateStatus ? 12 : 0 }}>
-          <Text style={{ fontWeight: 500 }}>Cập nhật hệ thống</Text>
+      <div style={{ padding: '8px 0', textAlign: 'center', marginTop: 8 }}>
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Button 
             type="primary" 
-            ghost 
-            size="small" 
-            icon={<DownloadCloud size={14} />} 
+            icon={<DownloadCloud size={16} />} 
             onClick={handleCheckUpdate}
             loading={checkingUpdate}
             disabled={updateStatus === 'updating'}
+            style={{ minWidth: 160 }}
           >
-            Kiểm tra
+            Kiểm tra cập nhật
           </Button>
-        </div>
 
-        {updateStatus === 'latest' && (
-          <Alert message={updateMsg} type="success" showIcon icon={<CheckCircle size={14}/>} style={{ marginTop: 8, fontSize: '0.85rem' }} />
-        )}
+          {updateStatus === 'latest' && (
+            <Alert message={updateMsg} type="success" showIcon icon={<CheckCircle size={14}/>} style={{ fontSize: '0.85rem', textAlign: 'left' }} />
+          )}
 
-        {updateStatus === 'available' && (
-          <Alert 
-            message={updateMsg} 
-            type="info" 
-            showIcon 
-            style={{ marginTop: 8, fontSize: '0.85rem' }}
-            action={
-              <Button size="small" type="primary" onClick={handleUpdate}>
-                Cập nhật ngay
-              </Button>
-            }
-          />
-        )}
+          {updateStatus === 'available' && (
+            <Alert 
+              message={updateMsg} 
+              type="info" 
+              showIcon 
+              style={{ fontSize: '0.85rem', textAlign: 'left' }}
+              action={
+                <Button size="small" type="primary" onClick={handleUpdate}>
+                  Cập nhật ngay
+                </Button>
+              }
+            />
+          )}
 
-        {updateStatus === 'updating' && (
-          <Alert 
-            message={<Space><Spin size="small"/> {updateMsg}</Space>} 
-            type="warning" 
-            style={{ marginTop: 8, fontSize: '0.85rem' }}
-          />
-        )}
+          {updateStatus === 'updating' && (
+            <Alert 
+              message={<Space><Spin size="small"/> {updateMsg}</Space>} 
+              type="warning" 
+              style={{ fontSize: '0.85rem', textAlign: 'left' }}
+            />
+          )}
+        </Space>
       </div>
     </Modal>
   )

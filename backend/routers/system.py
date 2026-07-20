@@ -44,8 +44,8 @@ def check_update():
         subprocess.run(["git", "fetch", "origin", "main"], check=True, timeout=10)
         status_out = subprocess.check_output(["git", "status", "-uno"], text=True)
         if "Your branch is behind" in status_out:
-            return {"hasUpdate": True, "message": "Co ban cap nhat moi"}
-        return {"hasUpdate": False, "message": "Ban dang dung phien ban moi nhat"}
+            return {"hasUpdate": True, "message": "Có bản cập nhật mới"}
+        return {"hasUpdate": False, "message": "Bạn đang dùng phiên bản mới nhất"}
     except Exception as e:
         return {"hasUpdate": False, "error": str(e)}
 
@@ -71,6 +71,6 @@ def execute_update():
         # Doi 1 giay roi tat de API kip tra ve response cho Frontend
         threading.Timer(1.0, run_and_die).start()
         
-        return {"status": "updating", "message": "He thong dang cap nhat va khoi dong lai..."}
+        return {"status": "updating", "message": "Hệ thống đang cập nhật và khởi động lại..."}
     except Exception as e:
         return {"error": str(e)}
