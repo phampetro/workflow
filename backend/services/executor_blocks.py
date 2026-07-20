@@ -1784,7 +1784,10 @@ with engine.begin() as conn:
 if rows:
     print(f"✅ Thực thi thành công. {{len(rows)}} dòng kết quả trả về.")
 else:
-    print(f"✅ Thực thi thành công. {{row_count}} dòng bị ảnh hưởng.")
+    if row_count == -1:
+        print(f"✅ Thực thi thành công (Hệ thống DB không trả về số dòng ảnh hưởng).")
+    else:
+        print(f"✅ Thực thi thành công. {{row_count}} dòng bị ảnh hưởng.")
 
 output_data = {{"result": rows, "row_count": row_count}}
 '''
