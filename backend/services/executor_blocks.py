@@ -1204,7 +1204,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         log_fn(bid, "info", f"⚡ Đang chạy: {label}...")
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
-                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                        timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
                         stop_event=stop_event
                     )
                     if not success:
@@ -1272,7 +1272,7 @@ output_data = {{"file_name": out_file}}
 '''
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
-                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                        timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
                         stop_event=stop_event
                     )
                     if not success:
@@ -1382,7 +1382,7 @@ output_data = {{"file_name": out_file}}
 '''
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
-                    timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                    timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
                     stop_event=stop_event
                 )
                 if not success:
@@ -1563,7 +1563,7 @@ output_data = {{"file_name": out_file}}
 '''
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
-                    timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                    timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
                     stop_event=stop_event
                 )
                 if not success:
@@ -1715,7 +1715,7 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
 '''
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
-                    timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                    timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
                     stop_event=stop_event
                 )
                 if not success:
@@ -1790,7 +1790,7 @@ output_data = {{"result": rows, "row_count": row_count}}
 '''
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
-                        timeout=1800, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                        timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
                         stop_event=stop_event
                     )
                     if not success:
