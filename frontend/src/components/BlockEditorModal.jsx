@@ -1038,6 +1038,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             telegramAction: node.data.telegramAction || 'send',
             telegramMessageId: node.data.telegramMessageId || '',
             telegramListenerToken: node.data.telegramListenerToken || '',
+            delete_input: node.data.delete_input || false,
+            delete_output: node.data.delete_output || false,
             excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged.xlsx' : isPivotExcel ? 'pivot.xlsx' : isSqlToExcel ? 'sqltoexcel.xlsx' : 'export.xlsx'),
             headerRows: node.data.headerRows || 3,
             selectedFiles: node.data.selectedFiles || [],
