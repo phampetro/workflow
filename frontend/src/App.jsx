@@ -5,6 +5,7 @@ import ProjectDetail from './pages/ProjectDetail'
 import WorkflowEditor from './pages/WorkflowEditor'
 import UserPickerModal from './components/UserPickerModal'
 import AiSettingsModal from './components/AiSettingsModal'
+import AboutModal from './components/AboutModal'
 import { Toaster } from 'react-hot-toast'
 import { ConfigProvider, theme as antdTheme, Spin, App as AntApp } from 'antd'
 import viVN from 'antd/locale/vi_VN'
@@ -43,6 +44,7 @@ export default function App() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [openCreateModal, setOpenCreateModal] = useState(false)
   const [openAiSettings, setOpenAiSettings] = useState(false)
+  const [openAbout, setOpenAbout] = useState(false)
 
   // Import state
   const importInputRef = useRef(null)
@@ -289,9 +291,14 @@ export default function App() {
           allowClose={!noUsersExist}
         />
 
-        <AiSettingsModal 
-          open={openAiSettings} 
-          onClose={() => setOpenAiSettings(false)} 
+        <AiSettingsModal
+          open={openAiSettings}
+          onClose={() => setOpenAiSettings(false)}
+        />
+
+        <AboutModal
+          open={openAbout}
+          onClose={() => setOpenAbout(false)}
         />
 
         {bootstrapDone && (
@@ -318,6 +325,7 @@ export default function App() {
                   onImport={handleImportClick}
                   onSwitchUser={() => setShowUserPicker(true)}
                   onOpenAiSettings={() => setOpenAiSettings(true)}
+                  onOpenAbout={() => setOpenAbout(true)}
                 />
               </>
             )}

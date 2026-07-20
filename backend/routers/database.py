@@ -26,7 +26,7 @@ class GetSchemaRequest(BaseModel):
     table_name: str | None = None
 
 class DbConnectionBody(BaseModel):
-    project_id: str
+    workflow_id: str
     label: str
     db_type: str = "sqlserver"
     host: str = ""
@@ -140,9 +140,9 @@ except Exception as e:
     return run_db_script(body.config, script)
 
 @router.get("/api/database/connections")
-async def list_db_connections(project_id: str, session: AsyncSession = Depends(get_session)):
+async def list_db_connections(workflow_id: str, session: AsyncSession = Depends(get_session)):
     result = await session.execute(
-        select(DbConnection).where(DbConnection.project_id == project_id).order_by(DbConnection.label)
+        select(DbConnection).where(DbConnection.workflow_id == workflow_id).order_by(DbConnection.label)
     )
     return [c.to_dict() for c in result.scalars().all()]
 

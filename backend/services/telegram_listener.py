@@ -116,14 +116,25 @@ async def _telegram_listener_loop(
                         message = update.get("message") or update.get("channel_post")
                         if message:
                             text = message.get("text", "") or ""
-                            # Tìm lệnh khớp với tin nhắn (nếu không cấu hình lệnh nào -> khớp tất cả)
+                            # Tìm lệnh khớp với tin nhắn (nếu không cấu hình lệnh nào -> khớp tất cả).
+                            # Ưu tiên lệnh cụ thể (vd "/chao") trước - "*"/"" (khớp mọi tin nhắn) chỉ
+                            # dùng làm phương án dự phòng khi không có lệnh cụ thể nào khớp, bất kể
+                            # "*" được xếp ở vị trí nào trong danh sách (tránh "nuốt" mất các lệnh
+                            # cụ thể đứng sau nó).
                             matched = None
                             if commands:
+                                wildcard_entry = None
                                 for entry in commands:
                                     cmd = (entry.get("command") or "").strip()
-                                    if cmd == "*" or cmd == "" or text.startswith(cmd):
+                                    if cmd == "*" or cmd == "":
+                                        if wildcard_entry is None:
+                                            wildcard_entry = entry
+                                        continue
+                                    if text.startswith(cmd):
                                         matched = entry
                                         break
+                                if matched is None:
+                                    matched = wildcard_entry
                             else:
                                 matched = {"command": "*", "reply": "", "runWorkflow": True}
 

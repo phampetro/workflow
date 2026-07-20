@@ -230,6 +230,7 @@ Mỗi field mặc định **trùng tên biến trả về thật** (dễ nhớ, 
 - Quản lý tại **"Dữ liệu Workflow" → tab Database**: thêm/sửa/xóa nhiều cấu hình kết nối (đặt tên riêng từng kết nối), có nút "Test kết nối" trước khi lưu.
 - Lưu trong bảng `db_connection` (SQLite, `backend/data/pyflow.db`) — không lưu trong `input.json` để tránh lẫn với gợi ý biến `{{...}}`.
 - 3 khối `sql_to_excel`, `excel_to_sql`, `run_sql_exec` đều có field bắt buộc **"Kết nối Database"** — chọn thẳng từ danh sách đã lưu, mỗi khối tự kết nối độc lập, không phụ thuộc vị trí trong sơ đồ hay khối nào khác.
+- **Scope theo từng workflow** (`db_connection.workflow_id`), không dùng chung cả project — mỗi workflow tự quản lý kết nối riêng của nó. Đánh đổi: nếu nhiều workflow trong cùng project dùng chung 1 DB, phải khai báo kết nối riêng cho từng workflow (không tái sử dụng được giữa các workflow). Đổi lại, **Export/Import** (cả export 1 workflow lẫn export cả project) tự động mang theo đúng kết nối của từng workflow và tự remap lại `savedConnectionId` sang id mới khi import — không cần cấu hình lại tay sau khi chuyển sang máy/project khác (xem `backend/services/export_import.py`).
 
 ## Yêu cầu hệ thống
 - Python 3.8+ (đã test với 3.14)

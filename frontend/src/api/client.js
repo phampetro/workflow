@@ -119,7 +119,7 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
 // ── Database ────────────────────────────────────────────────
 export const getDatabaseTables = (config) => api.post('/api/database/tables', config)
 export const getDatabaseColumns = (payload) => api.post('/api/database/columns', payload)
-export const getDbConnections = (projectId) => api.get('/api/database/connections', { params: { project_id: projectId } })
+export const getDbConnections = (workflowId) => api.get('/api/database/connections', { params: { workflow_id: workflowId } })
 export const createDbConnection = (data) => api.post('/api/database/connections', data)
 export const updateDbConnection = (id, data) => api.put(`/api/database/connections/${id}`, data)
 export const deleteDbConnection = (id) => api.delete(`/api/database/connections/${id}`)
@@ -179,5 +179,12 @@ export const streamAiCodegen = (payload, { onToken, onDone, onError } = {}) => {
 
 // ── Health ────────────────────────────────────────────────
 export const checkHealth = () => api.get('/health')
+
+// 🔸 System (Update & Version) 🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸🔸
+export const systemApi = {
+  getInfo: () => api.get('/api/system/info').then(res => res.data),
+  checkUpdate: () => api.get('/api/system/check-update').then(res => res.data),
+  update: () => api.post('/api/system/update').then(res => res.data)
+}
 
 export default api

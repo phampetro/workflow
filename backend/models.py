@@ -154,7 +154,7 @@ class DbConnection(Base):
     __tablename__ = "db_connection"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id = Column(String, nullable=False, index=True)
+    workflow_id = Column(String, nullable=False, index=True)
     label = Column(String, nullable=False)
     db_type = Column(String, default="sqlserver")
     host = Column(String, default="")
@@ -168,7 +168,7 @@ class DbConnection(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "project_id": self.project_id,
+            "workflow_id": self.workflow_id,
             "label": self.label,
             "db_type": self.db_type,
             "host": self.host,

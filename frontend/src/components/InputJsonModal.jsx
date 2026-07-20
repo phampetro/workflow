@@ -40,10 +40,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   }, [open, initialData])
 
   const loadDbConnections = async () => {
-    if (!projectId) return
+    if (!workflowId) return
     setLoadingDbConnections(true)
     try {
-      const res = await getDbConnections(projectId)
+      const res = await getDbConnections(workflowId)
       setDbConnections(res.data || [])
     } catch (e) {
       message.error('Lỗi tải danh sách kết nối: ' + e.message)
@@ -85,9 +85,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       const values = await dbConnForm.validateFields()
       setSavingConnection(true)
       if (editingConnection?.id) {
-        await updateDbConnection(editingConnection.id, { ...values, project_id: projectId })
+        await updateDbConnection(editingConnection.id, { ...values, workflow_id: workflowId })
       } else {
-        await createDbConnection({ ...values, project_id: projectId })
+        await createDbConnection({ ...values, workflow_id: workflowId })
       }
       message.success('Đã lưu kết nối!')
       setDbConnModalOpen(false)

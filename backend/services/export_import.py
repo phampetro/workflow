@@ -8,8 +8,79 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from models import Workflow, Project
+from models import Workflow, Project, DbConnection
 from services.venv_manager import get_project_dir, slugify
+
+
+_SAVED_CONNECTION_FIELDS = (
+    "sqlToExcelSavedConnectionId",
+    "excelToSqlSavedConnectionId",
+    "sqlExecSavedConnectionId",
+)
+
+
+async def _get_workflow_db_connections(workflow_id: str, session) -> list:
+    """Lấy toàn bộ kết nối Database thuộc về 1 workflow, để đóng gói kèm khi export."""
+    result = await session.execute(
+        select(DbConnection).where(DbConnection.workflow_id == workflow_id)
+    )
+    return [
+        {
+            "id": c.id,
+            "label": c.label,
+            "db_type": c.db_type,
+            "host": c.host,
+            "port": c.port,
+            "username": c.username,
+            "password": c.password,
+            "dbname": c.dbname,
+        }
+        for c in result.scalars().all()
+    ]
+
+
+async def _import_db_connections_and_remap(db_connections_data: list, new_workflow_id: str, graph_json, session):
+    """Tạo lại các kết nối Database đã export dưới workflow mới, rồi sửa lại
+    savedConnectionId trong graph_json (đang trỏ tới id cũ) thành id mới tương ứng.
+    """
+    if not db_connections_data:
+        return graph_json
+
+    id_map = {}
+    for conn_data in db_connections_data:
+        old_id = conn_data.get("id")
+        new_conn = DbConnection(
+            id=str(uuid.uuid4()),
+            workflow_id=new_workflow_id,
+            label=conn_data.get("label", ""),
+            db_type=conn_data.get("db_type", "sqlserver"),
+            host=conn_data.get("host", ""),
+            port=conn_data.get("port", ""),
+            username=conn_data.get("username", ""),
+            password=conn_data.get("password", ""),
+            dbname=conn_data.get("dbname", ""),
+        )
+        session.add(new_conn)
+        if old_id:
+            id_map[old_id] = new_conn.id
+    await session.commit()
+
+    if not graph_json or not id_map:
+        return graph_json
+
+    try:
+        graph = json.loads(graph_json)
+    except Exception:
+        return graph_json
+
+    for node in graph.get("nodes", []):
+        data = node.get("data", {})
+        for field in _SAVED_CONNECTION_FIELDS:
+            val = data.get(field)
+            if val in id_map:
+                data[field] = id_map[val]
+
+    return json.dumps(graph)
 
 
 def _wf_dir(project_id: str, wf_name: str) -> Path:
@@ -38,7 +109,7 @@ async def _unique_workflow_name(session, project_id: str, desired_name: str) -> 
     return candidate
 
 
-def _build_workflow_zip_bytes(wf_dict: dict, wf_dir: Path) -> bytes:
+def _build_workflow_zip_bytes(wf_dict: dict, wf_dir: Path, db_connections: list = None) -> bytes:
     """Đóng gói graph + toàn bộ file input/output của 1 workflow vào zip.
 
     Hàm đồng bộ (dùng zipfile/đọc đĩa) - luôn gọi qua asyncio.to_thread để
@@ -54,6 +125,7 @@ def _build_workflow_zip_bytes(wf_dict: dict, wf_dir: Path) -> bytes:
                 "description": wf_dict["description"],
                 "color": wf_dict["color"],
                 "graph_json": wf_dict["graph_json"],
+                "db_connections": db_connections or [],
             },
         }
         zf.writestr("workflow.json", json.dumps(export_data, ensure_ascii=False, indent=2))
@@ -104,18 +176,20 @@ def _extract_workflow_files(zip_data: bytes, wf_dir: Path):
 
 
 async def export_workflow_to_zip(workflow_id: str, session) -> io.BytesIO:
-    """Xuất 1 workflow (graph + input + output) thành zip trong bộ nhớ."""
+    """Xuất 1 workflow (graph + input + output + kết nối Database) thành zip trong bộ nhớ."""
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise ValueError("Workflow không tồn tại")
 
+    db_connections = await _get_workflow_db_connections(workflow_id, session)
     wf_dir = _wf_dir(wf.project_id, wf.name)
-    data = await asyncio.to_thread(_build_workflow_zip_bytes, wf.to_dict(), wf_dir)
+    data = await asyncio.to_thread(_build_workflow_zip_bytes, wf.to_dict(), wf_dir, db_connections)
     return io.BytesIO(data)
 
 
 async def import_workflow_from_zip(zip_data: bytes, project_id: str, session) -> dict:
-    """Nhập 1 workflow từ zip vào project đích (tạo workflow mới, giữ nguyên input/output)."""
+    """Nhập 1 workflow từ zip vào project đích (tạo workflow mới, giữ nguyên input/output,
+    tạo lại kết nối Database đã export và tự remap savedConnectionId trong graph_json)."""
     proj = await session.get(Project, project_id)
     if not proj:
         raise ValueError("Project không tồn tại")
@@ -134,6 +208,12 @@ async def import_workflow_from_zip(zip_data: bytes, project_id: str, session) ->
         updated_at=datetime.now(),
     )
     session.add(new_wf)
+    await session.commit()
+    await session.refresh(new_wf)
+
+    new_wf.graph_json = await _import_db_connections_and_remap(
+        wf_meta.get("db_connections", []), new_wf.id, new_wf.graph_json, session
+    )
     await session.commit()
     await session.refresh(new_wf)
 
@@ -201,6 +281,7 @@ def _build_project_zip_bytes(proj_dict: dict, workflows: list, proj_dir: Path) -
                 "description": wf["description"],
                 "color": wf["color"],
                 "graph_json": wf["graph_json"],
+                "db_connections": wf.get("db_connections", []),
             })
             wf_dir = proj_dir / f"wf_{slugify(wf['name'])}"
             for sub in ("input", "output"):
@@ -246,11 +327,17 @@ async def export_project_to_zip(project_id: str, session) -> io.BytesIO:
         select(Workflow).where(Workflow.project_id == project_id)
     )).scalars().all()
 
+    wf_dicts = []
+    for w in workflows:
+        wf_dict = w.to_dict()
+        wf_dict["db_connections"] = await _get_workflow_db_connections(w.id, session)
+        wf_dicts.append(wf_dict)
+
     proj_dir = get_project_dir(project_id)
     data = await asyncio.to_thread(
         _build_project_zip_bytes,
         proj.to_dict(),
-        [w.to_dict() for w in workflows],
+        wf_dicts,
         proj_dir,
     )
     return io.BytesIO(data)
@@ -293,6 +380,12 @@ async def import_project_from_zip(zip_data: bytes, user_id: str, session) -> dic
             updated_at=datetime.now(),
         )
         session.add(new_wf)
+        await session.commit()
+        await session.refresh(new_wf)
+
+        new_wf.graph_json = await _import_db_connections_and_remap(
+            wf_meta.get("db_connections", []), new_wf.id, new_wf.graph_json, session
+        )
         await session.commit()
 
         wf_dir = proj_dir / f"wf_{slugify(wf_name)}"

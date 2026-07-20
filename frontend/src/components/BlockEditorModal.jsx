@@ -710,14 +710,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
   // Fetch danh sách kết nối Database đã lưu (cho các khối cần chọn kết nối)
   useEffect(() => {
-    if ((isSqlToExcel || isExcelToSql || isRunSqlExec) && open && projectId) {
+    if ((isSqlToExcel || isExcelToSql || isRunSqlExec) && open && workflowId) {
       setLoadingDbConnections(true)
-      getDbConnections(projectId)
+      getDbConnections(workflowId)
         .then(res => setDbConnections(res.data || []))
         .catch(() => setDbConnections([]))
         .finally(() => setLoadingDbConnections(false))
     }
-  }, [isSqlToExcel, isExcelToSql, isRunSqlExec, open, projectId])
+  }, [isSqlToExcel, isExcelToSql, isRunSqlExec, open, workflowId])
 
   // Fetch output files cho Telegram attachment
   useEffect(() => {

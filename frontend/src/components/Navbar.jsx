@@ -1,5 +1,5 @@
 import React from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Upload, Sparkles } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, Sun, Moon, UserCog, Upload, Sparkles, Info } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import useStore from '../store/useStore'
 
@@ -15,6 +15,7 @@ export default function Navbar({
   isDashboard,
   onSwitchUser,
   onOpenAiSettings,
+  onOpenAbout,
 }) {
   const theme = useStore((state) => state.theme)
   const setTheme = useStore((state) => state.setTheme)
@@ -52,6 +53,17 @@ export default function Navbar({
         </span>
       ),
       onClick: () => setTheme(theme === 'light' ? 'dark' : 'light'),
+    },
+    { type: 'divider' },
+    {
+      key: 'about',
+      label: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Info size="0.875rem" />
+          Thông tin
+        </span>
+      ),
+      onClick: onOpenAbout,
     },
   ]
 

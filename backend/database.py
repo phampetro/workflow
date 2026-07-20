@@ -62,6 +62,15 @@ def _sqlite_apply_schema_updates(conn):
                     sql += f" DEFAULT {default}"
                 conn.execute(text(sql))
 
+    # Đổi scope cấu hình Database từ theo project sang theo workflow (để export/import
+    # workflow mang theo được kết nối) - đổi tên cột thay vì thêm mới.
+    try:
+        db_conn_columns = _get_sqlite_columns(conn, "db_connection")
+        if "project_id" in db_conn_columns and "workflow_id" not in db_conn_columns:
+            conn.execute(text("ALTER TABLE db_connection RENAME COLUMN project_id TO workflow_id"))
+    except Exception:
+        pass
+
 
 def create_db_and_tables():
     """Tạo tất cả bảng khi khởi động"""
