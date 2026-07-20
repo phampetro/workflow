@@ -148,16 +148,18 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     }).catch(() => {})
 
     // Khôi phục trạng thái đang chạy hoặc xem log cũ (khi user vào màn hình)
-    getRunHistory(workflow.id, 1).then(res => {
-      const latestRun = res.data?.[0]
-      if (latestRun) {
-        setViewingRunId(latestRun.id) // Luôn giữ ID để có thể xem lại log
-        if (latestRun.status === 'running') {
-          useStore.getState().setActiveRun(workflow.id, latestRun.id)
-          setShowLogs(true) // Tự động mở bảng Log
-        } else {
-          useStore.getState().clearActiveRun(workflow.id)
-        }
+    getRunHistory(workflow.id, 5).then(res => {
+      const runs = res.data || []
+      const runningRun = runs.find(r => r.status === 'running')
+      const latestRun = runs[0]
+
+      if (runningRun) {
+        setViewingRunId(runningRun.id)
+        useStore.getState().setActiveRun(workflow.id, runningRun.id)
+        setShowLogs(true)
+      } else if (latestRun) {
+        setViewingRunId(latestRun.id)
+        useStore.getState().clearActiveRun(workflow.id)
       }
     }).catch(() => {}).finally(() => setCheckingStatus(false))
   }, [workflow?.id])
