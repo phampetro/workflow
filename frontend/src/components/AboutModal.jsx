@@ -48,12 +48,16 @@ export default function AboutModal({ open, onClose }) {
     setUpdateStatus(null)
     try {
       const res = await systemApi.checkUpdate()
-      if (res.hasUpdate) {
+      if (res.error === "GIT_NOT_FOUND") {
+        setUpdateStatus('error')
+        setUpdateMsg(res.message)
+      } else if (res.hasUpdate) {
         setUpdateStatus('available')
+        setUpdateMsg(res.message)
       } else {
         setUpdateStatus('latest')
+        setUpdateMsg(res.message)
       }
-      setUpdateMsg(res.message)
     } catch (err) {
       message.error("Không thể kiểm tra bản cập nhật.")
     } finally {
@@ -158,6 +162,15 @@ export default function AboutModal({ open, onClose }) {
                   Cập nhật ngay
                 </Button>
               }
+            />
+          )}
+
+          {updateStatus === 'error' && (
+            <Alert 
+              message={updateMsg} 
+              type="error" 
+              showIcon 
+              style={{ fontSize: '0.85rem', justifyContent: 'center' }}
             />
           )}
 

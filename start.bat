@@ -4,6 +4,20 @@ setlocal enabledelayedexpansion
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [Loi] He thong khong tim thay Python. Vui long cai dat Python va them vao PATH.
+    pause
+    exit /b 1
+)
+
+npm --version >nul 2>&1
+if errorlevel 1 (
+    echo [Loi] He thong khong tim thay Node.js. Vui long cai dat Node.js.
+    pause
+    exit /b 1
+)
+
 echo [1/4] Kiem tra va giai phong port 8000, 5173...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000 " ^| findstr "LISTENING"') do (
     taskkill /PID %%a /F >nul 2>&1

@@ -1,6 +1,16 @@
 #!/bin/bash
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+if ! command -v python3 &> /dev/null; then
+    echo "[Loi] He thong khong tim thay Python3. Vui long cai dat truoc."
+    exit 1
+fi
+
+if ! command -v npm &> /dev/null; then
+    echo "[Loi] He thong khong tim thay Node.js. Vui long cai dat truoc."
+    exit 1
+fi
+
 echo "[1/4] Kiem tra va giai phong port 8000, 5173..."
 lsof -ti:8000 | xargs kill -9 2>/dev/null
 lsof -ti:5173 | xargs kill -9 2>/dev/null

@@ -46,6 +46,8 @@ def check_update():
         if "Your branch is behind" in status_out:
             return {"hasUpdate": True, "message": "Có bản cập nhật mới"}
         return {"hasUpdate": False, "message": "Bạn đang dùng phiên bản mới nhất"}
+    except FileNotFoundError:
+        return {"hasUpdate": False, "error": "GIT_NOT_FOUND", "message": "Hệ thống không tìm thấy Git. Vui lòng cài đặt Git để sử dụng tính năng cập nhật."}
     except Exception as e:
         return {"hasUpdate": False, "error": str(e)}
 
