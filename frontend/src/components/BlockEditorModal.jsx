@@ -120,7 +120,7 @@ const BROWSER_ACTIONS = [
     { value: 'fill',          label: 'Nhập văn bản',      params: ['text'], needsSelector: true },
     { value: 'type_slowly',   label: 'Gõ từng ký tự',    params: ['text'], needsSelector: true },
     { value: 'clear',         label: 'Xóa nội dung',      params: [], needsSelector: true },
-    { value: 'press_key',     label: 'Nhấn phím',         params: ['key'], needsSelector: false },
+    { value: 'press_key',     label: 'Nhấn phím',         params: ['key'], needsSelector: true },
   ]},
   { group: '📋 Form & Select', actions: [
     { value: 'select_option', label: 'Chọn dropdown',     params: ['option'], needsSelector: true },
@@ -273,7 +273,7 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
                   <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: accentColor }}>{actionLabel}</span>
                     {step.selector && <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.72rem', background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{step.selector}</span>}
-                    {step.value && <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>= "{step.value}"</span>}
+                    {(step.value || (step.action === 'press_key' ? 'Enter' : '')) && <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>= "{step.value || (step.action === 'press_key' ? 'Enter' : '')}"</span>}
                   </div>
                   {step.note && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 1 }}>{step.note}</div>}
                 </div>
