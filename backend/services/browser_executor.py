@@ -164,11 +164,12 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
             await log("info", f"'{selector}' đã xóa ✓")
 
         elif action == "press_key":
+            actual_key = value if value else "Enter"
             if selector:
-                await page.locator(selector).first.press(value, timeout=timeout)
+                await page.locator(selector).first.press(actual_key, timeout=timeout)
             else:
-                await page.keyboard.press(value)
-            await log("info", f"Key '{value}' ✓")
+                await page.keyboard.press(actual_key)
+            await log("info", f"Key '{actual_key}' ✓")
 
         elif action == "upload_file":
             await page.locator(selector).first.set_input_files(value, timeout=timeout)
