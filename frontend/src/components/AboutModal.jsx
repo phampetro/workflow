@@ -144,7 +144,7 @@ export default function AboutModal({ open, onClose }) {
           </Button>
 
           {updateStatus === 'latest' && (
-            <Alert message={updateMsg} type="success" showIcon icon={<CheckCircle size={14}/>} style={{ fontSize: '0.85rem', textAlign: 'left' }} />
+            <Alert message={updateMsg} type="success" showIcon icon={<CheckCircle size={14}/>} style={{ fontSize: '0.85rem', justifyContent: 'center' }} />
           )}
 
           {updateStatus === 'available' && (
@@ -152,7 +152,7 @@ export default function AboutModal({ open, onClose }) {
               message={updateMsg} 
               type="info" 
               showIcon 
-              style={{ fontSize: '0.85rem', textAlign: 'left' }}
+              style={{ fontSize: '0.85rem', justifyContent: 'center' }}
               action={
                 <Button size="small" type="primary" onClick={handleUpdate}>
                   Cập nhật ngay
@@ -165,7 +165,7 @@ export default function AboutModal({ open, onClose }) {
             <Alert 
               message={<Space><Spin size="small"/> {updateMsg}</Space>} 
               type="warning" 
-              style={{ fontSize: '0.85rem', textAlign: 'left' }}
+              style={{ fontSize: '0.85rem', justifyContent: 'center' }}
             />
           )}
         </Space>
