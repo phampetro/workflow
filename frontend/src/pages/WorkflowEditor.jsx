@@ -385,9 +385,12 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     }
   }
 
-  const handleRunFinished = useCallback(() => {
-    if (wfData?.id) useStore.getState().clearActiveRun(wfData.id)
-    message.success('Chạy Workflow hoàn tất!')
+  const handleRunFinished = useCallback((finishedRunId) => {
+    const currentActiveRun = useStore.getState().activeRuns[wfData?.id];
+    if (wfData?.id && currentActiveRun === finishedRunId) {
+      useStore.getState().clearActiveRun(wfData.id)
+      message.success('Chạy Workflow hoàn tất!')
+    }
   }, [wfData?.id])
 
   // Drag and drop support

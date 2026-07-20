@@ -40,12 +40,11 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
         useStore.getState().appendLog(runId, entry)
 
         if (data.message && (
-          data.message.includes('✅ Workflow hoàn thành') ||
-          data.message.includes('❌ Workflow thất bại') ||
+          data.message.includes('✅ Hoàn thành workflow') ||
           data.message.includes('❌ Lỗi hệ thống khi chạy workflow') ||
           data.message.includes('⏹ Đã dừng')
         )) {
-          if (onFinished) onFinished()
+          if (onFinished) onFinished(runId)
         }
       },
       (err) => { console.error('SSE Error:', err) },
