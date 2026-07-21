@@ -11,7 +11,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-npm --version >nul 2>&1
+call npm --version >nul 2>&1
 if errorlevel 1 (
     echo [Loi] He thong khong tim thay Node.js. Vui long cai dat Node.js.
     pause
