@@ -170,7 +170,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   }
 
   const handleExport = (project) => {
-    window.location.href = `http://localhost:8000/api/projects/${project.id}/export`
+    window.location.href = `http://localhost:7000/api/projects/${project.id}/export`
     toast.success(`Đang tải xuống project ${project.name}...`)
   }
 
@@ -193,7 +193,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     return (
       <div style={{ padding: 40 }}>
         <Alert
-          message="Backend chưa khởi động"
+          title="Backend chưa khởi động"
           description={
             <div>
               Chạy lệnh sau để khởi động backend:
@@ -234,7 +234,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
 
       {/* Error state */}
       {error && (
-        <Alert message={error} type="error" showIcon style={{ marginBottom: 20 }}
+        <Alert title={error} type="error" showIcon style={{ marginBottom: 20 }}
           action={<Button size="small" onClick={loadData}>Thử lại</Button>}
         />
       )}

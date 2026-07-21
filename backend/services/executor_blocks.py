@@ -57,9 +57,11 @@ def stop_workflow_by_id(run_id):
 
 def stop_all_runs_for_workflow(workflow_id):
     """Stop all active runs for a workflow"""
-    if workflow_id in _workflow_run_ids:
-        for run_id in list(_workflow_run_ids[workflow_id]):
-            kill_run(run_id)
+    # Đọc set qua .get(...) rồi wrap list() ngay - trước đây if-in-then-index có 2 bước
+    # không atomic: _finish_run ở thread khác có thể pop key giữa 2 bước, gây KeyError
+    # crash endpoint /stop.
+    for run_id in list(_workflow_run_ids.get(workflow_id, set())):
+        kill_run(run_id)
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat()
@@ -150,6 +152,18 @@ def _stop_telegram_listener_sync(workflow_id: str, log_fn=None):
     except Exception as e:
         if log_fn:
             log_fn("system", "warning", f"⚠ Không tắt được listener: {e}")
+
+
+def _set_workflow_listener_flag(workflow_id: str, on: bool):
+    """Cập nhật cột workflow.listener_on trong DB (sync, chạy trong thread executor)."""
+    try:
+        with sqlite3.connect(str(WORKFLOW_DB), timeout=5) as conn:
+            conn.execute(
+                "UPDATE workflow SET listener_on=? WHERE id=?",
+                (1 if on else 0, workflow_id)
+            )
+    except Exception:
+        pass
 
 
 def create_venv_sync(project_id: str) -> dict:
@@ -626,17 +640,22 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
             def interpolate(val):
                 if not isinstance(val, str):
                     return val
-                
+
                 ctx = dict(workflow_env)
                 if isinstance(current_input, dict):
                     ctx.update(current_input)
                 ctx["input_data"] = current_input
-                    
+
                 if val in ctx:
                     return str(ctx[val])
-                for k, v in ctx.items():
-                    val = val.replace("{{" + k + "}}", str(v))
-                return val
+
+                # Dùng re.sub 1 lượt để giá trị được thay KHÔNG bị scan tiếp - nếu không,
+                # value của biến k1 chứa chuỗi "{{k2}}" sẽ bị thay tiếp ở vòng sau,
+                # gây rò rỉ dữ liệu (VD sender_name Telegram do người ngoài đặt).
+                def _sub(m):
+                    key = m.group(1)
+                    return str(ctx[key]) if key in ctx else m.group(0)
+                return re.sub(r"\{\{(\w+)\}\}", _sub, val)
 
             def interpolate_deep(val, current_key=None):
                 # Nội suy đệ quy vào dict/list lồng nhau (conditions, attachments,
@@ -717,38 +736,51 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         from services.telegram_listener import (
                             start_telegram_listener,
                             is_listener_running,
+                            get_listener_config,
                         )
+
+                        # Tính token + commands từ bdata (đã nội suy biến {{key}}/input.json)
+                        tg_token = bdata.get("telegramListenerToken") or bdata.get("telegramBotToken", "")
+
+                        raw_commands = bdata.get("telegramListenerCommands") or bdata.get("telegramCommands", "")
+                        tg_commands = []
+                        if isinstance(raw_commands, list):
+                            for c in raw_commands:
+                                if isinstance(c, dict):
+                                    tg_commands.append({
+                                        "command": (c.get("command") or "").strip(),
+                                        "description": c.get("description", ""),
+                                        "reply": c.get("reply", ""),
+                                        "runWorkflow": bool(c.get("runWorkflow", False)),
+                                    })
+                                else:
+                                    tg_commands.append({"command": str(c).strip(), "reply": "", "runWorkflow": True})
+                        else:
+                            tg_commands = [
+                                {"command": c.strip(), "reply": "", "runWorkflow": True}
+                                for c in str(raw_commands).split(",") if c.strip()
+                            ]
+
+                        # Nếu listener đã chạy nhưng token/commands đổi so với lần bật trước,
+                        # dừng listener cũ để bật lại với cấu hình mới - tránh trường hợp user
+                        # sửa token rồi bấm Chạy lại mà listener cũ vẫn dùng token cũ.
+                        if is_listener_running(workflow_id):
+                            cur_cfg = get_listener_config(workflow_id) or {}
+                            if cur_cfg.get("token") != tg_token or cur_cfg.get("commands") != tg_commands:
+                                if log_fn:
+                                    log_fn(bid, "info", "🔄 Bot Token/lệnh đã đổi - khởi động lại Listener...")
+                                _stop_telegram_listener_sync(workflow_id, log_fn=log_fn)
+                                # Đợi ngắn để bảng _active_listeners được dọn
+                                import time as _t_wait
+                                for _ in range(20):
+                                    if not is_listener_running(workflow_id):
+                                        break
+                                    _t_wait.sleep(0.1)
+
                         if not is_listener_running(workflow_id):
-                            # Dùng bdata (đã nội suy biến {{key}}/input.json ở trên), KHÔNG dùng
-                            # node["data"] thô - nếu không Bot Token dạng biến sẽ bị gửi nguyên văn.
-                            tg_token = bdata.get("telegramListenerToken") or bdata.get("telegramBotToken", "")
-
-                            # commands: list các {"command", "reply", "runWorkflow"} - giữ nguyên
-                            # cấu hình reply/runWorkflow để listener biết trả lời trực tiếp hay chạy tiếp workflow.
-                            # Lưu ý: command để trống (hoặc "*") là hợp lệ - nghĩa là khớp MỌI tin nhắn,
-                            # nên KHÔNG được lọc bỏ các dòng có command rỗng.
-                            raw_commands = bdata.get("telegramListenerCommands") or bdata.get("telegramCommands", "")
-                            tg_commands = []
-                            if isinstance(raw_commands, list):
-                                for c in raw_commands:
-                                    if isinstance(c, dict):
-                                        tg_commands.append({
-                                            "command": (c.get("command") or "").strip(),
-                                            "description": c.get("description", ""),
-                                            "reply": c.get("reply", ""),
-                                            "runWorkflow": bool(c.get("runWorkflow", False)),
-                                        })
-                                    else:
-                                        tg_commands.append({"command": str(c).strip(), "reply": "", "runWorkflow": True})
-                            else:
-                                tg_commands = [
-                                    {"command": c.strip(), "reply": "", "runWorkflow": True}
-                                    for c in str(raw_commands).split(",") if c.strip()
-                                ]
-
                             def _run_listener_in_thread():
                                 import asyncio as _aio
-                                from services.telegram_listener import _active_listeners as _listeners_map, _stop_events as _stops_map
+                                from services.telegram_listener import _active_listeners as _listeners_map, _stop_events as _stops_map, _active_configs as _cfg_map
                                 loop = _aio.new_event_loop()
                                 _aio.set_event_loop(loop)
                                 try:
@@ -774,6 +806,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                     # để is_listener_running() phản ánh đúng trạng thái thật.
                                     _listeners_map.pop(workflow_id, None)
                                     _stops_map.pop(workflow_id, None)
+                                    _cfg_map.pop(workflow_id, None)
                                     loop.close()
 
                             _t = _threading_listener.Thread(
@@ -783,9 +816,12 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             )
                             _t.start()
 
+                            _set_workflow_listener_flag(workflow_id, True)
+
                             if log_fn:
                                 log_fn(bid, "success", f"✅ Listener đã được bật. Đang lắng nghe tin nhắn Telegram...")
                         else:
+                            _set_workflow_listener_flag(workflow_id, True)
                             if log_fn:
                                 log_fn(bid, "info", f"ℹ️ Listener đã chạy sẵn.")
                     except Exception as e:
@@ -801,6 +837,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             if log_fn:
                                 log_fn(bid, "warning", f"⏹ Đang tắt Listener theo yêu cầu người dùng...")
                             _stop_telegram_listener_sync(workflow_id, log_fn=log_fn)
+                            _set_workflow_listener_flag(workflow_id, False)
                             final_status = "stopped"
                             break
                         _time_listener.sleep(0.5)
@@ -1999,7 +2036,21 @@ output_data = {{"result": rows, "row_count": row_count}}
                     if delay > 0:
                         if log_fn:
                             log_fn(bid, "info", f"⏳ [Loop] Nghỉ {delay}s trước khi lặp lại...")
-                        time.sleep(delay)
+                        # Chia nhỏ để check stop_event mỗi 0.5s - trước đây time.sleep(delay)
+                        # nguyên khối khiến nút Dừng phải đợi hết loopDelay mới có hiệu lực.
+                        _waited = 0.0
+                        _step = 0.5
+                        _stopped_in_loop_delay = False
+                        while _waited < delay:
+                            if stop_event and stop_event.is_set():
+                                final_status = "stopped"
+                                _stopped_in_loop_delay = True
+                                break
+                            _t = min(_step, delay - _waited)
+                            time.sleep(_t)
+                            _waited += _t
+                        if _stopped_in_loop_delay:
+                            break
 
                 if isinstance(current_input, dict):
                     workflow_env.update(current_input)

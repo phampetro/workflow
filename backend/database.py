@@ -43,6 +43,7 @@ def _sqlite_apply_schema_updates(conn):
             "graph_json": ("TEXT", "NULL"),
             "color": ("TEXT", "'#6c63ff'"),
             "sort_order": ("INTEGER", "0"),
+            "listener_on": ("INTEGER", "0"),
         },
         "workflow_run": {
             "logs_json": ("TEXT", "'[]'"),

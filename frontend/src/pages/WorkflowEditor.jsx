@@ -49,7 +49,7 @@ const EDGE_STYLE = { stroke: '#6c63ff', strokeWidth: 2 }
 let nodeIdCounter = 100
 
 function WorkflowEditorInner({ workflow, project, onBack }) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [editingNode, setEditingNode] = useState(null)
@@ -89,6 +89,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   useEffect(() => { edgesRef.current = edges }, [edges])
   // Chỉ cho phép auto-save/snapshot sau khi graph đã tải xong từ server
   const graphLoadedRef = useRef(false)
+  // ETag: server updated_at của lần load/save gần nhất - gửi kèm để BE phát hiện
+  // "người khác đã lưu trong lúc bạn đang sửa" và trả 409.
+  const expectedUpdatedAtRef = useRef(null)
+  const conflictDialogOpenRef = useRef(false)
 
   const proj  = project  || { name: 'Project', color: '#6c63ff' }
 
@@ -97,6 +101,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     getWorkflow(workflow.id).then((res) => {
       const wf = res.data
       setWfData(wf)
+      expectedUpdatedAtRef.current = wf.updated_at || null
       if (wf.graph_json) {
         try {
           const graph = JSON.parse(wf.graph_json)
@@ -237,31 +242,60 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
-  const saveGraph = useCallback(async (currentNodes, currentEdges) => {
+  const saveGraph = useCallback(async (currentNodes, currentEdges, { force = false } = {}) => {
     if (!wfData?.id) return
     setSaveStatus('saving')
-    try {
-      const graph = {
-        nodes: currentNodes.map(n => {
-          const cleanData = { ...n.data }
-          delete cleanData.onDelete
-          delete cleanData.onEdit
-          delete cleanData.onDuplicate
-          return {
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: cleanData,
-          }
-        }),
-        edges: currentEdges,
-      }
-      await updateWorkflow(wfData.id, { graph_json: JSON.stringify(graph) })
-      setSaveStatus('saved')
-    } catch {
-      setSaveStatus('error')
+    const graph = {
+      nodes: currentNodes.map(n => {
+        const cleanData = { ...n.data }
+        delete cleanData.onDelete
+        delete cleanData.onEdit
+        delete cleanData.onDuplicate
+        return {
+          id: n.id,
+          type: n.type,
+          position: n.position,
+          data: cleanData,
+        }
+      }),
+      edges: currentEdges,
     }
-  }, [wfData?.id])
+    const payload = { graph_json: JSON.stringify(graph) }
+    if (!force && expectedUpdatedAtRef.current) {
+      payload.expected_updated_at = expectedUpdatedAtRef.current
+    }
+    try {
+      const res = await updateWorkflow(wfData.id, payload)
+      expectedUpdatedAtRef.current = res.data?.updated_at || expectedUpdatedAtRef.current
+      setSaveStatus('saved')
+    } catch (err) {
+      // BE trả 409 khi FE gửi expected_updated_at khác giá trị hiện tại - có người khác đã lưu
+      const detail = err?.response?.data?.detail || err?.response?.data
+      const isConflict = err?.response?.status === 409 || detail?.error === 'conflict'
+      if (isConflict && !force) {
+        setSaveStatus('error')
+        if (conflictDialogOpenRef.current) return
+        conflictDialogOpenRef.current = true
+        modal.confirm({
+          title: 'Xung đột khi lưu',
+          content: 'Ai đó (hoặc tab khác của bạn) đã lưu workflow này trong lúc bạn đang sửa. Chọn Tải lại để lấy bản mới nhất (mất thay đổi hiện tại), hoặc Ghi đè để đè lên bản trên server.',
+          okText: 'Tải lại',
+          cancelText: 'Ghi đè',
+          onOk: () => {
+            conflictDialogOpenRef.current = false
+            window.location.reload()
+          },
+          onCancel: () => {
+            conflictDialogOpenRef.current = false
+            expectedUpdatedAtRef.current = detail?.server_updated_at || null
+            saveGraph(currentNodes, currentEdges, { force: true })
+          },
+        })
+      } else {
+        setSaveStatus('error')
+      }
+    }
+  }, [wfData?.id, modal])
 
   const handleNodesChange = useCallback((changes) => {
     // Xóa bằng phím Delete/Backspace cũng phải vào lịch sử undo
@@ -382,8 +416,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
   const handleStop = async () => {
     if (wfData?.id) {
+      // Không clear activeRun ngay - đợi khối cuối chạy nốt và log "⏹ Đã dừng" bay về
+      // (handleRunFinished sẽ clear). Trước đây clear luôn khiến nút chuyển "Chạy" trong
+      // khi block cuối còn xử lý vài trăm ms.
       await stopWorkflow(wfData.id).catch(() => {})
-      useStore.getState().clearActiveRun(wfData.id)
     }
   }
 
@@ -624,7 +660,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           <Space>
             <History size={16} color="var(--accent-warning)" />
             <span style={{ fontWeight: 600 }}>Lịch sử chạy</span>
-            <Tag bordered={false} style={{ margin: 0 }}>{wfData?.name}</Tag>
+            <Tag variant="filled" style={{ margin: 0 }}>{wfData?.name}</Tag>
           </Space>
         }
         placement="right"

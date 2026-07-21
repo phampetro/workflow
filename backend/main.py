@@ -32,6 +32,42 @@ async def cleanup_stuck_runs():
                 run.error_message = "Run bị treo - backend khởi động lại"
             await session.commit()
 
+async def reload_telegram_listeners():
+    """Sau khi backend khởi động, bật lại mọi Telegram Listener đang được đánh dấu
+    listener_on=True (chỉ với workflow thuộc user đang active - đồng bộ với policy
+    schedule)."""
+    async with AsyncSessionLocal() as session:
+        active_user = (await session.execute(
+            select(User).where(User.is_active == True)
+        )).scalars().first()
+        if not active_user:
+            return
+
+        stmt = select(Workflow.id).join(
+            Project, Workflow.project_id == Project.id
+        ).where(Workflow.listener_on == True, Project.user_id == active_user.id)
+        wf_ids = [row[0] for row in (await session.execute(stmt)).all()]
+
+        if not wf_ids:
+            return
+
+        # Reset cờ trước khi trigger - khối telegram_listener sẽ set lại True khi
+        # bật thành công. Nếu bật thất bại (bot token sai, mạng...), cờ ở False
+        # là đúng trạng thái thực tế.
+        from sqlalchemy import update as sa_update
+        from models import Workflow as W
+        await session.execute(sa_update(W).where(W.id.in_(wf_ids)).values(listener_on=False))
+        await session.commit()
+
+    from routers.workflows import schedule_run_on_main_loop
+    for wf_id in wf_ids:
+        try:
+            schedule_run_on_main_loop(wf_id, triggered_by="listener_autostart")
+            logger.info(f"🎧 Auto-restart listener cho workflow {wf_id}")
+        except Exception as e:
+            logger.warning(f"Không auto-restart được listener {wf_id}: {e}")
+
+
 async def reload_schedules():
     async with AsyncSessionLocal() as session:
         # Find active user
@@ -95,7 +131,13 @@ async def lifespan(app: FastAPI):
         await reload_schedules()
     except Exception as e:
         logger.warning(f"Could not reload schedules on startup: {e}")
-    
+
+    # Bật lại các Telegram Listener đã bật trước khi backend restart
+    try:
+        await reload_telegram_listeners()
+    except Exception as e:
+        logger.warning(f"Could not reload telegram listeners on startup: {e}")
+
     yield
     
     # Shutdown gracefully
@@ -106,7 +148,7 @@ app = FastAPI(lifespan=lifespan, title="PyFlow Studio API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:9000", "http://127.0.0.1:9000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -127,4 +169,4 @@ def health_check():
     return {"status": "ok"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("main:app", host="127.0.0.1", port=7000, reload=False)

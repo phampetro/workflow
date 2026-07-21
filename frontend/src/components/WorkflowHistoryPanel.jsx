@@ -56,9 +56,9 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
   }
 
   const getTriggerLabel = (t) => {
-    if (!t || t === 'manual') return <Tag bordered={false} style={{ margin: 0 }}>Thủ công</Tag>
-    if (t.startsWith('schedule:')) return <Tag color="warning" bordered={false} style={{ margin: 0 }}>Lịch hẹn</Tag>
-    return <Tag bordered={false} style={{ margin: 0 }}>{t}</Tag>
+    if (!t || t === 'manual') return <Tag variant="filled" style={{ margin: 0 }}>Thủ công</Tag>
+    if (t.startsWith('schedule:')) return <Tag color="warning" variant="filled" style={{ margin: 0 }}>Lịch hẹn</Tag>
+    return <Tag variant="filled" style={{ margin: 0 }}>{t}</Tag>
   }
 
   const columns = [
@@ -84,7 +84,7 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
       align: 'center',
       render: (s) => {
         const c = STATUS_CONFIG[s] || { label: s, color: 'default' }
-        return <Tag color={c.color} bordered={false} style={{ margin: 0 }}>{c.label}</Tag>
+        return <Tag color={c.color} variant="filled" style={{ margin: 0 }}>{c.label}</Tag>
       }
     },
     {

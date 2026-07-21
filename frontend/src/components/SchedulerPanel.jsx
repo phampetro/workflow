@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Calendar, Trash2, Clock, Edit2 } from 'lucide-react'
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule as apiDeleteSchedule, toggleSchedule as apiToggleSchedule } from '../api/client'
-import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber, Card, Empty } from 'antd'
+import { Calendar, Trash2, Clock, Edit2, Info } from 'lucide-react'
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule as apiDeleteSchedule, toggleSchedule as apiToggleSchedule, getUsers } from '../api/client'
+import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber, Card, Empty, Alert } from 'antd'
 import toast from 'react-hot-toast'
 import dayjs from 'dayjs'
+import useStore from '../store/useStore'
 
 const { Text } = Typography
 
@@ -46,6 +47,10 @@ export default function SchedulerPanel({ workflow, onClose }) {
   const [editingSchedule, setEditingSchedule] = useState(null)
   const [form] = Form.useForm()
   const scheduleType = Form.useWatch('schedule_type', form)
+  const currentUser = useStore((s) => s.currentUser)
+  // Chỉ hiện banner cảnh báo multi-user khi thực sự có >1 người dùng trong hệ thống -
+  // với 1 user duy nhất thì mặc định luôn active, không có gì để cảnh báo.
+  const [totalUsers, setTotalUsers] = useState(1)
 
   useEffect(() => {
     if (workflow?.id) {
@@ -54,6 +59,9 @@ export default function SchedulerPanel({ workflow, onClose }) {
         .catch(e => toast.error('Lỗi tải lịch: ' + e.message))
         .finally(() => setLoading(false))
     }
+    getUsers()
+      .then(res => setTotalUsers((res.data || []).length))
+      .catch(() => {})
   }, [workflow?.id])
 
   const openEdit = (schedule) => {
@@ -204,7 +212,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
         <Space>
           <Calendar size={16} color="var(--accent-warning)" />
           <span style={{ fontWeight: 600 }}>{showAdd ? (editingSchedule ? 'Chỉnh sửa lịch' : 'Thêm lịch mới') : 'Lịch chạy'}</span>
-          <Tag bordered={false} style={{ margin: 0 }}>{workflow?.name}</Tag>
+          <Tag variant="filled" style={{ margin: 0 }}>{workflow?.name}</Tag>
         </Space>
       }
       extra={
@@ -220,24 +228,41 @@ export default function SchedulerPanel({ workflow, onClose }) {
       }
       open={true}
       onClose={onClose}
-      maskClosable={false}
+      mask={{ closable: false }}
       destroyOnClose
       size="large"
       placement="right"
       styles={{ body: { padding: 16 } }}
     >
       {!showAdd ? (
-        <Table 
-          dataSource={schedules}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-          size="small"
-          sticky={{ offsetHeader: 0 }}
-          scroll={{ y: 'calc(100vh - 160px)' }}
-          locale={{ emptyText: <Empty description="Chưa có lịch nào. Thêm lịch để tự động chạy workflow." image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-        />
+        <>
+          {totalUsers > 1 && (
+            <Alert
+              type="info"
+              showIcon
+              icon={<Info size={16} />}
+              style={{ marginBottom: 12 }}
+              title={
+                <span>
+                  Lịch chỉ chạy khi người dùng <b>{currentUser?.name || '(hiện tại)'}</b> đang được kích hoạt.
+                  Chuyển sang người dùng khác sẽ tạm dừng toàn bộ lịch và Telegram Listener trong không gian này
+                  cho tới khi bạn kích hoạt lại.
+                </span>
+              }
+            />
+          )}
+          <Table
+            dataSource={schedules}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={false}
+            size="small"
+            sticky={{ offsetHeader: 0 }}
+            scroll={{ y: 'calc(100vh - 160px)' }}
+            locale={{ emptyText: <Empty description="Chưa có lịch nào. Thêm lịch để tự động chạy workflow." image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          />
+        </>
       ) : (
           <Form
             form={form}

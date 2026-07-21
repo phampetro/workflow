@@ -104,7 +104,7 @@ export default function AboutModal({ open, onClose }) {
       footer={null}
       width={420}
       closable={updateStatus !== 'updating'}
-      maskClosable={updateStatus !== 'updating'}
+      mask={{ closable: updateStatus !== 'updating' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0 20px' }}>
         <div className="brand-icon" style={{ width: 44, height: 44 }}>
@@ -148,14 +148,14 @@ export default function AboutModal({ open, onClose }) {
           </Button>
 
           {updateStatus === 'latest' && (
-            <Alert message={updateMsg} type="success" showIcon icon={<CheckCircle size={14}/>} style={{ fontSize: '0.85rem', justifyContent: 'center' }} />
+            <Alert title={updateMsg} type="success" showIcon icon={<CheckCircle size={14}/>} style={{ fontSize: '0.85rem', justifyContent: 'center' }} />
           )}
 
           {updateStatus === 'available' && (
-            <Alert 
-              message={updateMsg} 
-              type="info" 
-              showIcon 
+            <Alert
+              title={updateMsg}
+              type="info"
+              showIcon
               style={{ fontSize: '0.85rem', justifyContent: 'center' }}
               action={
                 <Button size="small" type="primary" onClick={handleUpdate}>
@@ -166,18 +166,18 @@ export default function AboutModal({ open, onClose }) {
           )}
 
           {updateStatus === 'error' && (
-            <Alert 
-              message={updateMsg} 
-              type="error" 
-              showIcon 
+            <Alert
+              title={updateMsg}
+              type="error"
+              showIcon
               style={{ fontSize: '0.85rem', justifyContent: 'center' }}
             />
           )}
 
           {updateStatus === 'updating' && (
-            <Alert 
-              message={<Space><Spin size="small"/> {updateMsg}</Space>} 
-              type="warning" 
+            <Alert
+              title={<Space><Spin size="small"/> {updateMsg}</Space>}
+              type="warning"
               style={{ fontSize: '0.85rem', justifyContent: 'center' }}
             />
           )}

@@ -988,7 +988,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       size={drawerWidthStr}
       onClose={onClose}
       open={true}
-      maskClosable={false}
+      mask={{ closable: false }}
       keyboard={false}
       destroyOnHidden
       extra={
@@ -2100,7 +2100,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     onChange={(e) => setAiInstruction(e.target.value)}
                     onKeyDown={handleAiKeyDown}
                     autoSize={{ minRows: 1, maxRows: 3 }}
-                    bordered={false}
+                    variant="borderless"
                     disabled={aiGenerating}
                     style={{ flex: 1, padding: '4px 0', boxShadow: 'none', background: 'transparent' }}
                   />

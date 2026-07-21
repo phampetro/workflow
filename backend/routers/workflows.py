@@ -9,7 +9,7 @@ from sqlalchemy import select, delete
 from database import get_session, AsyncSessionLocal
 from models import Workflow, WorkflowRun, RunStatus, Project
 from services.executor import execute_workflow
-from services.venv_manager import delete_workflow_dir, slugify
+from services.venv_manager import delete_workflow_dir, rename_workflow_dir, slugify
 from ws.log_socket import make_log_callback
 
 router = APIRouter(tags=["workflows"])
@@ -261,8 +261,10 @@ async def update_workflow(workflow_id: str, body: dict, session: AsyncSession = 
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
 
-    if "name" in body and body["name"].strip() != wf.name:
-        new_name = body["name"].strip()
+    old_name = wf.name
+    new_name = body.get("name", wf.name).strip() if "name" in body else wf.name
+
+    if "name" in body and new_name != wf.name:
         new_slug = slugify(new_name)
         siblings = (await session.execute(
             select(Workflow).where(Workflow.project_id == wf.project_id, Workflow.id != workflow_id)
@@ -270,12 +272,46 @@ async def update_workflow(workflow_id: str, body: dict, session: AsyncSession = 
         if any(slugify(w.name) == new_slug for w in siblings):
             raise HTTPException(400, f"Workflow '{new_name}' đã tồn tại trong project này")
 
+    # ETag / conflict detection: FE gửi kèm expected_updated_at (ISO string) — nếu khác
+    # với DB thì có người khác đã lưu trong lúc mình sửa; trả 409 để FE cảnh báo.
+    expected_updated_at = body.get("expected_updated_at")
+    if expected_updated_at and wf.updated_at:
+        current_iso = wf.updated_at.isoformat()
+        if expected_updated_at != current_iso:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "conflict",
+                    "message": "Workflow đã bị người/tab khác lưu lại trong lúc bạn đang sửa. Vui lòng tải lại để xem thay đổi mới.",
+                    "server_updated_at": current_iso,
+                }
+            )
+
+    # Rename thư mục workflow TRƯỚC khi commit DB
+    renamed = False
+    if "name" in body and slugify(new_name) != slugify(old_name):
+        proj = await session.get(Project, wf.project_id)
+        pj_name = proj.name if proj else None
+        if pj_name:
+            try:
+                renamed = rename_workflow_dir(pj_name, old_name, new_name)
+            except Exception as e:
+                raise HTTPException(400, f"Không đổi tên thư mục workflow được: {e}")
+
     for field in ["name", "description", "graph_json", "color"]:
         if field in body:
             setattr(wf, field, body[field])
     wf.updated_at = datetime.now()
 
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        if renamed and pj_name:
+            try:
+                rename_workflow_dir(pj_name, new_name, old_name)
+            except Exception:
+                pass
+        raise
     await session.refresh(wf)
     return wf.to_dict()
 
@@ -300,6 +336,35 @@ async def _cascade_delete_workflow_children(session: AsyncSession, workflow_id: 
     )
 
 
+async def _stop_and_wait_workflow_runs(workflow_id: str, timeout_sec: float = 5.0):
+    """Kill mọi run đang chạy của workflow rồi đợi thread executor thoát trước khi
+    xoá DB/rmtree folder - tránh race ghi vào folder đang bị xoá."""
+    from services.executor_blocks import stop_all_runs_for_workflow, _workflow_run_ids
+    from services.telegram_listener import stop_telegram_listener
+
+    # Bấm Dừng logic (giống endpoint /stop)
+    stop_all_runs_for_workflow(workflow_id)
+    if workflow_id in _stop_flags:
+        # Fallback: các run trigger qua run_workflow_internal cũng có _stop_flags
+        pass
+    for run_id in list(_workflow_run_ids.get(workflow_id, set())):
+        if run_id in _stop_flags:
+            _stop_flags[run_id].set()
+
+    # Đợi các run rời khỏi bảng đang-chạy
+    waited = 0.0
+    step = 0.1
+    while waited < timeout_sec and _workflow_run_ids.get(workflow_id):
+        await asyncio.sleep(step)
+        waited += step
+
+    # Dừng luôn Telegram listener nếu có
+    try:
+        await stop_telegram_listener(workflow_id)
+    except Exception:
+        pass
+
+
 @router.delete("/api/workflows/{workflow_id}", status_code=204)
 async def delete_workflow(workflow_id: str, session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)
@@ -309,6 +374,10 @@ async def delete_workflow(workflow_id: str, session: AsyncSession = Depends(get_
     # Lấy project name để tính đường dẫn folder
     proj = await session.get(Project, wf.project_id)
     pj_name = proj.name if proj else None
+
+    # PHẢI dừng run + listener trước khi xoá DB/folder - nếu không thread executor
+    # còn chạy sẽ ghi vào folder đang bị rmtree hoặc UPDATE run_id đã biến mất.
+    await _stop_and_wait_workflow_runs(workflow_id)
 
     await _cascade_delete_workflow_children(session, workflow_id)
     await session.delete(wf)
@@ -434,6 +503,16 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
 # ── Scheduler trigger ────────────────────────────────────────
 
 async def trigger_workflow_from_scheduler(workflow_id: str, project_id: str = None, schedule_id: str = None):
+    # APScheduler max_instances=1 chỉ bảo vệ hàm job (trả về ngay lập tức) chứ không
+    # bảo vệ workflow thực sự. Nếu cron dày hơn thời gian workflow chạy sẽ có nhiều run
+    # song song, cùng ghi 1 folder và insert DB trùng - skip nếu còn run RUNNING.
+    from services.executor_blocks import _workflow_run_ids
+    if _workflow_run_ids.get(workflow_id):
+        import logging
+        logging.getLogger("pyflow.scheduler").warning(
+            f"⏭  Bỏ qua trigger schedule cho workflow {workflow_id}: còn run RUNNING chưa xong"
+        )
+        return
     run_id = str(uuid.uuid4())
     asyncio.create_task(run_workflow_internal(workflow_id, triggered_by="schedule", run_id=run_id))
 

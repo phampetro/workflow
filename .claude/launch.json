@@ -3,15 +3,15 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "uvicorn", "--app-dir", "backend", "main:app", "--host", "127.0.0.1", "--port", "8000"],
-      "port": 8000
+      "runtimeExecutable": "backend/.venv/Scripts/uvicorn.exe",
+      "runtimeArgs": ["--app-dir", "backend", "main:app", "--host", "127.0.0.1", "--port", "7000"],
+      "port": 7000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 9000
     }
   ]
 }

@@ -24,6 +24,12 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    // Đổi khỏi 5173 mặc định vì port đó dùng chung với mọi dự án Vite khác trên máy
+    // - dễ đụng khi mở nhiều dự án cùng lúc. 9000 ít va chạm hơn nhiều.
+    port: 9000,
+    strictPort: true,
+  },
   define: {
     __APP_UPDATED_AT__: JSON.stringify(getLastUpdatedAt()),
   },

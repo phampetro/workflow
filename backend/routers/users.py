@@ -85,29 +85,45 @@ async def delete_user(user_id: str, session: AsyncSession = Depends(get_session)
 @router.post("/{user_id}/activate")
 async def activate_user(user_id: str, session: AsyncSession = Depends(get_session)):
     from database import AsyncSessionLocal
-    
+
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User không tồn tại")
-        
+
+    # Dừng listener của user cũ (thuộc mọi workflow trong DB đang có cờ listener_on)
+    # trước khi chuyển sang user mới - để listener không tiếp tục nhận tin nhắn cho
+    # workspace không còn active.
+    try:
+        from services.telegram_listener import _active_listeners, stop_telegram_listener
+        running_wf_ids = list(_active_listeners.keys())
+        for wf_id in running_wf_ids:
+            try:
+                await stop_telegram_listener(wf_id)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     # Deactivate all
     users = await session.execute(select(User))
     for u in users.scalars().all():
         u.is_active = False
-        
+
     user.is_active = True
     await session.commit()
-    
-    # Reload schedules
+
+    schedules_loaded = 0
+    listeners_loaded = 0
+    # Reload schedules + listeners của user mới
     try:
         async with AsyncSessionLocal() as new_session:
-            from sqlalchemy import select as sa_select
+            from sqlalchemy import select as sa_select, update as sa_update
             from models import User as U, Schedule, Workflow, Project
-            
+
             active_user = (await new_session.execute(
                 sa_select(U).where(U.is_active == True)
             )).scalars().first()
-            
+
             if active_user:
                 from services.scheduler import scheduler as aps_scheduler, trigger_workflow_job, build_cron_trigger, get_next_run_time
                 aps_scheduler.remove_all_jobs()
@@ -129,10 +145,29 @@ async def activate_user(user_id: str, session: AsyncSession = Depends(get_sessio
                             replace_existing=True,
                         )
                         sched.next_run_at = get_next_run_time(sched.id)
+                        schedules_loaded += 1
                     except Exception:
                         pass
                 await new_session.commit()
+
+                # Bật lại các Telegram Listener của user mới
+                wf_stmt = sa_select(Workflow.id).join(
+                    Project, Workflow.project_id == Project.id
+                ).where(Workflow.listener_on == True, Project.user_id == active_user.id)
+                listener_wf_ids = [row[0] for row in (await new_session.execute(wf_stmt)).all()]
+                if listener_wf_ids:
+                    await new_session.execute(
+                        sa_update(Workflow).where(Workflow.id.in_(listener_wf_ids)).values(listener_on=False)
+                    )
+                    await new_session.commit()
+                    from routers.workflows import schedule_run_on_main_loop
+                    for wf_id in listener_wf_ids:
+                        try:
+                            schedule_run_on_main_loop(wf_id, triggered_by="listener_autostart")
+                            listeners_loaded += 1
+                        except Exception:
+                            pass
     except Exception:
         pass
-        
-    return {"status": "ok"}
+
+    return {"status": "ok", "schedules_loaded": schedules_loaded, "listeners_loaded": listeners_loaded}

@@ -11,9 +11,9 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
-echo "[1/4] Kiem tra va giai phong port 8000, 5173..."
-lsof -ti:8000 | xargs kill -9 2>/dev/null
-lsof -ti:5173 | xargs kill -9 2>/dev/null
+echo "[1/4] Kiem tra va giai phong port 7000, 9000..."
+lsof -ti:7000 | xargs kill -9 2>/dev/null
+lsof -ti:9000 | xargs kill -9 2>/dev/null
 echo "   [OK]"
 
 if [ ! -f "$ROOT/backend/.venv/bin/uvicorn" ]; then
@@ -29,7 +29,7 @@ fi
 
 echo "[2/4] Khoi dong Backend..."
 cd "$ROOT/backend"
-./.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 &
+./.venv/bin/uvicorn main:app --host 127.0.0.1 --port 7000 &
 BE_PID=$!
 echo "   [OK]"
 
@@ -42,14 +42,14 @@ echo "   [OK]"
 echo "[4/4] Mo trinh duyet..."
 sleep 2
 if which open > /dev/null; then
-    open http://localhost:5173
+    open http://localhost:9000
 elif which xdg-open > /dev/null; then
-    xdg-open http://localhost:5173
+    xdg-open http://localhost:9000
 fi
 echo "   [OK]"
 
 echo ""
-echo "[Xong] BE: localhost:8000  FE: localhost:5173"
+echo "[Xong] BE: localhost:7000  FE: localhost:9000"
 echo "Nhan Ctrl+C de dung ca hai."
 
 # Doi tat ca cac tien trinh con

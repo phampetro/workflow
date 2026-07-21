@@ -72,6 +72,9 @@ class Workflow(Base):
     graph_json = Column(Text, nullable=True)  # JSON nodes + edges
     color = Column(String, default="#6c63ff")
     sort_order = Column(Integer, default=0)
+    # Cờ persist: workflow có Telegram Listener đang được bật hay không - dùng để
+    # tự bật lại listener sau khi backend khởi động lại.
+    listener_on = Column(Boolean, default=False)
 
     def to_dict(self):
         return {
@@ -84,6 +87,7 @@ class Workflow(Base):
             "graph_json": self.graph_json,
             "color": self.color,
             "sort_order": self.sort_order,
+            "listener_on": bool(self.listener_on),
         }
 
 

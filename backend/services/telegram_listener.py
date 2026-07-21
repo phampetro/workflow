@@ -9,6 +9,9 @@ logger = logging.getLogger("pyflow.telegram_listener")
 _active_listeners: Dict[str, asyncio.Task] = {}
 # Lưu trữ cờ dừng (workflow_id -> Event)
 _stop_events: Dict[str, asyncio.Event] = {}
+# Lưu trữ cấu hình listener đang chạy (workflow_id -> {"token": str, "commands": list})
+# Dùng để phát hiện user đổi token/commands giữa chừng và khởi động lại listener.
+_active_configs: Dict[str, dict] = {}
 
 async def _send_telegram_reply(client: httpx.AsyncClient, bot_token: str, chat_id, text: str):
     """Gửi tin nhắn trả lời trực tiếp (dùng cho lệnh không bật runWorkflow).
@@ -215,6 +218,7 @@ async def start_telegram_listener(
         )
     )
     _active_listeners[workflow_id] = task
+    _active_configs[workflow_id] = {"token": bot_token, "commands": commands}
     return True
 
 async def stop_telegram_listener(workflow_id: str) -> bool:
@@ -222,7 +226,9 @@ async def stop_telegram_listener(workflow_id: str) -> bool:
     if workflow_id in _stop_events:
         _stop_events[workflow_id].set()
         del _stop_events[workflow_id]
-        
+
+    _active_configs.pop(workflow_id, None)
+
     if workflow_id in _active_listeners:
         task = _active_listeners[workflow_id]
         task.cancel()
@@ -236,3 +242,6 @@ async def stop_telegram_listener(workflow_id: str) -> bool:
 
 def is_listener_running(workflow_id: str) -> bool:
     return workflow_id in _active_listeners
+
+def get_listener_config(workflow_id: str) -> dict | None:
+    return _active_configs.get(workflow_id)

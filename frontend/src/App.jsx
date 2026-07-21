@@ -162,7 +162,7 @@ export default function App() {
   const openProject = async (project) => {
     // Fetch lại project để lấy workflows_count mới nhất
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${project.id}`, {
+      const res = await fetch(`http://localhost:7000/api/projects/${project.id}`, {
         headers: { 'X-User-Id': currentUser?.id }
       })
       const updatedProject = await res.json()

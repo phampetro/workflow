@@ -25,9 +25,9 @@ If exitCodeNode <> 0 Then
     WScript.Quit 1
 End If
 
-' Dong port 8000, 5173
-logFile.WriteLine Now & " - Dong port 8000, 5173..."
-ws.Run "powershell -Command ""Get-NetTCPConnection -LocalPort 8000,5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
+' Dong port 7000, 9000
+logFile.WriteLine Now & " - Dong port 7000, 9000..."
+ws.Run "powershell -Command ""Get-NetTCPConnection -LocalPort 7000,9000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 WScript.Sleep 1000
 
 backendDir = scriptDir & "\backend"
@@ -43,7 +43,7 @@ End If
 ' Khoi dong Backend (an)
 logFile.WriteLine Now & " - Khoi dong Backend..."
 ws.CurrentDirectory = backendDir
-ws.Run """" & pythonExe & """ -m uvicorn main:app --host 127.0.0.1 --port 8000", 0, False
+ws.Run """" & pythonExe & """ -m uvicorn main:app --host 127.0.0.1 --port 7000", 0, False
 
 ' Khoi dong Frontend (an)
 logFile.WriteLine Now & " - Khoi dong Frontend..."
@@ -52,7 +52,7 @@ ws.Run "cmd /c npm run dev", 0, False
 
 ' Mo trinh duyet
 logFile.WriteLine Now & " - Mo trinh duyet..."
-ws.Run "http://localhost:5173", 1, False
+ws.Run "http://localhost:9000", 1, False
 
 logFile.WriteLine Now & " - Hoan tat!"
 logFile.WriteLine "================================"

@@ -202,7 +202,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }
 
   const handleExportWorkflow = (wf) => {
-    window.location.href = `http://localhost:8000/api/workflows/${wf.id}/export`
+    window.location.href = `http://localhost:7000/api/workflows/${wf.id}/export`
     toast.success(`Đang tải xuống workflow ${wf.name}...`)
   }
 

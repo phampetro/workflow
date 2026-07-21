@@ -2,7 +2,7 @@ import axios from 'axios'
 import useStore from '../store/useStore'
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: 'http://localhost:7000',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -96,24 +96,47 @@ export const deleteSchedule    = (id)         => api.delete(`/api/schedules/${id
 export const toggleSchedule    = (id)         => api.patch(`/api/schedules/${id}/toggle`)
 
 // ── SSE Log Streaming ─────────────────────────────────────
+// Auto-reconnect với offset += số log đã nhận, để nếu mất mạng vài giây thì kết nối
+// lại và không mất log ở giữa. Trước đây gọi es.close() trong onerror làm EventSource
+// mất luôn cả cơ chế retry gốc -> log ngừng vĩnh viễn cho tới khi F5.
 export const createLogStream = (runId, onMessage, onError, offset = 0) => {
-  const url = `${api.defaults.baseURL}/api/runs/${runId}/logs/stream?offset=${offset}`
-  const es = new EventSource(url)
-  es.onmessage = (e) => {
-    try {
-      const data = JSON.parse(e.data)
-      // Backend sends: { run_id, block_id, level, message, time }
-      // Only process if it has the expected fields
-      if (data.run_id && data.message) {
-        onMessage(data)
-      }
-    } catch (_) {}
+  let received = 0
+  let stopped = false
+  let es = null
+  let retryTimer = null
+
+  const connect = (startOffset) => {
+    if (stopped) return
+    const url = `${api.defaults.baseURL}/api/runs/${runId}/logs/stream?offset=${startOffset}`
+    es = new EventSource(url)
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data.run_id && data.message) {
+          received += 1
+          onMessage(data)
+        }
+      } catch (_) {}
+    }
+    es.onerror = (err) => {
+      if (onError) onError(err)
+      // Đóng kết nối hiện tại và tự reconnect sau 3s với offset đã dịch đúng bằng
+      // số log đã nhận (backend trả history theo offset đó nên không trùng log cũ).
+      try { es.close() } catch (_) {}
+      es = null
+      if (stopped) return
+      if (retryTimer) clearTimeout(retryTimer)
+      retryTimer = setTimeout(() => connect(startOffset + received), 3000)
+    }
   }
-  es.onerror = (err) => {
-    if (onError) onError(err)
-    es.close()
+
+  connect(offset)
+
+  return () => {
+    stopped = true
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+    if (es) { try { es.close() } catch (_) {} es = null }
   }
-  return () => es.close()
 }
 
 // ── Database ────────────────────────────────────────────────

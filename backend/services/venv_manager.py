@@ -210,6 +210,42 @@ def delete_workflow_dir(workflow_id: str, wf_name: str = None, pj_name: str = No
             t.join(timeout=10)
 
 
+def rename_project_dir(old_pj_name: str, new_pj_name: str) -> bool:
+    """Đổi tên thư mục project khi user đổi tên.
+    Trả về True nếu đã đổi, False nếu không cần đổi (slug giống nhau) hoặc folder cũ không tồn tại.
+    Ném lỗi nếu folder mới đã tồn tại - caller phải rollback DB.
+    """
+    old_slug = slugify(old_pj_name)
+    new_slug = slugify(new_pj_name)
+    if old_slug == new_slug:
+        return False
+    old_dir = DATA_DIR / f"pj_{old_slug}"
+    new_dir = DATA_DIR / f"pj_{new_slug}"
+    if not old_dir.exists():
+        return False
+    if new_dir.exists():
+        raise RuntimeError(f"Thư mục đích đã tồn tại: {new_dir}")
+    old_dir.rename(new_dir)
+    return True
+
+
+def rename_workflow_dir(pj_name: str, old_wf_name: str, new_wf_name: str) -> bool:
+    """Đổi tên thư mục workflow bên trong project. Trả về True nếu đã đổi."""
+    old_slug = slugify(old_wf_name)
+    new_slug = slugify(new_wf_name)
+    if old_slug == new_slug:
+        return False
+    pj_slug = slugify(pj_name)
+    old_dir = DATA_DIR / f"pj_{pj_slug}" / f"wf_{old_slug}"
+    new_dir = DATA_DIR / f"pj_{pj_slug}" / f"wf_{new_slug}"
+    if not old_dir.exists():
+        return False
+    if new_dir.exists():
+        raise RuntimeError(f"Thư mục workflow đích đã tồn tại: {new_dir}")
+    old_dir.rename(new_dir)
+    return True
+
+
 def delete_project_dir(project_id: str, pj_name: str = None):
     """Xóa toàn bộ thư mục project (venv + workflows + files)"""
     import shutil
@@ -231,5 +267,7 @@ def delete_project_dir(project_id: str, pj_name: str = None):
 __all__ = [
     'get_venv_path', 'get_python_path', 'get_pip_path', 'venv_exists',
     'create_venv', 'install_package', 'uninstall_package', 'list_packages',
-    'delete_venv', 'delete_workflow_dir', 'delete_project_dir', 'DATA_DIR', 'get_project_dir'
+    'delete_venv', 'delete_workflow_dir', 'delete_project_dir',
+    'rename_project_dir', 'rename_workflow_dir',
+    'DATA_DIR', 'get_project_dir'
 ]

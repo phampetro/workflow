@@ -9,7 +9,7 @@ from sqlalchemy import select, delete
 
 from database import get_session
 from models import Project, Workflow, WorkflowRun
-from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir, slugify
+from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir, rename_project_dir, slugify
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -147,8 +147,10 @@ async def update_project(project_id: str, body: dict, session: AsyncSession = De
     if not proj:
         raise HTTPException(404, "Project không tồn tại")
 
+    old_name = proj.name
+    new_name = body.get("name", proj.name).strip() if "name" in body else proj.name
+
     if "name" in body:
-        new_name = body["name"].strip()
         new_slug = slugify(new_name)
         same_user_projects = (await session.execute(
             select(Project).where(Project.user_id == proj.user_id, Project.id != project_id)
@@ -156,12 +158,32 @@ async def update_project(project_id: str, body: dict, session: AsyncSession = De
         if any(slugify(p.name) == new_slug for p in same_user_projects):
             raise HTTPException(400, f"Project '{new_name}' đã tồn tại")
 
+    # Rename thư mục trên đĩa TRƯỚC khi commit DB - nếu rename fail (folder đích đã tồn tại,
+    # permission,...) thì báo lỗi ngay; nếu commit DB fail sau đó thì đổi lại tên folder về cũ.
+    renamed = False
+    if "name" in body and slugify(new_name) != slugify(old_name):
+        try:
+            renamed = rename_project_dir(old_name, new_name)
+        except Exception as e:
+            raise HTTPException(400, f"Không đổi tên thư mục project được: {e}")
+
     for field in ["name", "description", "color", "icon"]:
         if field in body:
             setattr(proj, field, body[field])
     proj.updated_at = datetime.now()
+    if renamed and proj.venv_path:
+        from services.venv_manager import DATA_DIR
+        proj.venv_path = str(DATA_DIR / f"pj_{slugify(new_name)}" / ".venv")
 
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        if renamed:
+            try:
+                rename_project_dir(new_name, old_name)
+            except Exception:
+                pass
+        raise
     await session.refresh(proj)
     return proj.to_dict()
 
@@ -193,10 +215,15 @@ async def delete_project(project_id: str, session: AsyncSession = Depends(get_se
     pj_name = proj.name
 
     # Cascade: xóa toàn bộ workflow con kèm run history + schedule (và job APScheduler)
-    from routers.workflows import _cascade_delete_workflow_children
+    from routers.workflows import _cascade_delete_workflow_children, _stop_and_wait_workflow_runs
     workflows = (await session.execute(
         select(Workflow).where(Workflow.project_id == project_id)
     )).scalars().all()
+
+    # Dừng mọi run + listener của các workflow con trước khi xoá DB/folder
+    for wf in workflows:
+        await _stop_and_wait_workflow_runs(wf.id)
+
     for wf in workflows:
         await _cascade_delete_workflow_children(session, wf.id)
         await session.delete(wf)

@@ -192,7 +192,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   const handleDownload = (filename, isOutput) => {
     const a = document.createElement('a')
-    a.href = `http://localhost:8000/api/workflows/${workflowId}/${isOutput ? 'output-files' : 'files'}/${encodeURIComponent(filename)}/download?download=1`
+    a.href = `http://localhost:7000/api/workflows/${workflowId}/${isOutput ? 'output-files' : 'files'}/${encodeURIComponent(filename)}/download?download=1`
     a.download = filename
     document.body.appendChild(a)
     a.click()

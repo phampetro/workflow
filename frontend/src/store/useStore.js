@@ -5,6 +5,13 @@ const _savedUser = (() => {
   try { return JSON.parse(localStorage.getItem('pyflow_current_user')) } catch { return null }
 })()
 
+// Kênh đồng bộ trạng thái RUN giữa các tab cùng origin - trước đây nút Chạy/Dừng
+// chỉ đồng bộ khi cả 2 tab đang mở Drawer Logs (nhờ SSE). Tab đóng Drawer sẽ hiển
+// thị nút sai cho tới khi F5. BroadcastChannel là cùng-origin, không phụ thuộc backend.
+const _runsChannel = typeof BroadcastChannel !== 'undefined'
+  ? new BroadcastChannel('pyflow_active_runs')
+  : null
+
 const useStore = create((set, get) => ({
   // --- Users ---
   currentUser: _savedUser,   // { id, name, created_at } | null
@@ -85,15 +92,25 @@ const useStore = create((set, get) => ({
     return { runLogs: next }
   }),
 
-  setActiveRun: (workflowId, runId) => set((state) => ({
-    activeRuns: { ...state.activeRuns, [workflowId]: runId },
-  })),
+  setActiveRun: (workflowId, runId, _fromChannel = false) => {
+    set((state) => ({
+      activeRuns: { ...state.activeRuns, [workflowId]: runId },
+    }))
+    if (!_fromChannel && _runsChannel) {
+      try { _runsChannel.postMessage({ type: 'set', workflowId, runId }) } catch {}
+    }
+  },
 
-  clearActiveRun: (workflowId) => set((state) => {
-    const next = { ...state.activeRuns }
-    delete next[workflowId]
-    return { activeRuns: next }
-  }),
+  clearActiveRun: (workflowId, _fromChannel = false) => {
+    set((state) => {
+      const next = { ...state.activeRuns }
+      delete next[workflowId]
+      return { activeRuns: next }
+    })
+    if (!_fromChannel && _runsChannel) {
+      try { _runsChannel.postMessage({ type: 'clear', workflowId }) } catch {}
+    }
+  },
 
   // --- UI State ---
   theme: localStorage.getItem('pyflow_theme') || 'light',
@@ -115,5 +132,16 @@ const useStore = create((set, get) => ({
     notifications: state.notifications.filter((n) => n.id !== id),
   })),
 }))
+
+// Nhận thay đổi từ tab khác và cập nhật store cục bộ (không phát lại để tránh loop)
+if (_runsChannel) {
+  _runsChannel.onmessage = (ev) => {
+    const msg = ev.data || {}
+    if (!msg.workflowId) return
+    const s = useStore.getState()
+    if (msg.type === 'set') s.setActiveRun(msg.workflowId, msg.runId, true)
+    else if (msg.type === 'clear') s.clearActiveRun(msg.workflowId, true)
+  }
+}
 
 export default useStore
