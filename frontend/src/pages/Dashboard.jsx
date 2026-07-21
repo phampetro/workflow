@@ -276,7 +276,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
       <Modal
         title={
           <Space>
-            <div style={{ width:26, height:26, background:'linear-gradient(135deg,var(--accent-primary),#8b5cf6)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>
+            <div style={{ width:26, height:26, background:'var(--premium-gradient-1)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>
               {editingProject ? <Settings size="0.875rem" /> : <Plus size="0.875rem" />}
             </div>
             {editingProject ? 'Chỉnh sửa Project' : 'Tạo Project Mới'}
@@ -445,6 +445,7 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
           <Button
             type="text"
             icon={<MoreVertical size="1.125rem" />}
+            aria-label="Mở menu thao tác Project"
             onClick={e => e.stopPropagation()}
             className="project-menu-btn"
             style={{ color: 'var(--text-muted)' }}

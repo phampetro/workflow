@@ -1226,6 +1226,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                           icon={<Trash2 size={16} />}
                           onClick={() => remove(name)}
                           style={{ marginTop: 4 }}
+                          aria-label="Xóa điều kiện"
                         />
                       </div>
                     ))}
@@ -1684,7 +1685,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                       />
                     </Tooltip>
                     {listenerCommands.length > 1 && (
-                      <Button size="small" type="text" danger icon={<Trash2 size="0.8rem" />} onClick={() => setListenerCommands(listenerCommands.filter((_, i) => i !== idx))} />
+                      <Button size="small" type="text" danger icon={<Trash2 size="0.8rem" />} onClick={() => setListenerCommands(listenerCommands.filter((_, i) => i !== idx))} aria-label="Xóa lệnh listener" />
                     )}
                   </div>
                   <Input.TextArea
@@ -2054,7 +2055,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               }}
               options={{
                 fontSize: 13,
-                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                fontFamily: "'Fira Code', 'JetBrains Mono', monospace",
                 fontLigatures: true,
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
@@ -2104,11 +2105,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     disabled={aiGenerating}
                     style={{ flex: 1, padding: '4px 0', boxShadow: 'none', background: 'transparent' }}
                   />
-                  <Button 
-                    type="text" 
-                    icon={aiGenerating ? <Square size={16} /> : <Send size={16} />} 
+                  <Button
+                    type="text"
+                    icon={aiGenerating ? <Square size={16} /> : <Send size={16} />}
                     onClick={aiGenerating ? closeAiPrompt : handleAiSubmit}
-                    style={{ marginLeft: 8, flexShrink: 0, color: aiGenerating ? '#ff4d4f' : 'var(--accent-primary)' }}
+                    style={{ marginLeft: 8, flexShrink: 0, color: aiGenerating ? 'var(--accent-danger)' : 'var(--accent-primary)' }}
+                    aria-label={aiGenerating ? 'Dừng sinh code AI' : 'Gửi yêu cầu sinh code AI'}
                   />
                 </div>
 
@@ -2124,7 +2126,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                       background: 'var(--bg-base)', 
                       padding: 8, 
                       borderRadius: 4,
-                      fontFamily: "'JetBrains Mono', monospace",
+                      fontFamily: 'var(--font-mono)',
                       fontSize: '0.8rem',
                       whiteSpace: 'pre-wrap',
                       border: '1px solid var(--border-default)'

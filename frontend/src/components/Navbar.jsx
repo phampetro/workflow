@@ -175,7 +175,7 @@ export default function Navbar({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 0.5rem' }}>
           <div style={{
             width: '1.75rem', height: '1.75rem', borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent-primary), #3b82f6)',
+            background: 'var(--premium-gradient-1)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontWeight: 600, fontSize: '0.75rem', flexShrink: 0,
           }}>
@@ -186,7 +186,7 @@ export default function Navbar({
 
         <Dropdown menu={{ items: settingsItems }} placement="bottomRight" trigger={['click']}>
           <Tooltip title="Cài đặt hệ thống">
-            <Button type="text" icon={<Settings size="1rem" />} className="nav-btn-ghost" />
+            <Button type="text" icon={<Settings size="1rem" />} className="nav-btn-ghost" aria-label="Cài đặt" />
           </Tooltip>
         </Dropdown>
       </div>
@@ -194,7 +194,10 @@ export default function Navbar({
       <style>{`
         .navbar {
           height: var(--navbar-height);
-          background: var(--bg-overlay);
+          /* Dùng --bg-elevated để nav có tone hơi khác body (dark: đậm hơn; light: teal-elevated
+             hơi tối hơn body). Nếu dùng overlay = body color thì nav "chìm" vào page,
+             không phân biệt được vùng toolbar với vùng nội dung. */
+          background: var(--bg-elevated);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid var(--border-default);
@@ -205,7 +208,7 @@ export default function Navbar({
           position: sticky;
           top: 0;
           z-index: 1000;
-          box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1);
+          box-shadow: var(--shadow-sm);
         }
 
         .navbar-left, .navbar-right {

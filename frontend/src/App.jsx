@@ -194,7 +194,7 @@ export default function App() {
       theme={{
         algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
-          colorPrimary: '#8b5cf6',
+          colorPrimary: '#0d9488',
           fontFamily: 'var(--font-sans)',
           borderRadius: 8,
           borderRadiusSM: 6,
@@ -205,15 +205,15 @@ export default function App() {
           fontSize: 14,
           fontSizeSM: 12,
           fontSizeLG: 16,
-          colorBgBase: theme === 'dark' ? '#09090b' : '#fafafa',
+          colorBgBase: theme === 'dark' ? '#09090b' : '#f8fafc',
           colorBgContainer: theme === 'dark' ? '#18181b' : '#ffffff',
           colorBgElevated: theme === 'dark' ? '#27272a' : '#ffffff',
-          controlItemBgHover: theme === 'dark' ? '#3f3f46' : '#f4f4f5',
-          controlItemBgActive: theme === 'dark' ? '#52525b' : '#e4e4e7',
-          colorBorder: theme === 'dark' ? '#27272a' : '#e4e4e7',
-          colorText: theme === 'dark' ? '#f4f4f5' : '#09090b',
-          colorTextSecondary: theme === 'dark' ? '#d4d4d8' : '#3f3f46',
-          colorTextTertiary: theme === 'dark' ? '#a1a1aa' : '#71717a',
+          controlItemBgHover: theme === 'dark' ? '#3f3f46' : '#f1f5f9',
+          controlItemBgActive: theme === 'dark' ? '#52525b' : '#e2e8f0',
+          colorBorder: theme === 'dark' ? '#27272a' : '#e2e8f0',
+          colorText: theme === 'dark' ? '#f4f4f5' : '#0f172a',
+          colorTextSecondary: theme === 'dark' ? '#d4d4d8' : '#475569',
+          colorTextTertiary: theme === 'dark' ? '#a1a1aa' : '#94a3b8',
         },
         components: {
           Button: {
@@ -223,11 +223,11 @@ export default function App() {
             dangerShadow: 'none',
           },
           Input: {
-            activeShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)',
+            activeShadow: '0 0 0 2px rgba(13, 148, 136, 0.25)',
             errorActiveShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)',
           },
           Select: {
-            activeShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)',
+            activeShadow: '0 0 0 2px rgba(13, 148, 136, 0.25)',
           },
           Table: {
             headerBorderRadius: 8,
@@ -273,7 +273,7 @@ export default function App() {
           }}>
             <div style={{
               width: 48, height: 48,
-              background: 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)',
+              background: 'var(--premium-gradient-2)',
               borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <span style={{ fontSize: '1.5rem' }}>⚡</span>

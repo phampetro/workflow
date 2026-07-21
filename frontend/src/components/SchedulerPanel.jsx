@@ -197,9 +197,9 @@ export default function SchedulerPanel({ workflow, onClose }) {
       align: 'center',
       render: (_, record) => (
         <Space size={4}>
-          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} />
+          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} aria-label="Sửa lịch" />
           <Popconfirm title="Xóa lịch này?" onConfirm={() => deleteSchedule(record.id)}>
-            <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
+            <Button size="small" type="text" danger icon={<Trash2 size={14} />} aria-label="Xóa lịch" />
           </Popconfirm>
         </Space>
       )

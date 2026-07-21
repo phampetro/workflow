@@ -44,7 +44,7 @@ const DEFAULT_GRAPH = {
   edges: [],
 }
 
-const EDGE_STYLE = { stroke: '#6c63ff', strokeWidth: 2 }
+const EDGE_STYLE = { stroke: '#0d9488', strokeWidth: 2 }
 
 let nodeIdCounter = 100
 
@@ -94,7 +94,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const expectedUpdatedAtRef = useRef(null)
   const conflictDialogOpenRef = useRef(false)
 
-  const proj  = project  || { name: 'Project', color: '#6c63ff' }
+  const proj  = project  || { name: 'Project', color: '#0d9488' }
 
   useEffect(() => {
     if (!workflow?.id) return
@@ -118,7 +118,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           })
           const loadedEdges = (graph.edges || []).map(e => {
             const cleanEdge = { ...e, type: 'custom' }
-            cleanEdge.markerEnd = { type: MarkerType.ArrowClosed, color: '#6c63ff' }
+            cleanEdge.markerEnd = { type: MarkerType.ArrowClosed, color: '#0d9488' }
             return cleanEdge
           })
           // Remove duplicate edges
@@ -338,7 +338,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         ...params, animated: true,
         type: 'custom',
         style: EDGE_STYLE,
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#6c63ff' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#0d9488' },
       }, eds))
       triggerAutoSave()
     },
@@ -531,7 +531,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         <div className="toolbar-right">
           <div className="save-status">
             {SaveIcon && <SaveIcon size="0.875rem" className={saveStatus === 'saving' ? 'spinning' : ''} />}
-            <span>{saveStatus === 'saving' ? 'Đang lưu...' : saveStatus === 'saved' ? 'Đã lưu' : saveStatus === 'error' ? 'Lỗi lưu' : 'Chưa lưu'}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{saveStatus === 'saving' ? 'Đang lưu...' : saveStatus === 'saved' ? 'Đã lưu' : saveStatus === 'error' ? 'Lỗi lưu' : 'Chưa lưu'}</span>
           </div>
           <Space>
             <Button icon={<Database size="0.875rem" />} onClick={() => setShowInputModal(true)}>Dữ liệu Workflow</Button>
@@ -628,7 +628,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             fitView
             defaultEdgeOptions={{
               animated: true, type: 'smoothstep',
-              markerEnd: { type: MarkerType.ArrowClosed, color: '#6c63ff' },
+              markerEnd: { type: MarkerType.ArrowClosed, color: '#0d9488' },
             }}
             style={{ background: 'transparent' }}
           >

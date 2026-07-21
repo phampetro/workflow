@@ -12,27 +12,40 @@
    ===================================================== */
 
 :root {
-  /* Modern Dark Mode (Base) - Midnight / Onyx palette */
-  --bg-base: #050505;       
-  --bg-surface: #0a0a0b;    
-  --bg-elevated: #111113;   
-  --bg-overlay: rgba(5, 5, 5, 0.85);
-  --bg-hover: #18181b;
+  /* Dark Mode - Teal-tinted midnight (không black tuyền để hoà với brand teal
+     nhưng vẫn đủ tối cho terminal-feel). Text primary #fff vẫn contrast >15:1. */
+  --bg-base: #071110;
+  --bg-surface: #0c1a18;
+  --bg-elevated: #132321;
+  --bg-overlay: rgba(7, 17, 16, 0.85);
+  --bg-hover: #1c2c2a;
 
-  /* Premium Gradients */
-  --premium-gradient-1: linear-gradient(135deg, #7c3aed 0%, #3b82f6 100%);
-  --premium-gradient-2: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
-  --premium-gradient-border: linear-gradient(135deg, rgba(139, 92, 246, 0.5) 0%, rgba(59, 130, 246, 0.5) 100%);
+  /* Premium Gradients - teal + secondary blue cho ops/tool identity (skill gợi ý) */
+  --premium-gradient-1: linear-gradient(135deg, #0d9488 0%, #3b82f6 100%);
+  --premium-gradient-2: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  --premium-gradient-border: linear-gradient(135deg, rgba(13, 148, 136, 0.5) 0%, rgba(59, 130, 246, 0.5) 100%);
+  --premium-gradient-cta: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
 
-  /* Accent / Brand */
-  --accent-primary: #8b5cf6; 
-  --accent-primary-hover: #9333ea; 
-  --accent-primary-glow: rgba(139, 92, 246, 0.4);
-  
-  --accent-secondary: #3b82f6; 
-  --accent-warning: #f59e0b;   
-  --accent-danger: #f43f5e;    
-  --accent-success: #10b981;   
+  /* Accent / Brand - Teal focus + Orange CTA (matched skill --design-system output) */
+  --accent-primary: #0d9488;
+  --accent-primary-hover: #0f766e;
+  --accent-primary-glow: rgba(13, 148, 136, 0.4);
+
+  /* Orange dùng cho CTA action nổi bật (Chạy workflow, Cài đặt package...) - tách khỏi
+     accent-primary để tạo tương phản action/navigation rõ ràng theo pattern ops landing. */
+  --accent-cta: #ea580c;
+  --accent-cta-hover: #c2410c;
+  --accent-cta-bg: rgba(234, 88, 12, 0.1);
+
+  --accent-secondary: #3b82f6;
+  --accent-secondary-bg: rgba(59, 130, 246, 0.1);
+  --accent-warning: #f59e0b;
+  --accent-warning-bg: rgba(245, 158, 11, 0.1);
+  --accent-danger: #f43f5e;
+  --accent-danger-bg: rgba(244, 63, 94, 0.1);
+  --accent-success: #10b981;
+  --accent-success-bg: rgba(16, 185, 129, 0.1);
+  --accent-muted-bg: rgba(140, 140, 140, 0.1);
 
   /* Text */
   --text-primary: #ffffff;     
@@ -40,9 +53,9 @@
   --text-muted: #71717a;       
 
   /* Border */
-  --border-default: rgba(255, 255, 255, 0.08);   
-  --border-subtle: rgba(255, 255, 255, 0.04);    
-  --border-accent: rgba(139, 92, 246, 0.6);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-accent: rgba(13, 148, 136, 0.6);
 
   /* Spacing */
   --space-1: 0.25rem;
@@ -61,9 +74,11 @@
   --radius-xl: 24px;
   --radius-full: 9999px;
 
-  /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* Typography - Fira family cho dashboard/technical mood (khớp gợi ý skill ui-ux-pro-max
+     cho product type "workflow automation tool"). Fira Sans có 6 weight, Fira Code
+     hỗ trợ ligature cho code hiển thị chuyên nghiệp trong khối Python + Log. */
+  --font-sans: 'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
 
   /* Font Sizes - Clean Scale */
   --text-xs:   0.6875rem;  /* 11px - timestamps, badges */
@@ -91,26 +106,71 @@
   --transition-fast: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-normal: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-bounce: 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Log console tokens (dùng cho LogViewer) - dark mode.
+     Đặt semantic token thay hardcode hex trong component để cả 2 theme cùng dùng.
+     Dùng tone teal-tinted đậm hơn bg-base để rõ khu vực terminal. */
+  --log-bg: #030a09;
+  --log-timestamp: #6b7280;
+  --log-empty: #71717a;
+  --log-info: #a1a1aa;
+  --log-info-bg: transparent;
+  --log-success: #4ade80;
+  --log-success-bg: rgba(74, 222, 128, 0.1);
+  --log-warning: #fbbf24;
+  --log-warning-bg: rgba(251, 191, 36, 0.1);
+  --log-error: #f87171;
+  --log-error-bg: rgba(248, 113, 113, 0.1);
 }
 
 :root[data-theme="light"] {
-  --bg-base: #f8fafc;       
+  /* Light Mode - Slate cool neutral (Vercel/Notion-style).
+     Slate clean giữ brand teal ở accent/border rõ hơn. */
+  --bg-base: #f8fafc;
   --bg-surface: #ffffff;
-  --bg-elevated: #f1f5f9;   
-  --bg-overlay: rgba(255, 255, 255, 0.85);
+  --bg-elevated: #f1f5f9;
+  --bg-overlay: rgba(248, 250, 252, 0.85);
   --bg-hover: #e2e8f0;
 
-  --text-primary: #0f172a;      
-  --text-secondary: #475569;    
-  --text-muted: #94a3b8;        
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
 
-  --border-default: rgba(0, 0, 0, 0.08);
-  --border-subtle: rgba(0, 0, 0, 0.04);
-  
+  --border-default: #e2e8f0;
+  --border-subtle: #f1f5f9;
+
   --shadow-glass: inset 0 1px 1px rgba(255, 255, 255, 0.8);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 16px 32px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* Log console tokens - light mode. Slate neutral thay cho pastel teal. */
+  --log-bg: #f1f5f9;
+  --log-timestamp: #64748b;
+  --log-empty: #94a3b8;
+  --log-info: #0f172a;
+  --log-info-bg: transparent;
+  --log-success: #15803d;
+  --log-success-bg: rgba(21, 128, 61, 0.08);
+  --log-warning: #b45309;
+  --log-warning-bg: rgba(180, 83, 9, 0.08);
+  --log-error: #b91c1c;
+  --log-error-bg: rgba(185, 28, 28, 0.08);
+}
+
+/* Respect prefers-reduced-motion (WCAG 2.3.3, Apple HIG, Material Motion).
+   Người dùng bật "Reduce motion" trong OS -> mọi transition/animation về gần 0
+   nhưng vẫn giữ end-state để UI không bị vỡ layout. Bao trùm cả Antd, React Flow,
+   và mọi custom animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* --- Base Typography --- */
@@ -373,9 +433,11 @@ body {
   box-shadow: var(--shadow-glow);
 }
 
-/* --- Workflow Row Styling --- */
+/* --- Workflow Row Styling ---
+   Dùng --bg-surface (dark: đậm hơn body 1 nấc; light: trắng tinh) để card nổi
+   rõ trên nền body teal-tinted, không bị "chìm" cùng tone như dùng --bg-elevated. */
 .workflow-row {
-  background: var(--bg-elevated);
+  background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 1.25rem;
@@ -386,13 +448,13 @@ body {
 
 .workflow-row:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-lg);
   border-color: var(--wf-color, var(--accent-primary));
 }
 
 /* --- Project Row Styling --- */
 .project-row {
-  background: var(--bg-elevated);
+  background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 1.25rem;
@@ -403,7 +465,7 @@ body {
 
 .project-row:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-lg);
   border-color: var(--proj-color, var(--accent-primary));
 }
 

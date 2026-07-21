@@ -133,7 +133,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32, height: 32,
-            background: 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)',
+            background: 'var(--premium-gradient-2)',
             borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
           }}>
             <User size="1rem" />
@@ -187,7 +187,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                   <div style={{
                     width: 42, height: 42, borderRadius: '50%',
                     background: isActive
-                      ? 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)'
+                      ? 'var(--premium-gradient-2)'
                       : 'var(--bg-surface)',
                     border: isActive ? '2px solid var(--accent-primary)' : '2px solid var(--border-default)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',

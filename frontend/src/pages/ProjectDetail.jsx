@@ -358,7 +358,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         cancelText="Hủy"
         okButtonProps={{ danger: true }}
       >
-        <Button type="text" size="small" danger icon={<Trash2 size="0.875rem" />} style={{ height: 22, padding: '0 6px', lineHeight: 1 }} />
+        <Button type="text" size="small" danger icon={<Trash2 size="0.875rem" />} style={{ height: 22, padding: '0 6px', lineHeight: 1 }} aria-label="Gỡ package" />
       </Popconfirm>
     )}
   ]
@@ -581,9 +581,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexShrink: 0 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 8,
-                background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
+                background: 'var(--premium-gradient-2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', boxShadow: '0 2px 8px rgba(114, 46, 209, 0.3)', flexShrink: 0
+                color: 'white', boxShadow: 'var(--shadow-md)', flexShrink: 0
               }}>
                 <Package size="1.125rem" />
               </div>
@@ -612,10 +612,10 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 disabled={!pkgInput.trim()}
                 style={{
                   fontWeight: 500,
-                  background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                  background: 'var(--premium-gradient-1)',
                   border: 'none',
                   color: '#fff',
-                  boxShadow: '0 2px 4px rgba(22, 119, 255, 0.25)'
+                  boxShadow: 'var(--shadow-sm)'
                 }}
               >
                 Cài đặt
@@ -633,10 +633,10 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         {!proj.venv_ready ? (
           <div style={{ padding: '3rem 2rem', textAlign: 'center' }}>
             <div style={{
-              width: 64, height: 64, borderRadius: 16, background: 'rgba(250, 173, 20, 0.1)',
+              width: 64, height: 64, borderRadius: 16, background: 'var(--accent-warning-bg)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem'
             }}>
-              <Terminal size="2rem" style={{ color: '#faad14' }} />
+              <Terminal size="2rem" style={{ color: 'var(--accent-warning)' }} />
             </div>
             <Title level={5} style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Python Environment chưa sẵn sàng</Title>
             <Text type="secondary" style={{ display: 'block', marginBottom: '1.5rem' }}>
@@ -666,7 +666,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                     <Statistic
                       title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Môi trường</span>}
                       value="Active"
-                      styles={{ content: { fontSize: '1.5rem', color: '#52c41a' } }}
+                      styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-success)' } }}
                       prefix={<CheckCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
                     />
                   </div>
@@ -726,9 +726,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
               width: 36, height: 36, borderRadius: 8,
-              background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+              background: 'var(--premium-gradient-1)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', boxShadow: '0 2px 8px rgba(24, 144, 255, 0.3)'
+              color: 'white', boxShadow: 'var(--shadow-md)'
             }}>
               <History size="1.125rem" />
             </div>
@@ -753,8 +753,8 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Statistic
                   title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tổng lần chạy</span>}
                   value={runHistory.length}
-                  styles={{ content: { fontSize: '1.5rem', color: '#1890ff' } }}
-                  prefix={<History size="1rem" style={{ marginRight: 8, opacity: 0.6, color: '#1890ff' }} />}
+                  styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-secondary)' } }}
+                  prefix={<History size="1rem" style={{ marginRight: 8, opacity: 0.6, color: 'var(--accent-secondary)' }} />}
                 />
               </div>
             </Col>
@@ -763,7 +763,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Statistic
                   title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Thành công</span>}
                   value={runHistory.filter(r => r.status === 'success').length}
-                  styles={{ content: { fontSize: '1.5rem', color: '#52c41a' } }}
+                  styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-success)' } }}
                   prefix={<CheckCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
                 />
               </div>
@@ -773,7 +773,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Statistic
                   title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Lỗi</span>}
                   value={runHistory.filter(r => r.status === 'error').length}
-                  styles={{ content: { fontSize: '1.5rem', color: '#ff4d4f' } }}
+                  styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-danger)' } }}
                   prefix={<XCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
                 />
               </div>
@@ -849,15 +849,15 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
   const lastStatus = workflow.last_run_status
   let statusBadge = null
   if (isRunning) {
-    statusBadge = { text: 'Đang chạy', color: '#1677ff', bg: 'rgba(22, 119, 255, 0.1)', dot: <Loader size="0.75rem" className="spinning"/> }
+    statusBadge = { text: 'Đang chạy', color: 'var(--accent-secondary)', bg: 'var(--accent-secondary-bg)', dot: <Loader size="0.75rem" className="spinning"/> }
   } else if (lastStatus === 'error') {
-    statusBadge = { text: 'Lỗi gần đây', color: '#ff4d4f', bg: 'rgba(255, 77, 79, 0.1)', dot: <XCircle size="0.75rem"/> }
+    statusBadge = { text: 'Lỗi gần đây', color: 'var(--accent-danger)', bg: 'var(--accent-danger-bg)', dot: <XCircle size="0.75rem"/> }
   } else if (lastStatus === 'success') {
-    statusBadge = { text: 'Thành công', color: '#52c41a', bg: 'rgba(82, 196, 26, 0.1)', dot: <CheckCircle size="0.75rem"/> }
+    statusBadge = { text: 'Thành công', color: 'var(--accent-success)', bg: 'var(--accent-success-bg)', dot: <CheckCircle size="0.75rem"/> }
   } else if (lastStatus === 'stopped') {
-    statusBadge = { text: 'Đã dừng', color: '#faad14', bg: 'rgba(250, 173, 20, 0.1)', dot: <AlertCircle size="0.75rem"/> }
+    statusBadge = { text: 'Đã dừng', color: 'var(--accent-warning)', bg: 'var(--accent-warning-bg)', dot: <AlertCircle size="0.75rem"/> }
   } else {
-    statusBadge = { text: 'Sẵn sàng', color: '#8c8c8c', bg: 'rgba(140, 140, 140, 0.1)', dot: <CheckCircle size="0.75rem"/> }
+    statusBadge = { text: 'Sẵn sàng', color: 'var(--text-muted)', bg: 'var(--accent-muted-bg)', dot: <CheckCircle size="0.75rem"/> }
   }
 
   const items = [
@@ -901,7 +901,7 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
         </div>
 
         <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
-          <Button className="project-menu-btn" type="text" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} />
+          <Button className="project-menu-btn" type="text" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} aria-label="Mở menu thao tác Workflow" />
         </Dropdown>
       </div>
 

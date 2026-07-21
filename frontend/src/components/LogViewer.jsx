@@ -1,57 +1,51 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Terminal, Download, ArrowDown } from 'lucide-react'
+import { Virtuoso } from 'react-virtuoso'
 import { createLogStream } from '../api/client'
 import { Drawer, Button, Typography, Tag, Empty, Space } from 'antd'
 import useStore from '../store/useStore'
 
 const { Text } = Typography
 
-// Bảng màu 2 chế độ - trước đây hardcode 1 bộ màu cho nền tối #0d1117, khi app chuyển
-// sang giao diện Sáng thì log vẫn nền đen, text bị chói/khó đọc. Tách theo theme để
-// mỗi chế độ đều đạt độ tương phản tốt.
-const LEVEL_CONFIG_DARK = {
-  info:    { color: '#a1a1aa', bg: 'transparent' },
-  success: { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' },
-  warning: { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' },
-  error:   { color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
+// Bảng màu tham chiếu CSS variables trong index.css (--log-*). Mỗi variable đã có
+// biến thể riêng cho light/dark - khi user đổi theme, log tự cập nhật màu, không cần
+// đọc theme trong JS. Đảm bảo tương phản 4.5:1 trên cả 2 nền.
+const LEVEL_CONFIG = {
+  info:    { color: 'var(--log-info)',    bg: 'var(--log-info-bg)' },
+  success: { color: 'var(--log-success)', bg: 'var(--log-success-bg)' },
+  warning: { color: 'var(--log-warning)', bg: 'var(--log-warning-bg)' },
+  error:   { color: 'var(--log-error)',   bg: 'var(--log-error-bg)' },
 }
-const LEVEL_CONFIG_LIGHT = {
-  info:    { color: '#334155', bg: 'transparent' },
-  success: { color: '#15803d', bg: 'rgba(21,128,61,0.08)' },
-  warning: { color: '#a16207', bg: 'rgba(161,98,7,0.08)' },
-  error:   { color: '#b91c1c', bg: 'rgba(185,28,28,0.08)' },
+
+function LogRow({ log }) {
+  const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
+  return (
+    <div style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem', padding: '0 16px' }}>
+      <span style={{ color: 'var(--log-timestamp)', flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
+      <Tag
+        style={{
+          margin: 0,
+          padding: '0 4px',
+          fontSize: '10px',
+          background: cfg.bg,
+          color: cfg.color,
+          border: 'none',
+          flexShrink: 0,
+        }}
+      >
+        {log.level?.toUpperCase()}
+      </Tag>
+      <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: cfg.color }}>
+        {log.msg}
+      </span>
+    </div>
+  )
 }
 
 export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
   const [logs, setLogs] = useState([])
   const [autoScroll, setAutoScroll] = useState(true)
-  const bottomRef = useRef(null)
-  const logContainerRef = useRef(null)
-  const theme = useStore((s) => s.theme)
-  const isLight = theme === 'light'
-  const LEVEL_CONFIG = isLight ? LEVEL_CONFIG_LIGHT : LEVEL_CONFIG_DARK
-  // Nền panel + timestamp phải khác giữa 2 theme để không bị đen/chói khi đổi giao diện.
-  const panelBg = isLight ? '#f8fafc' : '#0d1117'
-  const timestampColor = isLight ? '#94a3b8' : '#666'
-  const emptyColor = isLight ? '#94a3b8' : '#888'
-  // Cờ đánh dấu lần cuộn hiện tại là do CODE gọi (không phải user cuộn tay) - handleScroll
-  // sẽ bỏ qua sự kiện này. Trước đây scrollIntoView({behavior:'smooth'}) tự trigger scroll
-  // event trong lúc đang animate -> handleScroll đọc scrollTop giữa chừng thấy chưa tới
-  // đáy -> tự tắt autoScroll dù user chưa hề chạm.
-  const programmaticScrollRef = useRef(false)
-  const scrollResetTimerRef = useRef(null)
-
-  const scrollToBottom = () => {
-    const el = logContainerRef.current
-    if (!el) return
-    programmaticScrollRef.current = true
-    el.scrollTop = el.scrollHeight
-    if (scrollResetTimerRef.current) clearTimeout(scrollResetTimerRef.current)
-    // 120ms là dư an toàn để scroll event của instant scroll đã fire hết
-    scrollResetTimerRef.current = setTimeout(() => {
-      programmaticScrollRef.current = false
-    }, 120)
-  }
+  const virtuosoRef = useRef(null)
 
   useEffect(() => {
     if (!runId) {
@@ -91,32 +85,11 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
     return () => cleanup()
   }, [runId])
 
-  useEffect(() => {
-    if (autoScroll) {
-      // Instant scroll (không smooth) để không bị gián đoạn khi log flood liên tục;
-      // hàm scrollToBottom set flag programmatic để handleScroll bỏ qua đúng event này.
-      scrollToBottom()
-    }
-  }, [logs.length, autoScroll])
-
-  useEffect(() => {
-    return () => {
-      if (scrollResetTimerRef.current) clearTimeout(scrollResetTimerRef.current)
-    }
-  }, [])
-
-  const handleScroll = (e) => {
-    if (programmaticScrollRef.current) return
-    const el = e.target
-    // Ngưỡng 80px (thay vì 40px) tolerant hơn với các hiệu ứng smooth scroll của
-    // browser + wheel inertia trên trackpad, tránh tắt autoScroll khi user chỉ chạm nhẹ.
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    setAutoScroll(atBottom)
-  }
-
   const jumpToBottom = () => {
     setAutoScroll(true)
-    scrollToBottom()
+    if (virtuosoRef.current && logs.length > 0) {
+      virtuosoRef.current.scrollToIndex({ index: logs.length - 1, behavior: 'auto' })
+    }
   }
 
   const exportLogs = () => {
@@ -152,7 +125,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
       open={true}
       mask={false}
       styles={{
-        body: { padding: 0, background: panelBg, display: 'flex', flexDirection: 'column' },
+        body: { padding: 0, background: 'var(--log-bg)', display: 'flex', flexDirection: 'column' },
         header: { background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', padding: '12px 20px' }
       }}
       extra={
@@ -161,51 +134,35 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
           size="small"
           onClick={exportLogs}
           disabled={!logs.length}
+          aria-label="Lưu log ra file"
         >
           Lưu Log
         </Button>
       }
     >
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
-        <div
-          ref={logContainerRef}
-          onScroll={handleScroll}
-          style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '13px', lineHeight: 1.7 }}
-        >
-          {logs.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={<span style={{ color: emptyColor }}>Chưa có log nào...</span>}
-              style={{ margin: '40px 0' }}
-            />
-          ) : (
-            logs.map((log, i) => {
-              const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
-              return (
-                <div key={i} style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem' }}>
-                  <span style={{ color: timestampColor, flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
-                  <Tag
-                    style={{
-                      margin: 0,
-                      padding: '0 4px',
-                      fontSize: '10px',
-                      background: cfg.bg,
-                      color: cfg.color,
-                      border: 'none',
-                      flexShrink: 0
-                    }}
-                  >
-                    {log.level?.toUpperCase()}
-                  </Tag>
-                  <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: cfg.color }}>
-                    {log.msg}
-                  </span>
-                </div>
-              )
-            })
-          )}
-          <div ref={bottomRef} />
-        </div>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {logs.length === 0 ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={<span style={{ color: 'var(--log-empty)' }}>Chưa có log nào...</span>}
+            style={{ margin: '40px 0' }}
+          />
+        ) : (
+          <Virtuoso
+            ref={virtuosoRef}
+            data={logs}
+            itemContent={(index, log) => <LogRow log={log} />}
+            style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '13px' }}
+            // Bám đáy khi có log mới nhưng chỉ khi user chưa cuộn lên xem log cũ -
+            // Virtuoso tự xử lý atBottom via callback, thay được toàn bộ hack
+            // programmaticScroll/threshold cũ.
+            followOutput={autoScroll ? 'auto' : false}
+            atBottomStateChange={(atBottom) => setAutoScroll(atBottom)}
+            atBottomThreshold={80}
+            increaseViewportBy={{ top: 200, bottom: 200 }}
+            initialTopMostItemIndex={Math.max(0, logs.length - 1)}
+          />
+        )}
 
         {/* Nút nổi hiện khi user rời khỏi đáy (đang xem log cũ) - click về đáy + bật lại auto-scroll */}
         {!autoScroll && logs.length > 0 && (
@@ -214,6 +171,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
             size="small"
             icon={<ArrowDown size={14} />}
             onClick={jumpToBottom}
+            aria-label="Cuộn xuống xem log mới nhất"
             style={{
               position: 'absolute',
               bottom: 16,

@@ -275,10 +275,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       align: 'center',
       render: (_, record) => (
         <Space size={4}>
-          <Button type="text" size="small" icon={<Eye size={14} />} onClick={() => handleView(record.name, isOutput)} />
-          <Button type="text" size="small" icon={<Download size={14} />} onClick={() => handleDownload(record.name, isOutput)} />
+          <Button type="text" size="small" icon={<Eye size={14} />} onClick={() => handleView(record.name, isOutput)} aria-label="Xem trước tệp" />
+          <Button type="text" size="small" icon={<Download size={14} />} onClick={() => handleDownload(record.name, isOutput)} aria-label="Tải tệp về máy" />
           <Popconfirm title="Xóa tệp?" onConfirm={() => isOutput ? handleDeleteOutFile(record.name) : handleDeleteFile(record.name)}>
-            <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
+            <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label="Xóa tệp" />
           </Popconfirm>
         </Space>
       )
@@ -410,9 +410,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
                 align: 'center',
                 render: (_, record) => (
                   <Space size={4}>
-                    <Button type="text" size="small" icon={<Pencil size={14} />} onClick={() => openDbConnModal(record)} />
+                    <Button type="text" size="small" icon={<Pencil size={14} />} onClick={() => openDbConnModal(record)} aria-label="Sửa kết nối Database" />
                     <Popconfirm title="Xoá kết nối?" onConfirm={() => handleDeleteConnection(record.id)}>
-                      <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
+                      <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label="Xoá kết nối Database" />
                     </Popconfirm>
                   </Space>
                 )
