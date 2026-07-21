@@ -6,11 +6,20 @@ import useStore from '../store/useStore'
 
 const { Text } = Typography
 
-const LEVEL_CONFIG = {
+// Bảng màu 2 chế độ - trước đây hardcode 1 bộ màu cho nền tối #0d1117, khi app chuyển
+// sang giao diện Sáng thì log vẫn nền đen, text bị chói/khó đọc. Tách theo theme để
+// mỗi chế độ đều đạt độ tương phản tốt.
+const LEVEL_CONFIG_DARK = {
   info:    { color: '#a1a1aa', bg: 'transparent' },
   success: { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' },
   warning: { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' },
   error:   { color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
+}
+const LEVEL_CONFIG_LIGHT = {
+  info:    { color: '#334155', bg: 'transparent' },
+  success: { color: '#15803d', bg: 'rgba(21,128,61,0.08)' },
+  warning: { color: '#a16207', bg: 'rgba(161,98,7,0.08)' },
+  error:   { color: '#b91c1c', bg: 'rgba(185,28,28,0.08)' },
 }
 
 export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
@@ -18,6 +27,13 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
   const [autoScroll, setAutoScroll] = useState(true)
   const bottomRef = useRef(null)
   const logContainerRef = useRef(null)
+  const theme = useStore((s) => s.theme)
+  const isLight = theme === 'light'
+  const LEVEL_CONFIG = isLight ? LEVEL_CONFIG_LIGHT : LEVEL_CONFIG_DARK
+  // Nền panel + timestamp phải khác giữa 2 theme để không bị đen/chói khi đổi giao diện.
+  const panelBg = isLight ? '#f8fafc' : '#0d1117'
+  const timestampColor = isLight ? '#94a3b8' : '#666'
+  const emptyColor = isLight ? '#94a3b8' : '#888'
   // Cờ đánh dấu lần cuộn hiện tại là do CODE gọi (không phải user cuộn tay) - handleScroll
   // sẽ bỏ qua sự kiện này. Trước đây scrollIntoView({behavior:'smooth'}) tự trigger scroll
   // event trong lúc đang animate -> handleScroll đọc scrollTop giữa chừng thấy chưa tới
@@ -136,7 +152,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
       open={true}
       mask={false}
       styles={{
-        body: { padding: 0, background: '#0d1117', display: 'flex', flexDirection: 'column' },
+        body: { padding: 0, background: panelBg, display: 'flex', flexDirection: 'column' },
         header: { background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', padding: '12px 20px' }
       }}
       extra={
@@ -159,7 +175,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
           {logs.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={<span style={{ color: '#888' }}>Chưa có log nào...</span>}
+              description={<span style={{ color: emptyColor }}>Chưa có log nào...</span>}
               style={{ margin: '40px 0' }}
             />
           ) : (
@@ -167,7 +183,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
               const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
               return (
                 <div key={i} style={{ display: 'flex', gap: 12, lineHeight: 1.7, fontSize: '0.8rem' }}>
-                  <span style={{ color: '#666', flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
+                  <span style={{ color: timestampColor, flexShrink: 0, userSelect: 'none' }}>[{log.time}]</span>
                   <Tag
                     style={{
                       margin: 0,
