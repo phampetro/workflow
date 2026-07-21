@@ -54,5 +54,5 @@ echo    [OK]
 
 echo.
 echo [Xong] BE: localhost:7000  FE: localhost:9000
-timeout /t 3 /nobreak >nul
-exit
+echo Nhan phim bat ky de dong cua so nay...
+pause >nul
