@@ -158,20 +158,6 @@
   --log-error-bg: rgba(185, 28, 28, 0.08);
 }
 
-/* Respect prefers-reduced-motion (WCAG 2.3.3, Apple HIG, Material Motion).
-   Người dùng bật "Reduce motion" trong OS -> mọi transition/animation về gần 0
-   nhưng vẫn giữ end-state để UI không bị vỡ layout. Bao trùm cả Antd, React Flow,
-   và mọi custom animation. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
 
 /* --- Base Typography --- */
 h1 { font-size: var(--text-3xl); font-weight: 700; }
