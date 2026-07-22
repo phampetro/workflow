@@ -2043,8 +2043,8 @@ output_data = {{"result": rows, "row_count": row_count}}
                             array_data = val
                         elif isinstance(val, str) and val.startswith("["):
                             try:
-                                import json
-                                array_data = json.loads(val.replace("'", '"'))
+                                import ast
+                                array_data = ast.literal_eval(val)
                             except Exception:
                                 pass
 
