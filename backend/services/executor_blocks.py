@@ -1854,8 +1854,8 @@ output_data = {{"result": rows, "row_count": row_count}}
                             if row_count_var:
                                 workflow_env[row_count_var] = current_input.get("row_count")
             elif btype == "google_sheets_read":
-                url = interpolate(bdata.get("googleSheetsUrl", ""))
-                sheet_name = interpolate(bdata.get("googleSheetsSheetName", ""))
+                url = interpolate(bdata.get("googleSheetsUrl", "")).strip()
+                sheet_name = interpolate(bdata.get("googleSheetsSheetName", "")).strip()
                 header_row = int(bdata.get("googleSheetsHeaderRow") or 1)
                 output_var = bdata.get("outputVarName") or "google_sheets_data"
                 custom_mappings = bdata.get("columnMappings") or {}
@@ -1863,28 +1863,41 @@ output_data = {{"result": rows, "row_count": row_count}}
                 if not url:
                     raise Exception("Chưa cấu hình Link Google Sheet")
 
-                match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
-                if not match:
-                    raise Exception("Link Google Sheet không hợp lệ")
-                sheet_id = match.group(1)
-
-                if sheet_name and sheet_name.strip():
-                    encoded_name = urllib.parse.quote(sheet_name.strip())
-                    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+                if "/spreadsheets/d/e/" in url:
+                    csv_url = url.replace("/pubhtml", "/pub?output=csv").replace("/edit", "/pub?output=csv")
+                    if "output=csv" not in csv_url:
+                        csv_url += ("&" if "?" in csv_url else "?") + "output=csv"
                 else:
-                    gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
-                    if gid_match:
-                        gid = gid_match.group(1)
-                        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-                    else:
-                        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+                    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+                    if not match:
+                        raise Exception("Link Google Sheet không hợp lệ")
+                    sheet_id = match.group(1)
 
-                resp = requests.get(csv_url, timeout=20)
-                if resp.status_code != 200:
-                    raise Exception(f"Không thể tải Google Sheet (HTTP {resp.status_code}). Đảm bảo file ở chế độ Public View.")
+                    if sheet_name:
+                        encoded_name = urllib.parse.quote(sheet_name)
+                        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+                    else:
+                        gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
+                        if gid_match:
+                            gid = gid_match.group(1)
+                            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+                        else:
+                            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+                import urllib.request
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+                req = urllib.request.Request(csv_url, headers=headers)
+                try:
+                    with urllib.request.urlopen(req, timeout=20) as resp:
+                        content_bytes = resp.read()
+                        text = content_bytes.decode('utf-8', errors='ignore')
+                except Exception as e:
+                    raise Exception(f"Không thể tải Google Sheet ({e}). Hãy kiểm tra link và đảm bảo file ở chế độ Public View.")
 
                 header_idx = max(0, header_row - 1)
-                df = pd.read_csv(io.StringIO(resp.text), header=header_idx)
+                df = pd.read_csv(io.StringIO(text), header=header_idx)
                 df = df.fillna('')
 
                 clean_cols = []

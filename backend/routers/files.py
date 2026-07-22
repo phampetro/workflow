@@ -322,8 +322,8 @@ async def get_excel_column_values(workflow_id: str, filename: str, col_name: str
 
 @router.post("/google-sheets/columns")
 async def get_google_sheets_columns(body: dict):
-    url = body.get("url", "")
-    sheet_name = body.get("sheet_name", "")
+    url = body.get("url", "").strip()
+    sheet_name = body.get("sheet_name", "").strip()
     header_row = int(body.get("header_row") or 1)
 
     if not url:
@@ -331,36 +331,46 @@ async def get_google_sheets_columns(body: dict):
 
     import re
     import urllib.parse
-    import requests
+    import urllib.request
     import pandas as pd
 
-    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
-    if not match:
-        raise HTTPException(400, "URL Google Sheet không hợp lệ")
-    sheet_id = match.group(1)
-
-    if sheet_name and sheet_name.strip():
-        encoded_name = urllib.parse.quote(sheet_name.strip())
-        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+    if "/spreadsheets/d/e/" in url:
+        csv_url = url.replace("/pubhtml", "/pub?output=csv").replace("/edit", "/pub?output=csv")
+        if "output=csv" not in csv_url:
+            csv_url += ("&" if "?" in csv_url else "?") + "output=csv"
     else:
-        gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
-        if gid_match:
-            gid = gid_match.group(1)
-            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+        if not match:
+            raise HTTPException(400, "URL Google Sheet không hợp lệ")
+        sheet_id = match.group(1)
+
+        if sheet_name:
+            encoded_name = urllib.parse.quote(sheet_name)
+            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
         else:
-            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+            gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
+            if gid_match:
+                gid = gid_match.group(1)
+                csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+            else:
+                csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
 
     try:
-        resp = requests.get(csv_url, timeout=15)
-        if resp.status_code != 200:
-            raise HTTPException(400, f"Không thể tải Google Sheet (HTTP {resp.status_code}). Hãy kiểm tra link và đảm bảo file ở chế độ Public View.")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        req = urllib.request.Request(csv_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content_bytes = resp.read()
+            text = content_bytes.decode('utf-8', errors='ignore')
         
         header_idx = max(0, header_row - 1)
-        df = pd.read_csv(io.StringIO(resp.text), header=header_idx, nrows=5)
+        df = pd.read_csv(io.StringIO(text), header=header_idx, nrows=5)
         cols = [str(c).strip() for c in df.columns if str(c).strip() and not str(c).startswith("Unnamed:")]
         return {"columns": cols, "count": len(cols)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Lỗi đọc Google Sheet: {str(e)}")
+        raise HTTPException(500, f"Lỗi đọc Google Sheet: {str(e)}. Hãy đảm bảo file ở chế độ Public View.")
+
 

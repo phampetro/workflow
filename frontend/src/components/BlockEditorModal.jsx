@@ -763,6 +763,15 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     }
   }, [isSqlToExcel, isExcelToSql, isRunSqlExec, open, workflowId])
 
+  // Reset form & đồng bộ dữ liệu khi mở modal hoặc đổi node
+  useEffect(() => {
+    if (open) {
+      form.resetFields()
+      setGoogleSheetsCols(node.data.googleSheetsCols || [])
+      setGoogleSheetsMappings(node.data.columnMappings || {})
+    }
+  }, [open, node.id])
+
   // Fetch output files cho Telegram attachment
   useEffect(() => {
     if (isTelegram && open && workflowId) {
@@ -1150,6 +1159,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             sqlToExcelSavedConnectionId: node.data.sqlToExcelSavedConnectionId || undefined,
             sqlExecSavedConnectionId: node.data.sqlExecSavedConnectionId || undefined,
             sqlCommand: node.data.sqlCommand || '',
+            googleSheetsUrl: node.data.googleSheetsUrl || '',
+            googleSheetsSheetName: node.data.googleSheetsSheetName || 'Sheet1',
+            googleSheetsHeaderRow: node.data.googleSheetsHeaderRow !== undefined ? node.data.googleSheetsHeaderRow : 1,
+            outputVarName: node.data.outputVarName || (isGoogleSheets ? 'google_sheets_data' : ''),
+            loopArrayVar: node.data.loopArrayVar || 'google_sheets_data',
+            loopItemVar: node.data.loopItemVar || 'item',
           }}
         >
           <div style={{ width: leftPanelWidth, height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
@@ -1541,7 +1556,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <TableProperties size={16} />
                   <Text strong style={{ fontSize: '0.85rem' }}>Cột tiêu đề & Biến tùy chỉnh</Text>
                 </Space>
-                <Button type="primary" ghost size="small" icon={<RefreshCw size={14} />} loading={loadingGoogleSheetsCols} onClick={handleFetchGoogleSheetsColumns}>
+                <Button type="primary" size="small" icon={<RefreshCw size={14} />} style={{ background: '#0f9d58', borderColor: '#0f9d58', color: '#ffffff', fontWeight: 500 }} loading={loadingGoogleSheetsCols} onClick={handleFetchGoogleSheetsColumns}>
                   Tải danh sách cột
                 </Button>
               </div>
