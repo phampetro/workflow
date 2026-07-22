@@ -1884,7 +1884,6 @@ output_data = {{"result": rows, "row_count": row_count}}
                         else:
                             csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
 
-                import urllib.request
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
