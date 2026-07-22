@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal } from 'lucide-react'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal, RefreshCw } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col, Checkbox } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -541,12 +541,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isDeleteFiles = node.data.type === 'delete_files'
   const isExcelToSql = node.data.type === 'excel_to_sql'
   const isRunSqlExec = node.data.type === 'run_sql_exec'
-  // Không áp dụng cho Browser: mỗi bước đã có key_name riêng để tự đặt tên field,
-  // và outputVarName chỉ bọc được nguyên object (không truy cập được từng field con
-  // qua {{...}}), nên không giải quyết đúng vấn đề trùng tên cho khối nhiều field này.
-  // Các khối trả về >1 giá trị (Telegram, Telegram Listener, Excel to SQL, Chạy Hàm SQL EXEC)
-  // có field đặt tên biến riêng cho từng giá trị, không dùng field chung này.
-  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel
+  const isGoogleSheets = node.data.type === 'google_sheets_read'
+  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel || isGoogleSheets
 
   // Excel to SQL states
   const [dbTables, setDbTables] = useState([])
@@ -567,6 +563,32 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   // Browser steps state
   const [browserSteps, setBrowserSteps] = useState(node.data.steps || [])
   const [expandedStep, setExpandedStep] = useState(null)
+
+  // Google Sheets state
+  const [googleSheetsCols, setGoogleSheetsCols] = useState(node.data.googleSheetsCols || [])
+  const [googleSheetsMappings, setGoogleSheetsMappings] = useState(node.data.columnMappings || {})
+  const [loadingGoogleSheetsCols, setLoadingGoogleSheetsCols] = useState(false)
+
+  const handleFetchGoogleSheetsColumns = async () => {
+    const url = form.getFieldValue('googleSheetsUrl')
+    const sheet_name = form.getFieldValue('googleSheetsSheetName')
+    const header_row = form.getFieldValue('googleSheetsHeaderRow') || 1
+    if (!url) {
+      toast.error('Vui lòng nhập Link Google Sheet trước')
+      return
+    }
+    setLoadingGoogleSheetsCols(true)
+    try {
+      const res = await getGoogleSheetsColumns({ url, sheet_name, header_row })
+      const cols = res.data?.columns || []
+      setGoogleSheetsCols(cols)
+      toast.success(`Đã tìm thấy ${cols.length} cột tiêu đề`)
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.message)
+    } finally {
+      setLoadingGoogleSheetsCols(false)
+    }
+  }
 
   // AI Assistant states
   const [aiPromptVisible, setAiPromptVisible] = useState(false)
@@ -982,6 +1004,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       const values = await form.validateFields()
       onSave(node.id, {
         ...values,
+        ...(isGoogleSheets ? { googleSheetsCols, columnMappings: googleSheetsMappings } : {}),
         ...(isPython ? { code: editorRef.current ? editorRef.current.getValue() : code } : {}),
         ...(isSqlToExcel ? { sqlQuery: editorRef.current ? editorRef.current.getValue() : sqlCode } : {}),
         ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
@@ -1189,12 +1212,23 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <Select>
                   <Select.Option value="count">Lặp theo số lần cố định</Select.Option>
                   <Select.Option value="condition">Lặp theo điều kiện biến</Select.Option>
+                  <Select.Option value="array">Lặp qua Mảng dữ liệu (Array)</Select.Option>
                 </Select>
               </Form.Item>
               {loopMode === 'count' && (
                 <Form.Item name="loopCount" label="Số lần lặp" rules={[{ required: true, message: 'Nhập số lần lặp' }]}>
                   <InputNumber min={1} max={2000} style={{ width: '100%' }} placeholder="Ví dụ: 5" />
                 </Form.Item>
+              )}
+              {loopMode === 'array' && (
+                <>
+                  <Form.Item name="loopArrayVar" label="Tên biến Mảng cần lặp" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Ví dụ: google_sheets_data (từ khối Google Sheets)">
+                    <AutoComplete options={autoCompleteOptions} placeholder="google_sheets_data" allowClear />
+                  </Form.Item>
+                  <Form.Item name="loopItemVar" label="Tên biến đại diện dòng hiện tại" rules={[{ required: true, message: 'Nhập tên biến đại diện' }]} tooltip="Mỗi vòng lặp sẽ gán dữ liệu dòng hiện tại vào biến này (ví dụ: {{item.ten_kh}} hoặc gọi trực tiếp {{ten_kh}})">
+                    <Input placeholder="item" />
+                  </Form.Item>
+                </>
               )}
               {loopMode === 'condition' && (
                 <Form.Item
@@ -1484,6 +1518,62 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             </>
           )}
 
+          {isGoogleSheets && (
+            <>
+              <Divider style={{ margin: '24px 0' }} />
+              <Title level={5} style={{ margin: '0 0 16px 0' }}><TableProperties size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#0f9d58' }}/> Cấu hình Google Sheets</Title>
+              <Form.Item label="Link Google Sheet (Public Share)" name="googleSheetsUrl" rules={[{ required: true, message: 'Nhập Link Google Sheet' }]}>
+                <Input placeholder="https://docs.google.com/spreadsheets/d/.../edit" />
+              </Form.Item>
+              <Form.Item label="Tên Sheet / Tab" name="googleSheetsSheetName" tooltip="Mặc định là Sheet1 nếu để trống">
+                <Input placeholder="Sheet1" />
+              </Form.Item>
+              <Form.Item label="Dòng tiêu đề (Header Row)" name="googleSheetsHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
+                <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
+              </Form.Item>
+              <Form.Item label="Tên biến mảng đầu ra" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng đầu ra' }]} tooltip="Các khối sau sẽ sử dụng biến mảng này để lặp (mặc định: google_sheets_data)">
+                <Input placeholder="google_sheets_data" />
+              </Form.Item>
+
+              <Divider style={{ margin: '16px 0' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Space>
+                  <TableProperties size={16} />
+                  <Text strong style={{ fontSize: '0.85rem' }}>Cột tiêu đề & Biến tùy chỉnh</Text>
+                </Space>
+                <Button type="primary" ghost size="small" icon={<RefreshCw size={14} />} loading={loadingGoogleSheetsCols} onClick={handleFetchGoogleSheetsColumns}>
+                  Tải danh sách cột
+                </Button>
+              </div>
+
+              {googleSheetsCols.length > 0 ? (
+                <div style={{ background: 'var(--bg-elevated)', padding: 12, borderRadius: 8, border: '1px solid var(--border-default)', marginBottom: 16 }}>
+                  <Text type="secondary" style={{ fontSize: '0.8rem', display: 'block', marginBottom: 8 }}>
+                    Danh sách cột tiêu đề tự động. Bạn có thể gõ Tên biến Custom tương ứng:
+                  </Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {googleSheetsCols.map(col => (
+                      <div key={col} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Tag color="green" style={{ minWidth: 110, margin: 0, textAlign: 'center' }}>{col}</Tag>
+                        <span style={{ color: 'var(--text-muted)' }}>➔</span>
+                        <Input
+                          size="small"
+                          placeholder={col}
+                          value={googleSheetsMappings[col] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setGoogleSheetsMappings(prev => ({ ...prev, [col]: val }));
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <Alert title="Bấm 'Tải danh sách cột' để xem và tùy chỉnh tên biến từ dòng tiêu đề trên Google Sheet." type="info" showIcon style={{ marginBottom: 16 }} />
+              )}
+            </>
+          )}
           {isBrowser && (
             <>
               <Divider style={{ margin: '24px 0' }} />

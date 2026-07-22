@@ -318,3 +318,49 @@ async def get_excel_column_values(workflow_id: str, filename: str, col_name: str
         return {"values": unique_vals[:1000]}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@router.post("/google-sheets/columns")
+async def get_google_sheets_columns(body: dict):
+    url = body.get("url", "")
+    sheet_name = body.get("sheet_name", "")
+    header_row = int(body.get("header_row") or 1)
+
+    if not url:
+        raise HTTPException(400, "Vui lòng nhập Link Google Sheet")
+
+    import re
+    import urllib.parse
+    import requests
+    import pandas as pd
+
+    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+    if not match:
+        raise HTTPException(400, "URL Google Sheet không hợp lệ")
+    sheet_id = match.group(1)
+
+    if sheet_name and sheet_name.strip():
+        encoded_name = urllib.parse.quote(sheet_name.strip())
+        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+    else:
+        gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
+        if gid_match:
+            gid = gid_match.group(1)
+            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        else:
+            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+    try:
+        resp = requests.get(csv_url, timeout=15)
+        if resp.status_code != 200:
+            raise HTTPException(400, f"Không thể tải Google Sheet (HTTP {resp.status_code}). Hãy kiểm tra link và đảm bảo file ở chế độ Public View.")
+        
+        header_idx = max(0, header_row - 1)
+        df = pd.read_csv(io.StringIO(resp.text), header=header_idx, nrows=5)
+        cols = [str(c).strip() for c in df.columns if str(c).strip() and not str(c).startswith("Unnamed:")]
+        return {"columns": cols, "count": len(cols)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Lỗi đọc Google Sheet: {str(e)}")
+

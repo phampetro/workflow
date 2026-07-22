@@ -81,10 +81,17 @@ const BLOCK_TYPES = {
   },
   excel_to_sql: {
     label: 'Excel to SQL',
-    icon: <Database size="0.875rem" />,
-    color: '#0ea5e9',
-    gradient: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
-    description: 'Import Excel vào CSDL',
+    icon: <TableProperties size="0.875rem" />,
+    color: '#0284c7',
+    gradient: 'linear-gradient(135deg, #0284c7, #0369a1)',
+    description: 'Đọc Excel & ghi bảng DB',
+  },
+  google_sheets_read: {
+    label: 'Google Sheets',
+    icon: <TableProperties size="0.875rem" />,
+    color: '#0f9d58',
+    gradient: 'linear-gradient(135deg, #0f9d58, #0b8043)',
+    description: 'Đọc dữ liệu từ Google Sheet (Public Link)',
   },
   run_sql_exec: {
     label: 'Chạy Hàm SQL (EXEC)',

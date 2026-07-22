@@ -68,6 +68,7 @@ export const updateWorkflowInput = (id, data) => api.put(`/api/workflows/${id}/i
 export const getWorkflowFiles    = (id)         => api.get(`/api/workflows/${id}/files`)
 export const getFileColumns      = (id, filename, headerRow) => api.get(`/api/workflows/${id}/file-columns?filename=${encodeURIComponent(filename)}&header_row=${headerRow}`)
 export const getFileColumnValues = (id, filename, colName, headerRow) => api.get(`/api/workflows/${id}/file-column-values?filename=${encodeURIComponent(filename)}&col_name=${encodeURIComponent(colName)}&header_row=${headerRow}`)
+export const getGoogleSheetsColumns = (data) => api.post(`/api/workflows/google-sheets/columns`, data)
 export const uploadWorkflowFile  = (id, formData) => api.post(`/api/workflows/${id}/files`, formData, { headers: { 'Content-Type': 'multipart/form-data' }})
 export const deleteWorkflowFile  = (id, filename) => api.delete(`/api/workflows/${id}/files/${filename}`)
 export const openWorkflowFile    = (id, filename) => api.get(`/api/workflows/${id}/files/${filename}/open`)

@@ -1853,18 +1853,82 @@ output_data = {{"result": rows, "row_count": row_count}}
                             row_count_var = bdata.get("sqlExecRowCountVarName", "").strip()
                             if row_count_var:
                                 workflow_env[row_count_var] = current_input.get("row_count")
+            elif btype == "google_sheets_read":
+                url = interpolate(bdata.get("googleSheetsUrl", ""))
+                sheet_name = interpolate(bdata.get("googleSheetsSheetName", ""))
+                header_row = int(bdata.get("googleSheetsHeaderRow") or 1)
+                output_var = bdata.get("outputVarName") or "google_sheets_data"
+                custom_mappings = bdata.get("columnMappings") or {}
+
+                if not url:
+                    raise Exception("Chưa cấu hình Link Google Sheet")
+
+                match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+                if not match:
+                    raise Exception("Link Google Sheet không hợp lệ")
+                sheet_id = match.group(1)
+
+                if sheet_name and sheet_name.strip():
+                    encoded_name = urllib.parse.quote(sheet_name.strip())
+                    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+                else:
+                    gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
+                    if gid_match:
+                        gid = gid_match.group(1)
+                        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+                    else:
+                        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+                resp = requests.get(csv_url, timeout=20)
+                if resp.status_code != 200:
+                    raise Exception(f"Không thể tải Google Sheet (HTTP {resp.status_code}). Đảm bảo file ở chế độ Public View.")
+
+                header_idx = max(0, header_row - 1)
+                df = pd.read_csv(io.StringIO(resp.text), header=header_idx)
+                df = df.fillna('')
+
+                clean_cols = []
+                for c in df.columns:
+                    c_str = str(c).strip()
+                    if c_str.startswith("Unnamed:"):
+                        clean_cols.append("")
+                    else:
+                        clean_cols.append(c_str)
+                df.columns = clean_cols
+
+                records = []
+                for _, row in df.iterrows():
+                    item_dict = {}
+                    for orig_col in df.columns:
+                        if not orig_col:
+                            continue
+                        val = str(row[orig_col])
+                        var_key = custom_mappings.get(orig_col) or orig_col
+                        item_dict[var_key] = val
+                    records.append(item_dict)
+
+                if not isinstance(current_input, dict):
+                    current_input = {}
+
+                current_input[output_var] = records
+                current_input[f"{output_var}_count"] = len(records)
+                workflow_env[output_var] = records
+                workflow_env[f"{output_var}_count"] = len(records)
+
+                if log_fn:
+                    log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}'")
             elif btype == "condition":
                 logical_op = bdata.get("logicalOperator", "AND").upper()
                 conditions = bdata.get("conditions")
                 
                 # Backward compatibility
-                if not conditions:
+                if not conditions and "condVariable" in bdata:
                     conditions = [{
-                        "condVariable": bdata.get("condVariable", "").strip(),
+                        "condVariable": bdata.get("condVariable"),
                         "condOperator": bdata.get("condOperator", "=="),
-                        "condValue": bdata.get("condValue", "").strip()
+                        "condValue": bdata.get("condValue", "")
                     }]
-                
+
                 if not conditions:
                     if log_fn:
                         log_fn(bid, "warning", f"⚠️ Block [{label}] không có điều kiện nào")
@@ -1872,42 +1936,32 @@ output_data = {{"result": rows, "row_count": row_count}}
                     continue
 
                 if log_fn:
-                    log_fn(bid, "info", f"🤔 Đang kiểm tra {len(conditions)} điều kiện ({logical_op})")
-                
+                    log_fn(bid, "info", f"🔀 [Condition] Kiểm tra {len(conditions)} điều kiện ({logical_op})")
+
                 try:
                     results = []
                     for idx, cond in enumerate(conditions):
                         cond_var = cond.get("condVariable", "").strip()
                         cond_op = cond.get("condOperator", "==")
                         cond_val = cond.get("condValue", "").strip()
-                        
+
                         actual_val = None
                         if isinstance(current_input, dict):
                             actual_val = current_input.get(cond_var)
-                        
+
                         result = False
-                        cmp_val = cond_val
-                        if isinstance(actual_val, int):
-                            try: cmp_val = int(cond_val)
-                            except: pass
-                        elif isinstance(actual_val, float):
-                            try: cmp_val = float(cond_val)
-                            except: pass
-                        elif isinstance(actual_val, bool):
-                            cmp_val = str(cond_val).lower() == 'true'
-                            
                         if cond_op == "==":
-                            result = (actual_val == cmp_val) or (str(actual_val) == str(cmp_val))
+                            result = str(actual_val) == str(cond_val)
                         elif cond_op == "!=":
-                            result = (actual_val != cmp_val) and (str(actual_val) != str(cmp_val))
+                            result = str(actual_val) != str(cond_val)
                         elif cond_op == ">":
-                            result = float(actual_val) > float(cmp_val)
+                            result = float(actual_val or 0) > float(cond_val or 0)
                         elif cond_op == "<":
-                            result = float(actual_val) < float(cmp_val)
+                            result = float(actual_val or 0) < float(cond_val or 0)
                         elif cond_op == ">=":
-                            result = float(actual_val) >= float(cmp_val)
+                            result = float(actual_val or 0) >= float(cond_val or 0)
                         elif cond_op == "<=":
-                            result = float(actual_val) <= float(cmp_val)
+                            result = float(actual_val or 0) <= float(cond_val or 0)
                         elif cond_op == "contains":
                             result = str(cmp_val) in str(actual_val)
                             
@@ -1952,6 +2006,43 @@ output_data = {{"result": rows, "row_count": row_count}}
                     cond_branch_taken = "loop" if state["runs"] < max_count else "endloop"
                     if log_fn:
                         log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
+                elif mode == "array":
+                    array_var = bdata.get("loopArrayVar", "google_sheets_data").strip()
+                    item_var = bdata.get("loopItemVar", "item").strip()
+
+                    array_data = []
+                    if isinstance(current_input, dict) and array_var in current_input:
+                        array_data = current_input[array_var]
+                    elif array_var in workflow_env:
+                        array_data = workflow_env[array_var]
+
+                    if not isinstance(array_data, list):
+                        array_data = []
+
+                    total_items = len(array_data)
+                    if log_fn:
+                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']} / {total_items} (Mảng: {array_var})")
+
+                    if state["runs"] <= total_items and total_items > 0:
+                        current_item = array_data[state["runs"] - 1]
+                        if not isinstance(current_input, dict):
+                            current_input = {}
+                        
+                        current_input[item_var] = current_item
+                        workflow_env[item_var] = current_item
+
+                        if isinstance(current_item, dict):
+                            for k, v in current_item.items():
+                                current_input[k] = v
+                                workflow_env[k] = v
+
+                        cond_branch_taken = "loop"
+                        if log_fn:
+                            log_fn(bid, "success", f"✅ [Loop] Đi nhánh: loop (Dòng {state['runs']}/{total_items})")
+                    else:
+                        cond_branch_taken = "endloop"
+                        if log_fn:
+                            log_fn(bid, "success", f"✅ [Loop] Hoàn tất {total_items} phần tử mảng -> Đi nhánh: endloop")
                 else: # condition
                     logical_op = bdata.get("logicalOperator", "AND").upper()
                     conditions = bdata.get("conditions")
