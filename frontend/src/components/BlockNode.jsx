@@ -159,7 +159,7 @@ const BlockNode = memo(({ id, data, selected }) => {
   const updateNodeInternals = useUpdateNodeInternals()
   useEffect(() => {
     updateNodeInternals(id)
-  }, [id, inPos, outPos, hasSource, hasTarget, data.type, updateNodeInternals])
+  }, [id, inPos, outPos, loopPos, donePos, hasSource, hasTarget, data.type, updateNodeInternals])
 
   return (
     <div
