@@ -917,13 +917,13 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
             <span>{formatDate(workflow.updated_at)}</span>
           </span>
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '2px 8px', borderRadius: 10,
+            display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+            padding: '0.15rem 0.5rem', borderRadius: 10,
             background: statusBadge.bg, color: statusBadge.color,
-            fontSize: '0.7rem', fontWeight: 500, whiteSpace: 'nowrap', lineHeight: 1
+            fontSize: '0.7rem', fontWeight: 500, whiteSpace: 'nowrap'
           }}>
             {statusBadge.dot}
-            {statusBadge.text}
+            <span style={{ transform: 'translateY(1px)' }}>{statusBadge.text}</span>
           </span>
         </div>
 
