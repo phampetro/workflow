@@ -19,6 +19,8 @@ from pathlib import Path
 import platform
 import zipfile
 import shutil
+import io
+import pandas as pd
 
 from services import venv_manager
 
