@@ -7,10 +7,22 @@ import useStore from '../store/useStore'
 
 const { Dragger } = Upload
 
+// Cho phép người dùng viết comment // và /* */ để chú thích biến khi soạn JSON,
+// vì JSON.parse chuẩn không hỗ trợ nên phải bóc comment (giữ nguyên nội dung trong chuỗi "...")
+// trước khi parse thật. Comment chỉ có tác dụng lúc soạn, không được lưu lại cùng dữ liệu.
+function stripJsonComments(text) {
+  return text.replace(/("(?:\\.|[^"\\])*")|(\/\/.*)|(\/\*[\s\S]*?\*\/)/g, (match, str) => str || '')
+}
+
+function stripTrailingCommas(text) {
+  return text.replace(/,(\s*[}\]])/g, '$1')
+}
+
 export default function InputJsonModal({ open, onClose, workflowId, projectId, initialData }) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const theme = useStore(state => state.theme)
   const [jsonText, setJsonText] = useState('{}')
+  const [savedJsonText, setSavedJsonText] = useState('{}')
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('json')
 
@@ -32,7 +44,17 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   useEffect(() => {
     if (open) {
-      setJsonText(JSON.stringify(initialData || {}, null, 2))
+      const rawText = initialData?.__raw_text__
+      let text = ''
+      if (rawText !== undefined) {
+        text = rawText
+      } else {
+        const cleanData = { ...(initialData || {}) }
+        delete cleanData.__raw_text__
+        text = JSON.stringify(cleanData, null, 2)
+      }
+      setJsonText(text)
+      setSavedJsonText(text)
       setActiveTab('json')
       loadFiles()
       loadDbConnections()
@@ -201,11 +223,12 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   const handleSaveJson = async () => {
     try {
-      const parsed = JSON.parse(jsonText)
+      const parsed = JSON.parse(stripTrailingCommas(stripJsonComments(jsonText)))
       setSaving(true)
-      await updateWorkflowInput(workflowId, parsed)
+      await updateWorkflowInput(workflowId, { raw_text: jsonText })
       message.success('Đã lưu cấu hình!')
-      onClose(parsed)
+      setSavedJsonText(jsonText)
+      onClose({ ...parsed, __raw_text__: jsonText })
     } catch (e) {
       message.error('Lỗi JSON: ' + e.message)
     } finally {
@@ -213,12 +236,29 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
     }
   }
 
-  const handleClose = () => {
+  const closeWithoutSaving = () => {
     if (activeTab === 'files' || activeTab === 'output' || activeTab === 'database') {
       onClose(initialData)
     } else {
       onClose()
     }
+  }
+
+  // Đóng bằng nút X, bấm ra ngoài hay phím Esc trước đây đều âm thầm bỏ qua thay đổi
+  // chưa lưu ở tab JSON (chỉ nút "Lưu" mới thực sự ghi xuống) — hỏi lại để tránh mất dữ liệu.
+  const handleClose = () => {
+    if (activeTab === 'json' && jsonText !== savedJsonText) {
+      modal.confirm({
+        title: 'Có thay đổi chưa lưu',
+        content: 'Bạn chưa bấm "Lưu" cho phần Biến môi trường. Đóng lại sẽ bỏ qua các thay đổi này, bạn có chắc chắn không?',
+        okText: 'Đóng, bỏ qua',
+        cancelText: 'Quay lại soạn',
+        okButtonProps: { danger: true },
+        onOk: closeWithoutSaving,
+      })
+      return
+    }
+    closeWithoutSaving()
   }
 
   const uploadProps = {
@@ -301,11 +341,28 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
               value={jsonText}
               theme={theme === 'light' ? 'light' : 'vs-dark'}
               onChange={val => setJsonText(val || '')}
+              onMount={(editor, monaco) => {
+                // Cho phép comment // và /* */, dấu phẩy cuối khi soạn — không bị gạch đỏ báo lỗi
+                // (Lưu vẫn parse đúng nhờ stripJsonComments/stripTrailingCommas ở handleSaveJson)
+                monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+                  validate: true,
+                  allowComments: true,
+                  comments: 'ignore',
+                  trailingCommas: 'ignore',
+                })
+              }}
               options={{
                 minimap: { enabled: false },
                 fontSize: 13,
                 formatOnPaste: true,
-                scrollBeyondLastLine: false
+                scrollBeyondLastLine: false,
+                // Tắt gợi ý tự động — JSON key/value không cần IntelliSense, nhưng khung gợi ý
+                // lại hay tranh chấp phím (Enter/Tab) với lúc gõ bình thường, gây thiếu khoảng cách.
+                quickSuggestions: false,
+                suggestOnTriggerCharacters: false,
+                wordBasedSuggestions: 'off',
+                acceptSuggestionOnEnter: 'off',
+                tabCompletion: 'off',
               }}
             />
           </div>

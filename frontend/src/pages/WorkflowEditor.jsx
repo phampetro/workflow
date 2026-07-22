@@ -149,7 +149,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
     getWorkflowInput(workflow.id).then((res) => {
       setInputData(res.data)
-      setInputKeys(Object.keys(res.data || {}))
+      setInputKeys(Object.keys(res.data || {}).filter(k => k !== '__raw_text__'))
     }).catch(() => {})
 
     // Khôi phục trạng thái đang chạy hoặc xem log cũ (khi user vào màn hình)
@@ -516,7 +516,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             <ArrowLeft size="0.875rem" /> Quay lại
           </Button>
           <div className="toolbar-sep" />
-          <div className="toolbar-info" style={{ overflow: 'hidden' }}>
+          <div className="toolbar-info" style={{ overflow: 'hidden', paddingLeft: '0.375rem' }}>
             <div className="toolbar-dot" style={{ background: proj.color, flexShrink: 0 }} />
             <span className="text-secondary text-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '9.375rem' }}>{proj.name}</span>
             <span className="text-muted" style={{ flexShrink: 0 }}>/</span>
@@ -737,8 +737,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: var(--space-3); flex: 1; }
         .toolbar-right { justify-content: flex-end; }
         .toolbar-sep { width: 1px; height: 1.25rem; background: var(--border-default); }
-        .toolbar-info { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
-        .toolbar-dot { width: 0.625rem; height: 0.625rem; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+        .toolbar-info { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; margin-left: 1rem; }
+        .toolbar-dot { width: 0.625rem; height: 0.625rem; border-radius: 50%; box-shadow: 0 0 4px currentColor; }
         
         .editor-body { flex: 1; display: flex; overflow: hidden; position: relative; }
         

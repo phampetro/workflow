@@ -401,13 +401,25 @@ async def get_workflow_input(workflow_id: str, session: AsyncSession = Depends(g
         text = re.sub(r'[-\s_]+', '_', text)
         return text
         
+    def parse_json_with_comments(content_str: str) -> dict:
+        if not content_str or not content_str.strip():
+            return {}
+        pattern = r'("(?:\\.|[^"\\])*")|(//.*)|(/\*[\s\S]*?\*/)'
+        cleaned = re.sub(pattern, lambda m: m.group(1) if m.group(1) else '', content_str)
+        cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+        return json.loads(cleaned)
+
     wf_dir = get_project_dir(wf.project_id) / f"wf_{slugify(wf.name)}"
     input_file = wf_dir / "input" / "input.json"
     
     if input_file.exists():
         try:
             with open(input_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                raw_text = f.read()
+                data = parse_json_with_comments(raw_text)
+                if isinstance(data, dict):
+                    data["__raw_text__"] = raw_text
+                return data
         except Exception:
             return {}
     return {}
@@ -427,14 +439,29 @@ async def update_workflow_input(workflow_id: str, body: dict, session: AsyncSess
         text = re.sub(r'[^\w\s-]', '', text).strip().lower()
         text = re.sub(r'[-\s_]+', '_', text)
         return text
+
+    def parse_json_with_comments(content_str: str) -> dict:
+        if not content_str or not content_str.strip():
+            return {}
+        pattern = r'("(?:\\.|[^"\\])*")|(//.*)|(/\*[\s\S]*?\*/)'
+        cleaned = re.sub(pattern, lambda m: m.group(1) if m.group(1) else '', content_str)
+        cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+        return json.loads(cleaned)
         
     wf_dir = get_project_dir(wf.project_id) / f"wf_{slugify(wf.name)}"
     input_dir = wf_dir / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
     input_file = input_dir / "input.json"
     
-    with open(input_file, "w", encoding="utf-8") as f:
-        json.dump(body, f, ensure_ascii=False, indent=2)
+    if isinstance(body, dict) and "raw_text" in body:
+        raw_text = body["raw_text"]
+        # Validate format
+        parse_json_with_comments(raw_text)
+        with open(input_file, "w", encoding="utf-8") as f:
+            f.write(raw_text)
+    else:
+        with open(input_file, "w", encoding="utf-8") as f:
+            json.dump(body, f, ensure_ascii=False, indent=2)
         
     return {"status": "ok"}
 

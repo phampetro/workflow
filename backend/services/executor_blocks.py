@@ -633,7 +633,11 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     input_file = input_dir / "input.json"
                     if input_file.exists():
                         with open(input_file, "r", encoding="utf-8") as f:
-                            workflow_env = json.load(f)
+                            content_str = f.read()
+                            pattern = r'("(?:\\.|[^"\\])*")|(//.*)|(/\*[\s\S]*?\*/)'
+                            cleaned = re.sub(pattern, lambda m: m.group(1) if m.group(1) else '', content_str)
+                            cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+                            workflow_env = json.loads(cleaned)
                 except Exception:
                     pass
                     
