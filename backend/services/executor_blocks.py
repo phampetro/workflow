@@ -1920,16 +1920,21 @@ output_data = {{"result": rows, "row_count": row_count}}
                         item_dict[var_key] = val
                     records.append(item_dict)
 
+                row_count_var = bdata.get("rowCountVarName") or "google_sheets_rows"
+
                 if not isinstance(current_input, dict):
                     current_input = {}
 
                 current_input[output_var] = records
-                current_input[f"{output_var}_count"] = len(records)
+                current_input[row_count_var] = len(records)
+                current_input["row_count"] = len(records)
+
                 workflow_env[output_var] = records
-                workflow_env[f"{output_var}_count"] = len(records)
+                workflow_env[row_count_var] = len(records)
+                workflow_env["row_count"] = len(records)
 
                 if log_fn:
-                    log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}'")
+                    log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}' (Số dòng: '{row_count_var}')")
             elif btype == "condition":
                 logical_op = bdata.get("logicalOperator", "AND").upper()
                 conditions = bdata.get("conditions")

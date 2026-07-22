@@ -542,7 +542,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isExcelToSql = node.data.type === 'excel_to_sql'
   const isRunSqlExec = node.data.type === 'run_sql_exec'
   const isGoogleSheets = node.data.type === 'google_sheets_read'
-  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel || isGoogleSheets
+  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel
 
   // Excel to SQL states
   const [dbTables, setDbTables] = useState([])
@@ -1162,7 +1162,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             googleSheetsUrl: node.data.googleSheetsUrl || '',
             googleSheetsSheetName: node.data.googleSheetsSheetName || 'Sheet1',
             googleSheetsHeaderRow: node.data.googleSheetsHeaderRow !== undefined ? node.data.googleSheetsHeaderRow : 1,
-            outputVarName: node.data.outputVarName || (isGoogleSheets ? 'google_sheets_data' : ''),
+            outputVarName: node.data.outputVarName || 'google_sheets_data',
+            rowCountVarName: node.data.rowCountVarName || 'google_sheets_rows',
             loopArrayVar: node.data.loopArrayVar || 'google_sheets_data',
             loopItemVar: node.data.loopItemVar || 'item',
           }}
@@ -1546,8 +1547,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Dòng tiêu đề (Header Row)" name="googleSheetsHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
               </Form.Item>
-              <Form.Item label="Tên biến mảng đầu ra" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng đầu ra' }]} tooltip="Các khối sau sẽ sử dụng biến mảng này để lặp (mặc định: google_sheets_data)">
+              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: google_sheets_data)">
                 <Input placeholder="google_sheets_data" />
+              </Form.Item>
+              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" tooltip="Chứa tổng số dòng dữ liệu đọc được (mặc định: google_sheets_rows)">
+                <Input placeholder="google_sheets_rows" />
               </Form.Item>
 
               <Divider style={{ margin: '16px 0' }} />
