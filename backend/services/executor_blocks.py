@@ -1982,11 +1982,11 @@ output_data = {{"result": rows, "row_count": row_count}}
                         elif cond_op == "<=":
                             result = float(actual_val or 0) <= float(cond_val or 0)
                         elif cond_op == "contains":
-                            result = str(cmp_val) in str(actual_val)
+                            result = str(cond_val) in str(actual_val)
                             
                         results.append(result)
                         if log_fn:
-                            log_fn(bid, "info", f"   [{idx+1}] {cond_var} ({actual_val}) {cond_op} {cmp_val} ➜ {result}")
+                            log_fn(bid, "info", f"   [{idx+1}] {cond_var} ({actual_val}) {cond_op} {cond_val} ➜ {result}")
                             
                     # Calculate final result
                     if logical_op == "OR":
