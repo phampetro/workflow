@@ -2027,7 +2027,6 @@ output_data = {{"result": rows, "row_count": row_count}}
                         log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
                 elif mode == "array":
                     array_var = bdata.get("loopArrayVar", "sheets_data").strip()
-                    item_var = bdata.get("loopItemVar", "item").strip()
 
                     array_data = []
                     if isinstance(current_input, dict) and array_var in current_input:
@@ -2047,13 +2046,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                         if not isinstance(current_input, dict):
                             current_input = {}
                         
-                        current_input[item_var] = current_item
-                        workflow_env[item_var] = current_item
-
                         if isinstance(current_item, dict):
                             for k, v in current_item.items():
                                 current_input[k] = v
                                 workflow_env[k] = v
+                        else:
+                            current_input["item"] = current_item
+                            workflow_env["item"] = current_item
 
                         cond_branch_taken = "loop"
                         if log_fn:
