@@ -71,6 +71,22 @@ class BrowserStepResult:
         self.stopped = stopped
 
 
+
+def get_locator(page, selector: str):
+    """Phân giải selector đặc biệt như label=..., placeholder=..."""
+    if not selector:
+        return page.locator("")
+    s = selector.strip()
+    if s.startswith("label="):
+        return page.get_by_label(s[6:].strip())
+    elif s.startswith("placeholder="):
+        return page.get_by_placeholder(s[12:].strip())
+    elif s.startswith("alt="):
+        return page.get_by_alt_text(s[4:].strip())
+    elif s.startswith("title="):
+        return page.get_by_title(s[6:].strip())
+    return get_locator(page, selector)
+
 async def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None) -> BrowserStepResult:
     """Thực thi một bước browser action."""
     action = step.get("action", "")
@@ -114,23 +130,23 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
 
         # ── Tương tác ─────────────────────────────────────────────────────
         elif action == "click":
-            await page.locator(selector).first.click(timeout=timeout)
+            await get_locator(page, selector).first.click(timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "double_click":
-            await page.locator(selector).first.dblclick(timeout=timeout)
+            await get_locator(page, selector).first.dblclick(timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "right_click":
-            await page.locator(selector).first.click(button="right", timeout=timeout)
+            await get_locator(page, selector).first.click(button="right", timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "hover":
-            await page.locator(selector).first.hover(timeout=timeout)
+            await get_locator(page, selector).first.hover(timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "scroll_to":
-            await page.locator(selector).first.scroll_into_view_if_needed(timeout=timeout)
+            await get_locator(page, selector).first.scroll_into_view_if_needed(timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "scroll_page":
@@ -152,33 +168,33 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
 
         # ── Nhập liệu ─────────────────────────────────────────────────────
         elif action == "fill":
-            await page.locator(selector).first.fill(value, timeout=timeout)
+            await get_locator(page, selector).first.fill(value, timeout=timeout)
             await log("info", f"'{selector}' = '{value}' ✓")
 
         elif action == "type_slowly":
-            await page.locator(selector).first.type(value, delay=80, timeout=timeout)
+            await get_locator(page, selector).first.type(value, delay=80, timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "clear":
-            await page.locator(selector).first.fill("", timeout=timeout)
+            await get_locator(page, selector).first.fill("", timeout=timeout)
             await log("info", f"'{selector}' đã xóa ✓")
 
         elif action == "press_key":
             actual_key = value if value else "Enter"
             if selector:
-                await page.locator(selector).first.press(actual_key, timeout=timeout)
+                await get_locator(page, selector).first.press(actual_key, timeout=timeout)
             else:
                 await page.keyboard.press(actual_key)
             await log("info", f"Key '{actual_key}' ✓")
 
         elif action == "upload_file":
-            await page.locator(selector).first.set_input_files(value, timeout=timeout)
+            await get_locator(page, selector).first.set_input_files(value, timeout=timeout)
             await log("info", f"Đã upload '{value}' 📤")
 
         elif action == "click_and_download":
             await log("info", f"Đang chờ tải file khi click '{selector}'...")
             async with page.expect_download(timeout=timeout) as download_info:
-                await page.locator(selector).first.click(timeout=timeout)
+                await get_locator(page, selector).first.click(timeout=timeout)
             
             download = await download_info.value
             
@@ -210,17 +226,17 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
         elif action == "select_option":
             try:
                 idx = int(value)
-                await page.locator(selector).first.select_option(index=idx, timeout=timeout)
+                await get_locator(page, selector).first.select_option(index=idx, timeout=timeout)
             except (ValueError, TypeError):
-                await page.locator(selector).first.select_option(label=value, timeout=timeout)
+                await get_locator(page, selector).first.select_option(label=value, timeout=timeout)
             await log("info", f"'{selector}' = '{value}' ✓")
 
         elif action == "check":
-            await page.locator(selector).first.check(timeout=timeout)
+            await get_locator(page, selector).first.check(timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         elif action == "uncheck":
-            await page.locator(selector).first.uncheck(timeout=timeout)
+            await get_locator(page, selector).first.uncheck(timeout=timeout)
             await log("info", f"'{selector}' ✓")
 
         # ── Modal & Dialog ────────────────────────────────────────────────
@@ -230,7 +246,7 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
             wait_state = step.get("state", "visible")
             if wait_state not in ("visible", "hidden", "attached", "detached"):
                 wait_state = "visible"
-            await page.locator(selector).first.wait_for(state=wait_state, timeout=timeout)
+            await get_locator(page, selector).first.wait_for(state=wait_state, timeout=timeout)
             state_label = {"visible": "đã xuất hiện", "hidden": "đã biến mất", "attached": "đã được thêm vào DOM", "detached": "đã bị xóa khỏi DOM"}[wait_state]
             await log("info", f"'{selector}' {state_label} ✓")
 
@@ -244,17 +260,17 @@ async def execute_step(page, step: dict, collected_data: dict, log_callback, blo
 
         # ── Thu thập dữ liệu ──────────────────────────────────────────────
         elif action == "get_text":
-            text = await page.locator(selector).first.inner_text(timeout=timeout)
+            text = await get_locator(page, selector).first.inner_text(timeout=timeout)
             collected_data[key_name] = text.strip()
             await log("info", f"'{selector}' → '{text.strip()[:80]}' ✓")
 
         elif action == "get_attribute":
-            attr_val = await page.locator(selector).first.get_attribute(attribute, timeout=timeout)
+            attr_val = await get_locator(page, selector).first.get_attribute(attribute, timeout=timeout)
             collected_data[key_name] = attr_val
             await log("info", f"'{selector}'.{attribute} → '{attr_val}' ✓")
 
         elif action == "get_all_text":
-            elements = page.locator(selector)
+            elements = get_locator(page, selector)
             count = await elements.count()
             texts = []
             for i in range(count):
