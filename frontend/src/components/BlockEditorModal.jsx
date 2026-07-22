@@ -759,6 +759,19 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     }
   }, [isTelegram, open, workflowId])
 
+  // Đồng bộ nội dung code cho Editor khi đổi block
+  useEffect(() => {
+    if (open) {
+      const initialCode = node.data.code || BLOCK_TEMPLATES.python.default
+      const initialSql = node.data.sqlQuery || DEFAULT_SQL_QUERY
+      setCode(initialCode)
+      setSqlCode(initialSql)
+      if (editorRef.current) {
+        editorRef.current.setValue(isPython ? initialCode : initialSql)
+      }
+    }
+  }, [open, node.id, isPython])
+
   // Fetch + poll listener status mỗi 5s
   useEffect(() => {
     if (!isTelegramListener || !open || !workflowId) return
@@ -2082,6 +2095,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           </div>
           <div style={{ flex: 1, background: 'var(--bg-base)', position: 'relative' }}>
             <Editor
+              key={node.id}
               height="100%"
               language={isPython ? "python" : "sql"}
               theme={theme === 'light' ? "light" : "vs-dark"}
