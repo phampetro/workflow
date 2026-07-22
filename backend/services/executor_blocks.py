@@ -1857,7 +1857,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                 url = interpolate(bdata.get("googleSheetsUrl", "")).strip()
                 sheet_name = interpolate(bdata.get("googleSheetsSheetName", "")).strip()
                 header_row = int(bdata.get("googleSheetsHeaderRow") or 1)
-                output_var = bdata.get("outputVarName") or "google_sheets_data"
+                output_var = bdata.get("outputVarName") or "sheets_data"
                 custom_mappings = bdata.get("columnMappings") or {}
 
                 if not url:
@@ -1920,7 +1920,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                         item_dict[var_key] = val
                     records.append(item_dict)
 
-                row_count_var = bdata.get("rowCountVarName") or "google_sheets_rows"
+                row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
 
                 if not isinstance(current_input, dict):
                     current_input = {}
@@ -2025,7 +2025,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                     if log_fn:
                         log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
                 elif mode == "array":
-                    array_var = bdata.get("loopArrayVar", "google_sheets_data").strip()
+                    array_var = bdata.get("loopArrayVar", "sheets_data").strip()
                     item_var = bdata.get("loopItemVar", "item").strip()
 
                     array_data = []

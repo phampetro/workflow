@@ -1162,9 +1162,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             googleSheetsUrl: node.data.googleSheetsUrl || '',
             googleSheetsSheetName: node.data.googleSheetsSheetName || 'Sheet1',
             googleSheetsHeaderRow: node.data.googleSheetsHeaderRow !== undefined ? node.data.googleSheetsHeaderRow : 1,
-            outputVarName: node.data.outputVarName || 'google_sheets_data',
-            rowCountVarName: node.data.rowCountVarName || 'google_sheets_rows',
-            loopArrayVar: node.data.loopArrayVar || 'google_sheets_data',
+            outputVarName: node.data.outputVarName || 'sheets_data',
+            rowCountVarName: node.data.rowCountVarName || 'sheets_rows',
+            loopArrayVar: node.data.loopArrayVar || 'sheets_data',
             loopItemVar: node.data.loopItemVar || 'item',
           }}
         >
@@ -1238,8 +1238,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               )}
               {loopMode === 'array' && (
                 <>
-                  <Form.Item name="loopArrayVar" label="Tên biến Mảng cần lặp" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Ví dụ: google_sheets_data (từ khối Google Sheets)">
-                    <AutoComplete options={autoCompleteOptions} placeholder="google_sheets_data" allowClear />
+                  <Form.Item name="loopArrayVar" label="Tên biến Mảng cần lặp" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Ví dụ: sheets_data (từ khối Google Sheets)">
+                    <AutoComplete options={autoCompleteOptions} placeholder="sheets_data" allowClear />
                   </Form.Item>
                   <Form.Item name="loopItemVar" label="Tên biến đại diện dòng hiện tại" rules={[{ required: true, message: 'Nhập tên biến đại diện' }]} tooltip="Mỗi vòng lặp sẽ gán dữ liệu dòng hiện tại vào biến này (ví dụ: {{item.ten_kh}} hoặc gọi trực tiếp {{ten_kh}})">
                     <Input placeholder="item" />
@@ -1547,11 +1547,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Dòng tiêu đề (Header Row)" name="googleSheetsHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
               </Form.Item>
-              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: google_sheets_data)">
-                <Input placeholder="google_sheets_data" />
+              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data)">
+                <Input placeholder="sheets_data" />
               </Form.Item>
-              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" tooltip="Chứa tổng số dòng dữ liệu đọc được (mặc định: google_sheets_rows)">
-                <Input placeholder="google_sheets_rows" />
+              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" tooltip="Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows)">
+                <Input placeholder="sheets_rows" />
               </Form.Item>
 
               <Divider style={{ margin: '16px 0' }} />
