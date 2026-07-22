@@ -85,7 +85,7 @@ def get_locator(page, selector: str):
         return page.get_by_alt_text(s[4:].strip())
     elif s.startswith("title="):
         return page.get_by_title(s[6:].strip())
-    return get_locator(page, selector)
+    return page.locator(selector)
 
 async def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None) -> BrowserStepResult:
     """Thực thi một bước browser action."""
