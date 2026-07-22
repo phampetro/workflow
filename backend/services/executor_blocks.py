@@ -2026,20 +2026,34 @@ output_data = {{"result": rows, "row_count": row_count}}
                     if log_fn:
                         log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
                 elif mode == "array":
-                    array_var = bdata.get("loopArrayVar", "sheets_data").strip()
+                    raw_var = bdata.get("loopArrayVar", "sheets_data")
+                    array_var_name = str(raw_var).strip()
+                    if array_var_name.startswith("{{") and array_var_name.endswith("}}"):
+                        array_var_name = array_var_name[2:-2].strip()
 
-                    array_data = []
-                    if isinstance(current_input, dict) and array_var in current_input:
-                        array_data = current_input[array_var]
-                    elif array_var in workflow_env:
-                        array_data = workflow_env[array_var]
+                    array_data = None
+                    if isinstance(current_input, dict) and array_var_name in current_input:
+                        array_data = current_input[array_var_name]
+                    elif array_var_name in workflow_env:
+                        array_data = workflow_env[array_var_name]
+
+                    if array_data is None:
+                        val = interpolate(str(raw_var))
+                        if isinstance(val, list):
+                            array_data = val
+                        elif isinstance(val, str) and val.startswith("["):
+                            try:
+                                import json
+                                array_data = json.loads(val.replace("'", '"'))
+                            except Exception:
+                                pass
 
                     if not isinstance(array_data, list):
                         array_data = []
 
                     total_items = len(array_data)
                     if log_fn:
-                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']} / {total_items} (Mảng: {array_var})")
+                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']} / {total_items} (Mảng: {array_var_name})")
 
                     if state["runs"] <= total_items and total_items > 0:
                         current_item = array_data[state["runs"] - 1]
