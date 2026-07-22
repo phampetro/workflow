@@ -245,6 +245,7 @@ const BlockNode = memo(({ id, data, selected }) => {
               {(() => {
                 const mode = data.loopMode || 'count';
                 if (mode === 'count') return `${data.loopCount || 0} lần`;
+                if (mode === 'array') return `Mảng: ${data.loopArrayVar || 'sheets_data'}`;
                 const conds = data.conditions || [];
                 if (!conds[0]?.condVariable) return '? == ?';
                 if (conds.length === 1) return `${conds[0].condVariable} ${conds[0].condOperator} ${conds[0].condValue}`;
