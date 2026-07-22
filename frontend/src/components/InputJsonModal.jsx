@@ -23,6 +23,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const theme = useStore(state => state.theme)
   const [jsonText, setJsonText] = useState('{}')
   const [savedJsonText, setSavedJsonText] = useState('{}')
+  const jsonEditorRef = React.useRef(null)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('json')
 
@@ -55,6 +56,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       }
       setJsonText(text)
       setSavedJsonText(text)
+      if (jsonEditorRef.current) {
+        jsonEditorRef.current.setValue(text)
+      }
       setActiveTab('json')
       loadFiles()
       loadDbConnections()
@@ -223,12 +227,14 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   const handleSaveJson = async () => {
     try {
-      const parsed = JSON.parse(stripTrailingCommas(stripJsonComments(jsonText)))
+      const currentText = jsonEditorRef.current ? jsonEditorRef.current.getValue() : jsonText
+      const parsed = JSON.parse(stripTrailingCommas(stripJsonComments(currentText)))
       setSaving(true)
-      await updateWorkflowInput(workflowId, { raw_text: jsonText })
+      await updateWorkflowInput(workflowId, { raw_text: currentText })
       message.success('Đã lưu cấu hình!')
-      setSavedJsonText(jsonText)
-      onClose({ ...parsed, __raw_text__: jsonText })
+      setSavedJsonText(currentText)
+      setJsonText(currentText)
+      onClose({ ...parsed, __raw_text__: currentText })
     } catch (e) {
       message.error('Lỗi JSON: ' + e.message)
     } finally {
@@ -247,7 +253,8 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   // Đóng bằng nút X, bấm ra ngoài hay phím Esc trước đây đều âm thầm bỏ qua thay đổi
   // chưa lưu ở tab JSON (chỉ nút "Lưu" mới thực sự ghi xuống) — hỏi lại để tránh mất dữ liệu.
   const handleClose = () => {
-    if (activeTab === 'json' && jsonText !== savedJsonText) {
+    const currentText = jsonEditorRef.current ? jsonEditorRef.current.getValue() : jsonText
+    if (activeTab === 'json' && currentText !== savedJsonText) {
       modal.confirm({
         title: 'Có thay đổi chưa lưu',
         content: 'Bạn chưa bấm "Lưu" cho phần Biến môi trường. Đóng lại sẽ bỏ qua các thay đổi này, bạn có chắc chắn không?',
@@ -338,10 +345,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             <Editor
               height="100%"
               defaultLanguage="json"
-              value={jsonText}
+              defaultValue={jsonText}
               theme={theme === 'light' ? 'light' : 'vs-dark'}
-              onChange={val => setJsonText(val || '')}
               onMount={(editor, monaco) => {
+                jsonEditorRef.current = editor
                 // Cho phép comment // và /* */, dấu phẩy cuối khi soạn — không bị gạch đỏ báo lỗi
                 // (Lưu vẫn parse đúng nhờ stripJsonComments/stripTrailingCommas ở handleSaveJson)
                 monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
