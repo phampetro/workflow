@@ -482,6 +482,28 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const [loadingTelegramFiles, setLoadingTelegramFiles] = useState(false)
   const [listenerCommands, setListenerCommands] = useState(node.data.telegramListenerCommands || [{ command: '/hi', description: 'Gửi lời chào', reply: 'Xin chào! 👋', runWorkflow: false }])
   const [listenerRunning, setListenerRunning] = useState(false)
+  const dragCmdItem = React.useRef(null)
+  const dragCmdOverItem = React.useRef(null)
+
+  const handleCmdDragStart = (e, index) => {
+    dragCmdItem.current = index
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const handleCmdDragEnter = (e, index) => {
+    e.preventDefault()
+    dragCmdOverItem.current = index
+  }
+  const handleCmdDragEnd = () => {
+    if (dragCmdItem.current === null || dragCmdOverItem.current === null) return
+    if (dragCmdItem.current !== dragCmdOverItem.current) {
+      const reordered = [...listenerCommands]
+      const [dragged] = reordered.splice(dragCmdItem.current, 1)
+      reordered.splice(dragCmdOverItem.current, 0, dragged)
+      setListenerCommands(reordered)
+    }
+    dragCmdItem.current = null
+    dragCmdOverItem.current = null
+  }
 
   const telegramParseMode = Form.useWatch('telegramParseMode', form)
   const telegramAction = Form.useWatch('telegramAction', form)
@@ -614,7 +636,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     try {
       const cancel = streamAiCodegen({
         instruction: aiInstruction,
-        code: isPython ? code : sqlCode,
+        code: editorRef.current ? editorRef.current.getValue() : (isPython ? code : sqlCode),
         selection: selectedText,
         language: isPython ? 'python' : 'sql'
       }, {
@@ -947,8 +969,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       const values = await form.validateFields()
       onSave(node.id, {
         ...values,
-        ...(isPython ? { code } : {}),
-        ...(isSqlToExcel ? { sqlQuery: sqlCode } : {}),
+        ...(isPython ? { code: editorRef.current ? editorRef.current.getValue() : code } : {}),
+        ...(isSqlToExcel ? { sqlQuery: editorRef.current ? editorRef.current.getValue() : sqlCode } : {}),
         ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
         ...(isBrowser ? { steps: browserSteps } : {}),
         ...(isTelegramListener ? { telegramListenerCommands: listenerCommands } : {}),
@@ -965,8 +987,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   }
 
   const applyTemplate = (key) => {
-    setCode(BLOCK_TEMPLATES.python[key])
-    setActiveTemplate(key)
+    const newCode = BLOCK_TEMPLATES.python[key];
+    if (editorRef.current) {
+      editorRef.current.setValue(newCode);
+    }
+    setCode(newCode);
+    setActiveTemplate(key);
   }
 
   const getDrawerWidth = () => {
@@ -1660,8 +1686,19 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
               {/* Commands Table */}
               {listenerCommands.map((cmd, idx) => (
-                <div key={idx} style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 14, marginBottom: 10, border: '1px solid var(--border-default)' }}>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div
+                  key={idx}
+                  draggable
+                  onDragStart={(e) => handleCmdDragStart(e, idx)}
+                  onDragEnter={(e) => handleCmdDragEnter(e, idx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDragEnd={handleCmdDragEnd}
+                  style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 14, marginBottom: 10, border: '1px solid var(--border-default)' }}
+                >
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }} title="Kéo thả để sắp xếp">
+                      <GripVertical size={14} />
+                    </div>
                     <Input
                       value={cmd.command}
                       onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], command: e.target.value }; setListenerCommands(c) }}
@@ -1688,13 +1725,15 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                       <Button size="small" type="text" danger icon={<Trash2 size="0.8rem" />} onClick={() => setListenerCommands(listenerCommands.filter((_, i) => i !== idx))} aria-label="Xóa lệnh listener" />
                     )}
                   </div>
-                  <Input.TextArea
-                    value={cmd.reply}
-                    onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], reply: e.target.value }; setListenerCommands(c) }}
-                    placeholder="Mẫu trả lời..."
-                    rows={2}
-                    style={{ fontSize: '0.9rem' }}
-                  />
+                  {!cmd.runWorkflow && (
+                    <Input.TextArea
+                      value={cmd.reply}
+                      onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], reply: e.target.value }; setListenerCommands(c) }}
+                      placeholder="Mẫu trả lời..."
+                      rows={2}
+                      style={{ fontSize: '0.9rem' }}
+                    />
+                  )}
                 </div>
               ))}
 
@@ -1708,7 +1747,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     <div>• <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <Text code style={{ fontSize: '0.75rem' }}>/</Text> (vd: <Text code style={{ fontSize: '0.75rem' }}>/start</Text>). Nhập <Text code style={{ fontSize: '0.75rem' }}>*</Text> hoặc để trống để bắt <b>mọi tin nhắn</b>.</div>
                     <div>• <b>Reply</b>: Bot trả lời ngay, không chạy workflow</div>
-                    <div>• <b>WF</b>: Bot trả lời + chạy các block phía sau</div>
+                    <div>• <b>WF</b>: Chạy tiếp các block phía sau, không gửi mẫu trả lời (muốn phản hồi thì thêm khối Telegram trong workflow)</div>
                     <div>• Dữ liệu truyền vào workflow: <Text code style={{ fontSize: '0.75rem' }}>{'{chat_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{message_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{text}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{sender_name}'}</Text> (không có <Text code style={{ fontSize: '0.75rem' }}>{'{command}'}</Text> — tên lệnh chỉ dùng nội bộ để định tuyến, không truyền vào biến)</div>
                   </div>
                 }
@@ -2046,8 +2085,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               height="100%"
               language={isPython ? "python" : "sql"}
               theme={theme === 'light' ? "light" : "vs-dark"}
-              value={isPython ? code : sqlCode}
-              onChange={(value) => isPython ? setCode(value) : setSqlCode(value)}
+              defaultValue={isPython ? code : sqlCode}
               onMount={(editor, monaco) => {
                 editorRef.current = editor;
                 monacoRef.current = monaco;
@@ -2070,6 +2108,15 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 tabSize: 4,
                 insertSpaces: true,
                 bracketPairColorization: { enabled: true },
+                // Khối này chỉ viết 1 đoạn script ngắn, không có language server thật nên gợi ý
+                // tự động không có giá trị — lại hay tranh chấp phím (Enter/Tab) với lúc gõ
+                // bình thường, gây cảm giác gõ bị giật/thiếu khoảng cách. Tắt hẳn cho gõ tự nhiên.
+                quickSuggestions: false,
+                suggestOnTriggerCharacters: false,
+                wordBasedSuggestions: 'off',
+                parameterHints: { enabled: false },
+                acceptSuggestionOnEnter: 'off',
+                tabCompletion: 'off',
               }}
             />
 
