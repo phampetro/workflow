@@ -1,0 +1,62 @@
+[
+ [
+  "f0332bb5-eeb8-4291-b382-0d560e0bb8f5",
+  "1241ca4e-4e46-4e5e-b1cb-eb4d996f2ac9",
+  "6f4a91c7-2d6d-472a-b2cb-7edba57666e4",
+  "error",
+  "2026-07-22 20:58:15.759098",
+  "2026-07-22T20:58:16.271465",
+  0,
+  "manual",
+  "cannot access local variable 'json' where it is not associated with a value",
+  "[]"
+ ],
+ [
+  "36b10cc3-1523-408d-bafe-c9287ad9a324",
+  "1241ca4e-4e46-4e5e-b1cb-eb4d996f2ac9",
+  "6f4a91c7-2d6d-472a-b2cb-7edba57666e4",
+  "error",
+  "2026-07-22 20:49:07.332056",
+  "2026-07-22T20:49:07.838271",
+  0,
+  "manual",
+  "cannot access local variable 'json' where it is not associated with a value",
+  "[]"
+ ],
+ [
+  "4ce3e4f2-28f8-4be7-ace7-7902d73cbaf0",
+  "1241ca4e-4e46-4e5e-b1cb-eb4d996f2ac9",
+  "6f4a91c7-2d6d-472a-b2cb-7edba57666e4",
+  "error",
+  "2026-07-22 20:48:39.692600",
+  "2026-07-22T20:48:40.198996",
+  0,
+  "manual",
+  "cannot access local variable 'json' where it is not associated with a value",
+  "[]"
+ ],
+ [
+  "738a64ed-1a08-4884-a3ec-dab15023b911",
+  "1241ca4e-4e46-4e5e-b1cb-eb4d996f2ac9",
+  "6f4a91c7-2d6d-472a-b2cb-7edba57666e4",
+  "success",
+  "2026-07-22 20:47:14.799149",
+  "2026-07-22T20:47:16.063664",
+  756,
+  "manual",
+  null,
+  "[{\"run_id\": \"738a64ed-1a08-4884-a3ec-dab15023b911\", \"block_id\": \"system\", \"level\": \"info\", \"message\": \"\\ud83d\\ude80 B\\u1eaft \\u0111\\u1ea7u workflow (Dynamic Routing)\", \"timestamp\": 454382.6042652},{\"run_id\": \"738a64ed-1a08-4884-a3ec-dab15023b911\", \"block_id\": \"start-122\", \"level\": \"info\", \"message\": \"\\u25b6  [Start] Start\", \"timestamp\": 454382.6067218},{\"run_id\": \"738a64ed-1a08-4884-a3ec-dab15023b911\", \"block_id\": \"google_sheets_read-302\", \"level\": \"success\", \"message\": \"\\ud83d\\udfe2 [Google Sheets] \\u0110\\u1ecdc th\\u00e0nh c\\u00f4ng 2 d\\u00f2ng v\\u00e0o bi\\u1ebfn 'sheets_data' (S\\u1ed1 d\\u00f2ng: 'sheets_rows')\", \"timestamp\": 454383.3579134},{\"run_id\": \"738a64ed-1a08-4884-a3ec-dab15023b911\", \"block_id\": \"loop-307\", \"level\": \"info\", \"message\": \"\\ud83d\\udd01 [Loop] L\\u1ea7n l\\u1eb7p 1 / 0 (M\\u1ea3ng: [{'ma_kh': 'C079772408', 'ten_kh': 'L\\u00ea Ng\\u1ecdc \\u00c1nh', 'ma_npp': 'GTHCM093'}, {'ma_kh': 'C079005748', 'ten_kh': 'Tr\\u1ea7n Th\\u1ecb Ph\\u01b0\\u01a1ng Th\\u00f9y', 'ma_npp': 'GTHCM087A'}])\", \"timestamp\": 454383.3582062},{\"run_id\": \"738a64ed-1a08-4884-a3ec-dab15023b911\", \"block_id\": \"loop-307\", \"level\": \"success\", \"message\": \"\\u2705 [Loop] Ho\\u00e0n t\\u1ea5t 0 ph\\u1ea7n t\\u1eed m\\u1ea3ng -> \\u0110i nh\\u00e1nh: endloop\", \"timestamp\": 454383.35835},{\"run_id\": \"738a64ed-1a08-4884-a3ec-dab15023b911\", \"block_id\": \"system\", \"level\": \"success\", \"message\": \"\\u2705 Workflow ho\\u00e0n th\\u00e0nh trong 756ms\", \"timestamp\": 454383.3647849}]"
+ ],
+ [
+  "210a960b-cf86-471a-831a-cb0e7ca083a1",
+  "1241ca4e-4e46-4e5e-b1cb-eb4d996f2ac9",
+  "6f4a91c7-2d6d-472a-b2cb-7edba57666e4",
+  "success",
+  "2026-07-22 20:37:14.424491",
+  "2026-07-22T20:37:16.267419",
+  1338,
+  "manual",
+  null,
+  "[{\"run_id\": \"210a960b-cf86-471a-831a-cb0e7ca083a1\", \"block_id\": \"system\", \"level\": \"info\", \"message\": \"\\ud83d\\ude80 B\\u1eaft \\u0111\\u1ea7u workflow (Dynamic Routing)\", \"timestamp\": 453782.2255515},{\"run_id\": \"210a960b-cf86-471a-831a-cb0e7ca083a1\", \"block_id\": \"start-122\", \"level\": \"info\", \"message\": \"\\u25b6  [Start] Start\", \"timestamp\": 453782.2269226},{\"run_id\": \"210a960b-cf86-471a-831a-cb0e7ca083a1\", \"block_id\": \"google_sheets_read-302\", \"level\": \"success\", \"message\": \"\\ud83d\\udfe2 [Google Sheets] \\u0110\\u1ecdc th\\u00e0nh c\\u00f4ng 5 d\\u00f2ng v\\u00e0o bi\\u1ebfn 'sheets_data' (S\\u1ed1 d\\u00f2ng: 'sheets_rows')\", \"timestamp\": 453782.7178655},{\"run_id\": \"210a960b-cf86-471a-831a-cb0e7ca083a1\", \"block_id\": \"telegram-305\", \"level\": \"info\", \"message\": \"\\u2709\\ufe0f [Telegram] Telegram - \\u0110ang g\\u1eedi tin nh\\u1eafn t\\u1edbi -5317664121...\", \"timestamp\": 453782.7178873},{\"run_id\": \"210a960b-cf86-471a-831a-cb0e7ca083a1\", \"block_id\": \"telegram-305\", \"level\": \"success\", \"message\": \"\\u2705 [Telegram] Telegram - \\u0110\\u00e3 g\\u1eedi th\\u00e1nh c\\u00f4ng! (message_id=8)\", \"timestamp\": 453783.5620204},{\"run_id\": \"210a960b-cf86-471a-831a-cb0e7ca083a1\", \"block_id\": \"system\", \"level\": \"success\", \"message\": \"\\u2705 Workflow ho\\u00e0n th\\u00e0nh trong 1338ms\", \"timestamp\": 453783.5637821}]"
+ ]
+]

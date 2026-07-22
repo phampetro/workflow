@@ -1,0 +1,922 @@
+[
+ {
+  "id": "1241ca4e-4e46-4e5e-b1cb-eb4d996f2ac9",
+  "name": "Tủ đông",
+  "project_id": "6f4a91c7-2d6d-472a-b2cb-7edba57666e4",
+  "graph": {
+   "nodes": [
+    {
+     "id": "telegram_listener-101",
+     "type": "block",
+     "position": {
+      "x": 63.64360714651302,
+      "y": -93.81635789564291
+     },
+     "data": {
+      "type": "telegram_listener",
+      "label": "TG Listener",
+      "description": "Lắng nghe lệnh Telegram",
+      "telegramListenerCommands": [
+       {
+        "command": "/hi",
+        "reply": "Xin chào! 👋",
+        "runWorkflow": false,
+        "description": "Lời chào !"
+       },
+       {
+        "command": "/hdtd",
+        "description": "Hướng dẫn cú pháp tự động tạo hợp đồng tủ đông",
+        "reply": "<b>Hướng dẫn cú pháp tạo hợp đồng tủ đông tự động:</b>\n<i>- Cú pháp: </i> HDTD: MaNPP - MaKH\n<i>- Ví dụ: </i>HDTD: GTMDONG001 - C0003421122",
+        "runWorkflow": false
+       },
+       {
+        "command": "",
+        "description": "",
+        "reply": "",
+        "runWorkflow": true
+       }
+      ],
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramListenerToken": "TELEGRAM_TOKEN"
+     }
+    },
+    {
+     "id": "python-101",
+     "type": "block",
+     "position": {
+      "x": 212.77015160664638,
+      "y": -95.19994826411167
+     },
+     "data": {
+      "type": "python",
+      "label": "Python Block",
+      "description": "Phân loại chức năng",
+      "code": "import re\n\n# 1. Bóc lấy nội dung chữ\ntext_content = input_data.get(\"text\", \"\")\n\n# 2. Định nghĩa hàm xử lý\ndef phan_loai_du_lieu(text):\n    pattern = r\"^\\s*([A-Za-z0-9]+)\\s*:\\s*([A-Za-z0-9]+)\\s*-\\s*([A-Za-z0-9]+)\\s*$\"\n    match = re.match(pattern, str(text).strip())\n    \n    if match:\n        pha_loai, ma_np, ma_kh = match.groups()\n        return {\n            \"PhaLoai\": pha_loai,\n            \"MaNPP\": ma_np,\n            \"MaKH\": ma_kh,\n            \"status\": \"ok\"\n        }\n    else:\n        return {\n            \"PhaLoai\": None,\n            \"MaNPP\": None,\n            \"MaKH\": None,\n            \"status\": \"error\"\n        }\n\n# 3. Lấy kết quả phân loại\noutput_data = phan_loai_du_lieu(text_content)\n\n# 4. === PHẦN THÊM VÀO ĐỂ GIỮ LẠI CHAT_ID ===\n# Lấy lại toàn bộ thông tin gốc ban đầu (có chứa chat_id, from_name...)\nmerged_data = input_data.copy()\n# Cập nhật kết quả phân loại vào chung\nmerged_data.update(output_data)\n# Gán trả lại thành đầu ra chính thức\noutput_data = merged_data\n\n# In kết quả ra log\nprint(\"Dữ liệu phân loại:\", output_data)\n",
+      "inPosition": "left",
+      "outPosition": "right"
+     }
+    },
+    {
+     "id": "condition-102",
+     "type": "block",
+     "position": {
+      "x": 356.410336928525,
+      "y": -102.45145400557126
+     },
+     "data": {
+      "type": "condition",
+      "label": "Condition",
+      "description": "Kiểm tra",
+      "condition": "input_data is not None",
+      "inPosition": "left",
+      "outPosition": "right",
+      "condVariable": "status",
+      "condOperator": "==",
+      "condValue": "ok",
+      "logicalOperator": "AND",
+      "conditions": [
+       {
+        "condVariable": "status",
+        "condOperator": "==",
+        "condValue": "ok"
+       }
+      ]
+     }
+    },
+    {
+     "id": "telegram-104",
+     "type": "block",
+     "position": {
+      "x": 504.31388808644,
+      "y": 2.120760580029568
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "❌ <i>Sai cú pháp</i>",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "reply",
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "{chat_id}",
+      "telegramMessageId": "{message_id}"
+     }
+    },
+    {
+     "id": "telegram-101",
+     "type": "block",
+     "position": {
+      "x": 503.90125569075167,
+      "y": -177.8019877383881
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "✅ <i>- Tiếp nhận xử lý hợp đồng</i>\n⏳ <i>- Kiểm tra nhà phân phối</i>\n⏳ <i>- Kiểm tra khách hàng</i>\n⏳ <i>- Xử lý hợp đồng</i>\n⏳ <i>- Trạng thái: Đang chờ...</i>",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "reply",
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "{chat_id}",
+      "telegramMessageId": "{message_id}"
+     }
+    },
+    {
+     "id": "browser-102",
+     "type": "block",
+     "position": {
+      "x": 668.2370795316224,
+      "y": -151.98195546511408
+     },
+     "data": {
+      "type": "browser",
+      "label": "Trình Duyệt",
+      "description": "Tự động hóa trình duyệt web",
+      "steps": [
+       {
+        "action": "navigate",
+        "selector": "",
+        "value": "https://hopdongdientu.viettel.vn/enterprise-login",
+        "key_name": "result",
+        "note": "Vào link",
+        "continue_on_error": false
+       },
+       {
+        "action": "fill",
+        "selector": "//*[@id=\"username\"]",
+        "value": "0304475742_thangln",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "wait",
+        "selector": "",
+        "value": "1",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "fill",
+        "selector": "//*[@id=\"idPassword\"]",
+        "value": "Th@ng658182",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "click",
+        "selector": "button:has-text(\"Đăng nhập\")",
+        "value": "",
+        "key_name": "result",
+        "note": "Đăng nhập click",
+        "continue_on_error": false
+       },
+       {
+        "action": "wait",
+        "selector": "",
+        "value": "5",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "navigate",
+        "selector": "",
+        "value": "https://hopdongdientu.viettel.vn/home-enterprise/customers",
+        "key_name": "result",
+        "note": "Vào danh sách khách hàng",
+        "continue_on_error": false
+       },
+       {
+        "action": "type_slowly",
+        "selector": "//input[@name='taxCodeOrCertificateNo']",
+        "value": "{{MaNPP}}",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "click",
+        "selector": "//*[@id=\"cdk-accordion-child-2\"]/div/form/div[2]/div/button/span",
+        "value": "",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "wait",
+        "selector": "",
+        "value": "8",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "get_text",
+        "selector": "//*[@id=\"cdk-accordion-child-1\"]/div/app-pagination/nav/ul/li[3]/strong",
+        "value": "",
+        "key_name": "npp",
+        "note": "",
+        "continue_on_error": true
+       },
+       {
+        "action": "reload",
+        "selector": "",
+        "value": "",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "wait",
+        "selector": "",
+        "value": "5",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "type_slowly",
+        "selector": "//input[@name='taxCodeOrCertificateNo']",
+        "value": "{{MaKH}}",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "click",
+        "selector": "//*[@id=\"cdk-accordion-child-2\"]/div/form/div[2]/div/button/span",
+        "value": "",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "wait",
+        "selector": "",
+        "value": "8",
+        "key_name": "result",
+        "note": "",
+        "continue_on_error": false
+       },
+       {
+        "action": "get_text",
+        "selector": "//*[@id=\"cdk-accordion-child-1\"]/div/app-pagination/nav/ul/li[3]/strong",
+        "value": "",
+        "key_name": "kh",
+        "note": "",
+        "continue_on_error": false
+       }
+      ],
+      "debugMode": true,
+      "inPosition": "left",
+      "outPosition": "right"
+     }
+    },
+    {
+     "id": "condition-101",
+     "type": "block",
+     "position": {
+      "x": 822.476883611686,
+      "y": -147.9128045938951
+     },
+     "data": {
+      "type": "condition",
+      "label": "Condition",
+      "description": "Rẽ nhánh theo điều kiện",
+      "condition": "input_data is not None",
+      "inPosition": "left",
+      "outPosition": "right",
+      "condVariable": "npp",
+      "condOperator": "==",
+      "condValue": "1",
+      "logicalOperator": "AND",
+      "conditions": [
+       {
+        "condVariable": "npp",
+        "condOperator": "==",
+        "condValue": "1"
+       }
+      ]
+     }
+    },
+    {
+     "id": "telegram-102",
+     "type": "block",
+     "position": {
+      "x": 991.9490769918305,
+      "y": -34.817440817800815
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "✅ <i>- Tiếp nhận xử lý hợp đồng</i>\n❌ <i>- Kiểm tra nhà phân phối</i>\n⏳ <i>- Kiểm tra khách hàng</i>\n⏳ <i>- Xử lý hợp đồng</i>\n❌ <i>- Trạng thái: Chưa có NPP/ Trùng mã.</i>",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "edit",
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "{chat_id}",
+      "telegramMessageId": "{sent_message_id}"
+     }
+    },
+    {
+     "id": "telegram-111",
+     "type": "block",
+     "position": {
+      "x": 989.4927336673513,
+      "y": -177.10908647875777
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "✅ <i>- Tiếp nhận xử lý hợp đồng</i>\n✅ <i>- Kiểm tra nhà phân phối</i>\n⏳ <i>- Kiểm tra khách hàng</i>\n⏳ <i>- Xử lý hợp đồng</i>\n⏳ <i>- Trạng thái: Đang chờ...</i>",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "edit",
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "{chat_id}",
+      "telegramMessageId": "{sent_message_id}"
+     }
+    },
+    {
+     "id": "end-113",
+     "type": "block",
+     "position": {
+      "x": 1648.267502523615,
+      "y": 117.49000119311614
+     },
+     "data": {
+      "type": "end",
+      "label": "End",
+      "description": "Kết thúc workflow"
+     }
+    },
+    {
+     "id": "condition-117",
+     "type": "block",
+     "position": {
+      "x": 1153.7647244570398,
+      "y": -183.23220712030766
+     },
+     "data": {
+      "type": "condition",
+      "label": "Condition",
+      "description": "Rẽ nhánh theo điều kiện",
+      "condition": "input_data is not None",
+      "inPosition": "left",
+      "outPosition": "right",
+      "condVariable": "kh",
+      "condOperator": "==",
+      "condValue": "1",
+      "logicalOperator": "AND",
+      "conditions": [
+       {
+        "condVariable": "kh",
+        "condOperator": "==",
+        "condValue": "1"
+       }
+      ]
+     }
+    },
+    {
+     "id": "telegram-118",
+     "type": "block",
+     "position": {
+      "x": 1320.285506972033,
+      "y": -108.89798269381245
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "✅ <i>- Tiếp nhận xử lý hợp đồng</i>\n✅ <i>- Kiểm tra nhà phân phối</i>\n❌ <i>- Kiểm tra khách hàng</i>\n⏳ <i>- Xử lý hợp đồng</i>\n⏳ <i>- Trạng thái: Chưa có/ Nhiều mã KH giống nhau</i>",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "edit",
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "{chat_id}",
+      "telegramMessageId": "{sent_message_id}"
+     }
+    },
+    {
+     "id": "telegram-120",
+     "type": "block",
+     "position": {
+      "x": 1321.8573598007072,
+      "y": -245.6491787884466
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "✅ <i>- Tiếp nhận xử lý hợp đồng</i>\n✅ <i>- Kiểm tra nhà phân phối</i>\n✅ <i>- Kiểm tra khách hàng</i>\n⏳ <i>- Xử lý hợp đồng</i>\n⏳ <i>- Trạng thái: Đang chờ...</i>",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "edit",
+      "inPosition": "left",
+      "outPosition": "right",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "{chat_id}",
+      "telegramMessageId": "{sent_message_id}"
+     }
+    },
+    {
+     "id": "start-122",
+     "type": "block",
+     "position": {
+      "x": -74.04476952763336,
+      "y": -443.83965225449003
+     },
+     "data": {
+      "type": "start",
+      "label": "Start",
+      "description": "Điểm bắt đầu workflow"
+     }
+    },
+    {
+     "id": "loop-300",
+     "type": "block",
+     "position": {
+      "x": 80.6249595366766,
+      "y": 157.3124386383922
+     },
+     "data": {
+      "type": "loop",
+      "label": "Vòng Lặp",
+      "description": "Lặp lại theo số lần/điều kiện"
+     }
+    },
+    {
+     "id": "google_sheets_read-302",
+     "type": "block",
+     "position": {
+      "x": 79.06640724641946,
+      "y": -448.8002379226006
+     },
+     "data": {
+      "type": "google_sheets_read",
+      "label": "Google Sheets",
+      "description": "Đọc dữ liệu từ Google Sheet (Public Link)",
+      "inPosition": "left",
+      "outPosition": "right",
+      "googleSheetsUrl": "https://docs.google.com/spreadsheets/d/1KqfndI35m_ChCau932QhjiYfljbpJqkNwEjBls-EkPs/edit?usp=sharing",
+      "googleSheetsSheetName": "Danh_sach_bot_tao_hop_dong",
+      "googleSheetsHeaderRow": 1,
+      "outputVarName": "sheets_data",
+      "googleSheetsCols": [
+       "ma_kh",
+       "ten_kh",
+       "ma_npp"
+      ],
+      "columnMappings": {},
+      "rowCountVarName": "sheets_rows"
+     }
+    },
+    {
+     "id": "telegram-305",
+     "type": "block",
+     "position": {
+      "x": 242.7913840956719,
+      "y": -286.41173616030414
+     },
+     "data": {
+      "type": "telegram",
+      "label": "Telegram",
+      "description": "Gửi tin nhắn Telegram",
+      "telegramMessage": "Số dòng: {{sheets_rows}}",
+      "telegramParseMode": "HTML",
+      "telegramAttachments": [],
+      "telegramAction": "send",
+      "inPosition": "right",
+      "outPosition": "left",
+      "telegramBotToken": "TELEGRAM_TOKEN",
+      "telegramChatId": "TELEGRAM_CHAT_ID",
+      "telegramMessageId": "{message_id}",
+      "telegramSentMessageIdVarName": "sent_message_id",
+      "telegramChatIdVarName": "chat_id"
+     }
+    },
+    {
+     "id": "loop-307",
+     "type": "block",
+     "position": {
+      "x": 284.82303819033206,
+      "y": -454.44125575293674
+     },
+     "data": {
+      "type": "loop",
+      "label": "Vòng Lặp",
+      "description": "Lặp lại theo số lần/điều kiện",
+      "inPosition": "left",
+      "outPosition": "right",
+      "loopPosition": "bottom",
+      "donePosition": "bottom",
+      "loopMode": "array",
+      "loopDelay": 5,
+      "loopArrayVar": "sheets_data"
+     }
+    },
+    {
+     "id": "end-309",
+     "type": "block",
+     "position": {
+      "x": 466.6191400985584,
+      "y": -339.3081885668621
+     },
+     "data": {
+      "type": "end",
+      "label": "End",
+      "description": "Kết thúc workflow"
+     }
+    }
+   ],
+   "edges": [
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "browser-101",
+     "sourceHandle": "default",
+     "target": "condition-102",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__browser-101default-condition-102",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "condition-102",
+     "sourceHandle": "false",
+     "target": "telegram-104",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__condition-102false-telegram-104",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-104",
+     "sourceHandle": "default",
+     "target": "end-1",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram-104default-end-1",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram_listener-101",
+     "sourceHandle": "default",
+     "target": "python-101",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram_listener-101default-python-101",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "python-101",
+     "sourceHandle": "default",
+     "target": "condition-102",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__python-101default-condition-102",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "condition-102",
+     "sourceHandle": "true",
+     "target": "telegram-101",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__condition-102true-telegram-101",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-101",
+     "sourceHandle": "default",
+     "target": "browser-102",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram-101default-browser-102",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "browser-102",
+     "sourceHandle": "default",
+     "target": "condition-101",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__browser-102default-condition-101",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "condition-101",
+     "sourceHandle": "false",
+     "target": "telegram-102",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__condition-101false-telegram-102",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "condition-101",
+     "sourceHandle": "true",
+     "target": "telegram-111",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__condition-101true-telegram-111",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-104",
+     "sourceHandle": "default",
+     "target": "end-113",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram-104default-end-113",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-111",
+     "sourceHandle": "default",
+     "target": "condition-117",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram-111default-condition-117",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "condition-117",
+     "sourceHandle": "false",
+     "target": "telegram-118",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__condition-117false-telegram-118",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-118",
+     "sourceHandle": "default",
+     "target": "end-113",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram-118default-end-113",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "condition-117",
+     "sourceHandle": "true",
+     "target": "telegram-120",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__condition-117true-telegram-120",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-120",
+     "sourceHandle": "default",
+     "target": "end-113",
+     "style": {
+      "stroke": "#6c63ff",
+      "strokeWidth": 2
+     },
+     "data": {},
+     "id": "xy-edge__telegram-120default-end-113",
+     "selected": false
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "start-122",
+     "sourceHandle": "default",
+     "target": "google_sheets_read-302",
+     "style": {
+      "stroke": "#0d9488",
+      "strokeWidth": 2
+     },
+     "id": "xy-edge__start-122default-google_sheets_read-302"
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "google_sheets_read-302",
+     "sourceHandle": "default",
+     "target": "loop-307",
+     "style": {
+      "stroke": "#0d9488",
+      "strokeWidth": 2
+     },
+     "id": "xy-edge__google_sheets_read-302default-loop-307"
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "loop-307",
+     "sourceHandle": "loop",
+     "target": "telegram-305",
+     "style": {
+      "stroke": "#0d9488",
+      "strokeWidth": 2
+     },
+     "id": "xy-edge__loop-307loop-telegram-305"
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "telegram-305",
+     "sourceHandle": "default",
+     "target": "loop-307",
+     "style": {
+      "stroke": "#0d9488",
+      "strokeWidth": 2
+     },
+     "id": "xy-edge__telegram-305default-loop-307"
+    },
+    {
+     "animated": true,
+     "type": "custom",
+     "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#0d9488"
+     },
+     "source": "loop-307",
+     "sourceHandle": "endloop",
+     "target": "end-309",
+     "style": {
+      "stroke": "#0d9488",
+      "strokeWidth": 2
+     },
+     "id": "xy-edge__loop-307endloop-end-309"
+    }
+   ]
+  }
+ }
+]
