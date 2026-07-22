@@ -1045,7 +1045,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     // Mẫu 1: 1/3 màn hình
     if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
-    if (['run_sql_exec', 'loop'].includes(type)) return '50vw'
+    if (['run_sql_exec', 'loop', 'google_sheets_read'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
