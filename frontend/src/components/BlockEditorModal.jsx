@@ -1237,14 +1237,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 </Form.Item>
               )}
               {loopMode === 'array' && (
-                <>
-                  <Form.Item name="loopArrayVar" label="Tên biến Mảng cần lặp" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Ví dụ: sheets_data (từ khối Google Sheets)">
-                    <AutoComplete options={autoCompleteOptions} placeholder="sheets_data" allowClear />
-                  </Form.Item>
-                  <Form.Item name="loopItemVar" label="Tên biến đại diện dòng hiện tại" rules={[{ required: true, message: 'Nhập tên biến đại diện' }]} tooltip="Mỗi vòng lặp sẽ gán dữ liệu dòng hiện tại vào biến này (ví dụ: {{item.ten_kh}} hoặc gọi trực tiếp {{ten_kh}})">
-                    <Input placeholder="item" />
-                  </Form.Item>
-                </>
+                <Form.Item name="loopArrayVar" label="Tên biến Mảng cần lặp" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chọn tên biến mảng dữ liệu đã đọc từ khối trước (mặc định: sheets_data)">
+                  <AutoComplete options={autoCompleteOptions} placeholder="sheets_data" allowClear />
+                </Form.Item>
               )}
               {loopMode === 'condition' && (
                 <Form.Item
