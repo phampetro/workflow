@@ -1936,6 +1936,69 @@ output_data = {{"result": rows, "row_count": row_count}}
 
                 if log_fn:
                     log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}' (Số dòng: '{row_count_var}')")
+            elif btype == "excel_read":
+                # Đọc file Excel/CSV trong input (fallback output) → trả mảng dòng + số dòng.
+                # Cùng hợp đồng output với google_sheets_read nên cắm thẳng vào khối Loop.
+                file_name = interpolate(bdata.get("excelReadFile", "")).strip()
+                sheet_name = interpolate(bdata.get("excelReadSheetName", "")).strip()
+                header_row = int(bdata.get("excelReadHeaderRow") or 1)
+                output_var = bdata.get("outputVarName") or "sheets_data"
+                row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
+                custom_mappings = bdata.get("columnMappings") or {}
+
+                if not file_name:
+                    raise Exception("Chưa chọn/nhập tên file Excel")
+
+                # Cho phép nhập tên biến {{...}} → sau interpolate ra tên file thật; tìm input trước, rồi output
+                file_path = input_dir / file_name
+                if not file_path.exists():
+                    file_path = wf_dir / "output" / file_name
+                if not file_path.exists():
+                    raise Exception(f"Không tìm thấy file '{file_name}' trong thư mục input/output")
+
+                header_idx = max(0, header_row - 1)
+                if str(file_path).lower().endswith(".csv"):
+                    df = pd.read_csv(file_path, header=header_idx)
+                else:
+                    if sheet_name:
+                        df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_idx)
+                    else:
+                        df = pd.read_excel(file_path, header=header_idx)
+                df = df.fillna('')
+
+                clean_cols = []
+                for c in df.columns:
+                    c_str = str(c).strip()
+                    if c_str.startswith("Unnamed:"):
+                        clean_cols.append("")
+                    else:
+                        clean_cols.append(c_str)
+                df.columns = clean_cols
+
+                records = []
+                for _, row in df.iterrows():
+                    item_dict = {}
+                    for orig_col in df.columns:
+                        if not orig_col:
+                            continue
+                        val = str(row[orig_col])
+                        var_key = custom_mappings.get(orig_col) or orig_col
+                        item_dict[var_key] = val
+                    records.append(item_dict)
+
+                if not isinstance(current_input, dict):
+                    current_input = {}
+
+                current_input[output_var] = records
+                current_input[row_count_var] = len(records)
+                current_input["row_count"] = len(records)
+
+                workflow_env[output_var] = records
+                workflow_env[row_count_var] = len(records)
+                workflow_env["row_count"] = len(records)
+
+                if log_fn:
+                    log_fn(bid, "success", f"🟢 [Đọc Excel] Đọc thành công {len(records)} dòng từ '{file_name}' vào biến '{output_var}' (Số dòng: '{row_count_var}')")
             elif btype == "condition":
                 logical_op = bdata.get("logicalOperator", "AND").upper()
                 conditions = bdata.get("conditions")

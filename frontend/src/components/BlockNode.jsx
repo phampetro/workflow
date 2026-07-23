@@ -1,6 +1,6 @@
 import React, { memo, useState, useEffect } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal } from 'lucide-react'
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet } from 'lucide-react'
 const BLOCK_TYPES = {
   start: {
     label: 'Start',
@@ -92,6 +92,13 @@ const BLOCK_TYPES = {
     color: '#0f9d58',
     gradient: 'linear-gradient(135deg, #0f9d58, #0b8043)',
     description: 'Đọc dữ liệu từ Google Sheet (Public Link)',
+  },
+  excel_read: {
+    label: 'Đọc Excel',
+    icon: <FileSpreadsheet size="0.875rem" />,
+    color: '#217346',
+    gradient: 'linear-gradient(135deg, #217346, #185c37)',
+    description: 'Đọc file Excel/CSV thành mảng dữ liệu',
   },
   run_sql_exec: {
     label: 'Chạy Hàm SQL (EXEC)',
