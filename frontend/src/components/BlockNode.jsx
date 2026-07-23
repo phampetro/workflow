@@ -1,6 +1,6 @@
 import React, { memo, useState, useEffect } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet } from 'lucide-react'
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass } from 'lucide-react'
 const BLOCK_TYPES = {
   start: {
     label: 'Start',
@@ -43,6 +43,13 @@ const BLOCK_TYPES = {
     color: '#8b5cf6',
     gradient: 'linear-gradient(135deg, #8b5cf6, #c084fc)',
     description: 'Dừng chờ theo số giây',
+  },
+  queue: {
+    label: 'Xếp hàng',
+    icon: <Hourglass size="0.875rem" />,
+    color: '#64748b',
+    gradient: 'linear-gradient(135deg, #64748b, #475569)',
+    description: 'Chờ các nhánh khác xong rồi chạy tiếp 1 lần',
   },
   telegram: {
     label: 'Telegram',
