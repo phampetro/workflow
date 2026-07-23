@@ -716,6 +716,23 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 else:
                     if log_fn:
                         log_fn(bid, "success", f"✅ Đã chờ xong {delay_sec} giây.")
+            elif btype == "queue":
+                # Khối "Xếp hàng": 1 vào - 1 ra, không xử lý gì, không đổi biến.
+                # Cơ chế "lấy số chờ tới lượt": nếu trong hàng đợi còn khối THƯỜNG
+                # (không phải queue) đang chờ chạy → tự lùi xuống cuối hàng, nhường
+                # cho các nhánh song song chạy hết. Chỉ khi không còn khối thường nào
+                # chờ mới đi tiếp → khối phía sau luôn chạy SAU CÙNG và đúng 1 lần.
+                # (Điều kiện loại trừ queue giúp nhiều khối queue không "nhường" nhau vô tận.)
+                non_queue_pending = any(
+                    ((nodes_dict.get(nid) or {}).get("data") or {}).get("type") != "queue"
+                    for nid, _ in queue
+                )
+                if non_queue_pending:
+                    run_counts[node_id] -= 1  # lần lùi hàng không tính là 1 lần chạy thật
+                    queue.append((node_id, current_input))
+                    continue
+                if log_fn:
+                    log_fn(bid, "info", f"⏳ [Xếp hàng] {label} - Đã tới lượt, chạy tiếp")
             elif btype == "telegram_listener":
                 if "_initial_input" in bdata:
                     if log_fn:
@@ -1328,11 +1345,12 @@ output_data = {{"file_name": out_file}}
                     current_input = output
             elif btype == "merge_excel":
                 header_rows = int(bdata.get("headerRows", 3))
-                excel_filename = bdata.get("excelFileName", "merged.xlsx").strip()
-                merge_all_input = bdata.get("mergeAllInput", True)
+                excel_filename = bdata.get("excelFileName", "merged_excel.xlsx").strip()
+                merge_mode = bdata.get("mergeMode") or ("all_input" if bdata.get("mergeAllInput", True) else "custom")
+                merge_all_input = merge_mode in ("all_input", "all_output")
                 selected_files = bdata.get("selectedFiles", [])
                 if not excel_filename:
-                    excel_filename = "merged.xlsx"
+                    excel_filename = "merged_excel.xlsx"
                 
                 # Nếu bật chọn tất cả Input: tự động quét toàn bộ file trong INPUT_DIR
                 if merge_all_input:
@@ -1360,11 +1378,17 @@ print(f"T\u1ef1 đ\u1ed9ng ph\u00e1t hi\u1ec7n {len(file_list)} file trong th\u0
                 else:
                     _fl = selected_files
                     file_list_code = f"""file_list = {_fl!r}\nprint(f\"\u0110ang gh\u00e9p {{len(file_list)}} file \u0111\u00e3 ch\u1ecdn.\")"""
+                if merge_mode == "all_output":
+                    file_list_code = file_list_code.replace("INPUT_DIR", "OUTPUT_DIR").replace("Input.", "Output.")
 
                 code = f'''
 import os
+import warnings
 import pandas as pd
 import openpyxl
+
+# Tắt cảnh báo openpyxl "Workbook contains no default style" (vô hại, chỉ gây nhiễu log)
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 {file_list_code}
 
@@ -1470,7 +1494,11 @@ output_data = {{"file_name": out_file}}
                 
                 code = f'''
 import os
+import warnings
 import pandas as pd
+
+# Tắt cảnh báo openpyxl "Workbook contains no default style" (vô hại, chỉ gây nhiễu log)
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 print(f"Đang tìm kiếm {{len({selected_files!r})}} file Excel trong thư mục: {{INPUT_DIR}}...")
 file_list = {selected_files!r}

@@ -476,8 +476,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   
   const [availableFiles, setAvailableFiles] = useState([])
   const [loadingFiles, setLoadingFiles] = useState(false)
-  const [mergeAllInput, setMergeAllInput] = useState(node.data.mergeAllInput !== false) // default ON
-  const [mergeFileSource, setMergeFileSource] = useState(node.data.mergeFileSource || 'input') // 'input' | 'output'
+  // Merge Excel: 3 chế độ chọn nguồn file — 'all_input' | 'all_output' | 'custom'
+  const [mergeMode, setMergeMode] = useState(
+    node.data.mergeMode || (node.data.mergeAllInput === false ? 'custom' : 'all_input')
+  )
   const [telegramFiles, setTelegramFiles] = useState([])
   const [loadingTelegramFiles, setLoadingTelegramFiles] = useState(false)
   const [listenerCommands, setListenerCommands] = useState(node.data.telegramListenerCommands || [{ command: '/hi', description: 'Gửi lời chào', reply: 'Xin chào! 👋', runWorkflow: false }])
@@ -528,6 +530,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isPython = node.data.type === 'python'
   const isCondition = node.data.type === 'condition'
   const isDelay = node.data.type === 'delay'
+  const isQueue = node.data.type === 'queue'
   const isLoop = node.data.type === 'loop'
   const isEnd = node.data.type === 'end'
   const isErrorTrigger = node.data.type === 'error_trigger'
@@ -1051,7 +1054,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         ...(isExcelRead ? { excelReadCols, columnMappings: excelReadMappings } : {}),
         ...(isPython ? { code: editorRef.current ? editorRef.current.getValue() : code } : {}),
         ...(isSqlToExcel ? { sqlQuery: editorRef.current ? editorRef.current.getValue() : sqlCode } : {}),
-        ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
+        ...(isMergeExcel ? { mergeMode } : {}),
         ...(isBrowser ? { steps: browserSteps } : {}),
         ...(isTelegramListener ? { telegramListenerCommands: listenerCommands } : {}),
         ...(isExcelToSql ? { excelToSqlMapping } : {}),
@@ -1078,7 +1081,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const getDrawerWidth = () => {
     const type = node.data.type
     // Mẫu 1: 1/3 màn hình
-    if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger'].includes(type)) return '33vw'
+    if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger', 'queue'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
     if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
@@ -1114,7 +1117,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         initialValues={{
             label: node.data.label || '',
             description: node.data.description || '',
-            outputVarName: node.data.outputVarName || ((node.data.type === 'merge_excel' || node.data.type === 'pivot_excel' || node.data.type === 'sql_to_excel') ? 'file_name' : ''),
+            outputVarName: node.data.outputVarName || (
+              node.data.type === 'merge_excel' ? 'merged_excel'
+              : (node.data.type === 'pivot_excel' || node.data.type === 'sql_to_excel') ? 'file_name'
+              : (node.data.type === 'google_sheets_read' || node.data.type === 'excel_read') ? 'sheets_data'
+              : ''
+            ),
             ...((node.data.type === 'condition' || node.data.type === 'loop') ? (() => {
               let logicalOp = node.data.logicalOperator || 'AND';
               let conditions = node.data.conditions;
@@ -1146,7 +1154,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             telegramListenerToken: node.data.telegramListenerToken || '',
             delete_input: node.data.delete_input || false,
             delete_output: node.data.delete_output || false,
-            excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged.xlsx' : isPivotExcel ? 'pivot.xlsx' : isSqlToExcel ? 'sqltoexcel.xlsx' : 'export.xlsx'),
+            excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged_excel.xlsx' : isPivotExcel ? 'pivot.xlsx' : isSqlToExcel ? 'sqltoexcel.xlsx' : 'export.xlsx'),
             headerRows: node.data.headerRows || 3,
             selectedFiles: node.data.selectedFiles || [],
             mailProvider: node.data.mailProvider || 'custom',
@@ -1200,7 +1208,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             excelReadFile: node.data.excelReadFile || '',
             excelReadSheetName: node.data.excelReadSheetName || '',
             excelReadHeaderRow: node.data.excelReadHeaderRow !== undefined ? node.data.excelReadHeaderRow : 1,
-            outputVarName: node.data.outputVarName || 'sheets_data',
             rowCountVarName: node.data.rowCountVarName || 'sheets_rows',
             loopArrayVar: node.data.loopArrayVar || 'sheets_data',
             loopItemVar: node.data.loopItemVar || 'item',
@@ -1372,6 +1379,16 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
           {isEnd && (
             <Alert title="Khi workflow chạy đến khối này, nó sẽ kết thúc." type="info" showIcon style={{ marginBottom: 16 }} />
+          )}
+
+          {isQueue && (
+            <Alert
+              title="Khối Xếp hàng (không xử lý gì)"
+              description="Nối 1 nhánh vào khối này. Nó sẽ 'lấy số chờ tới lượt': đợi tất cả các nhánh song song khác chạy xong rồi mới chạy tiếp khối phía sau — đảm bảo khối sau chạy SAU CÙNG và đúng 1 lần. Không thay đổi biến nào."
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
           )}
 
           {isErrorTrigger && (
@@ -2108,78 +2125,75 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <Title level={5} style={{ margin: 0 }}>Chọn file cần ghép</Title>
               </div>
 
-              {/* Toggle chọn tất cả Input */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '8px 12px', background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-default)' }}>
-                <Switch
-                  checked={mergeAllInput}
-                  onChange={(checked) => {
-                    setMergeAllInput(checked)
-                    if (checked) {
-                      // Tự động chọn tất cả input
-                      const inputFiles = availableFiles.filter(f => f.type === 'input')
-                      form.setFieldsValue({ selectedFiles: inputFiles.map(f => f.name) })
-                    }
-                  }}
-                />
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Chọn tất cả file đầu vào (Input)</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tự động ghép tất cả file trong thư mục Input theo thứ tự tên</div>
-                </div>
-              </div>
+              {/* 3 chế độ nguồn file: tất cả Input / tất cả Output / Tùy chọn */}
+              <Radio.Group
+                value={mergeMode}
+                onChange={e => {
+                  const m = e.target.value
+                  setMergeMode(m)
+                  if (m === 'all_input') {
+                    form.setFieldsValue({ selectedFiles: availableFiles.filter(f => f.type === 'input').map(f => f.name) })
+                  } else if (m === 'all_output') {
+                    form.setFieldsValue({ selectedFiles: availableFiles.filter(f => f.type === 'output').map(f => f.name) })
+                  }
+                }}
+                buttonStyle="solid"
+                style={{ marginBottom: 16 }}
+              >
+                <Radio.Button value="all_input">Tất cả Input</Radio.Button>
+                <Radio.Button value="all_output">Tất cả Output</Radio.Button>
+                <Radio.Button value="custom">Tùy chọn</Radio.Button>
+              </Radio.Group>
 
-              {/* Nếu tắt → Hiện 2 tab chọn nguồn */}
-              {!mergeAllInput && (
-                <>
-                  <Radio.Group 
-                    value={mergeFileSource} 
-                    onChange={e => setMergeFileSource(e.target.value)} 
-                    style={{ marginBottom: 14 }}
-                    buttonStyle="solid"
-                    size="small"
-                  >
-                    <Radio.Button value="input">File Đầu vào (Input)</Radio.Button>
-                    <Radio.Button value="output">File Đầu ra (Output)</Radio.Button>
-                  </Radio.Group>
+              <Alert title={<span style={{ fontSize: '0.85rem' }}><b>Ghi chú:</b> File đầu tiên sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
 
-                  <Alert title={<span style={{ fontSize: '0.85rem' }}><b>Ghi chú:</b> File đầu tiên được chọn sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau sẽ bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
-
-                  <Form.Item
-                    name="selectedFiles"
-                    label="Thứ tự các file cần ghép"
-                    rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}
-                  >
-                    <FileSelectionTable
-                      files={availableFiles.filter(f => f.type === mergeFileSource)}
-                      loading={loadingFiles}
-                    />
-                  </Form.Item>
-                </>
+              {/* Tùy chọn: multi-select từ cả 2 thư mục, hoặc nhập biến {{...}} */}
+              {mergeMode === 'custom' && (
+                <Form.Item
+                  name="selectedFiles"
+                  label="Chọn file (từ Input & Output) hoặc nhập biến {{...}}"
+                  rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}
+                  extra="Gõ tên biến dạng {{ten_file}} rồi Enter — khi chạy sẽ tự tìm file trùng tên biến trong Input/Output. Thứ tự chọn = thứ tự ghép."
+                >
+                  <Select
+                    mode="tags"
+                    placeholder="Chọn file hoặc gõ {{ten_bien}} rồi Enter"
+                    loading={loadingFiles}
+                    options={availableFiles.map(f => ({ value: f.name, label: `${f.name} (${f.type === 'output' ? 'Output' : 'Input'})` }))}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
               )}
 
-              {/* Khi bật all input → chỉ preview */}
-              {mergeAllInput && (
-                <div style={{ marginTop: 16 }}>
-                  {loadingFiles ? (
-                    <Alert title="Đang tải..." type="info" showIcon />
-                  ) : availableFiles.filter(f => f.type === 'input').length === 0 ? (
-                    <Alert title="Chưa có file nào trong thư mục Input." type="warning" showIcon />
-                  ) : (
-                    <div style={{ background: 'rgba(14, 165, 233, 0.05)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0ea5e9', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <Info size={14} /> File sẽ được ghép (tất cả Input):
+              {/* Tất cả Input/Output → chỉ preview danh sách */}
+              {(mergeMode === 'all_input' || mergeMode === 'all_output') && (() => {
+                const folder = mergeMode === 'all_input' ? 'input' : 'output'
+                const folderLabel = mergeMode === 'all_input' ? 'Input' : 'Output'
+                const files = availableFiles.filter(f => f.type === folder)
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    {loadingFiles ? (
+                      <Alert title="Đang tải..." type="info" showIcon />
+                    ) : files.length === 0 ? (
+                      <Alert title={`Chưa có file nào trong thư mục ${folderLabel}.`} type="warning" showIcon />
+                    ) : (
+                      <div style={{ background: 'rgba(14, 165, 233, 0.05)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0ea5e9', fontWeight: 600, fontSize: '0.85rem' }}>
+                          <Info size={14} /> File sẽ được ghép (tất cả {folderLabel}):
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8, fontSize: '0.8rem' }}>
+                          {files.map((f, i) => (
+                            <div key={f.name} style={{ display: 'flex', gap: 8 }}>
+                              <span style={{ color: 'var(--accent-primary)', fontWeight: 600, minWidth: 20 }}>{i + 1}.</span>
+                              <span style={{ color: 'var(--text-primary)' }}>{f.name}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8, fontSize: '0.8rem' }}>
-                        {availableFiles.filter(f => f.type === 'input').map((f, i) => (
-                          <div key={f.name} style={{ display: 'flex', gap: 8 }}>
-                            <span style={{ color: 'var(--accent-primary)', fontWeight: 600, minWidth: 20 }}>{i + 1}.</span>
-                            <span style={{ color: 'var(--text-primary)' }}>{f.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           ) : isPivotExcel ? (
             <div style={{ padding: 24, flex: 1 }}>

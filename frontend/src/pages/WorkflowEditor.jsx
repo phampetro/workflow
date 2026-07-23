@@ -27,7 +27,7 @@ const edgeTypes = { custom: DeleteEdge }
 
 const BLOCK_GROUPS = [
   { title: 'Bắt đầu - Kết thúc', items: ['start', 'end'] },
-  { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay'] },
+  { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay', 'queue'] },
   { title: 'Python Code', items: ['python'] },
   { title: 'Tự động hóa Web', items: ['browser'] },
   { title: 'Xử lý Dữ liệu', items: ['google_sheets_read', 'excel_read', 'merge_excel', 'pivot_excel'] },
@@ -452,6 +452,27 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       message.success('Chạy Workflow hoàn tất!')
     }
   }, [wfData?.id])
+
+  // Nút Dừng/Chạy phải theo TRẠNG THÁI THẬT của run (đọc từ DB), không chỉ dựa vào
+  // LogViewer bắt được dòng log kết thúc — cơ chế đó dễ lỡ: lỗi qua nhánh return sớm
+  // không phát log cuối, log đã nằm trong cache trước khi SSE nối, hoặc user đóng panel log.
+  // Backend luôn gọi _finish_run (success/error/stopped) nên status DB luôn cập nhật.
+  useEffect(() => {
+    if (!isRunning || !wfData?.id || !currentRunId) return
+    let cancelled = false
+    const check = async () => {
+      try {
+        const res = await getRunHistory(wfData.id, 5)
+        const run = (res.data || []).find(r => r.id === currentRunId)
+        if (!cancelled && run && run.status !== 'running') {
+          useStore.getState().clearActiveRun(wfData.id)
+        }
+      } catch { /* mạng lỗi tạm — lần poll sau thử lại */ }
+    }
+    check() // kiểm tra ngay để bắt run kết thúc rất nhanh
+    const interval = setInterval(check, 1500)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [isRunning, wfData?.id, currentRunId])
 
   // Drag and drop support
   const onDragStart = (event, nodeType) => {
