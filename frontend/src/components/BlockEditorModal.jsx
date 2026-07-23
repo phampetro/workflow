@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal, RefreshCw } from 'lucide-react'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col, Checkbox } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -542,6 +542,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isExcelToSql = node.data.type === 'excel_to_sql'
   const isRunSqlExec = node.data.type === 'run_sql_exec'
   const isGoogleSheets = node.data.type === 'google_sheets_read'
+  const isExcelRead = node.data.type === 'excel_read'
   const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel
 
   // Excel to SQL states
@@ -568,6 +569,37 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const [googleSheetsCols, setGoogleSheetsCols] = useState(node.data.googleSheetsCols || [])
   const [googleSheetsMappings, setGoogleSheetsMappings] = useState(node.data.columnMappings || {})
   const [loadingGoogleSheetsCols, setLoadingGoogleSheetsCols] = useState(false)
+
+  // Excel Read state
+  const [excelReadCols, setExcelReadCols] = useState(node.data.excelReadCols || [])
+  const [excelReadMappings, setExcelReadMappings] = useState(node.data.columnMappings || {})
+  const [loadingExcelReadCols, setLoadingExcelReadCols] = useState(false)
+
+  const handleFetchExcelReadColumns = async () => {
+    const file = form.getFieldValue('excelReadFile')
+    const header_row = form.getFieldValue('excelReadHeaderRow') || 1
+    if (!file) {
+      toast.error('Vui lòng chọn/nhập tên file Excel trước')
+      return
+    }
+    if (file.includes('{{')) {
+      toast.error('Không thể tải cột khi dùng biến {{...}} — hãy chọn 1 file cụ thể')
+      return
+    }
+    setLoadingExcelReadCols(true)
+    try {
+      // API nhận header_row theo pandas (0-indexed), user nhập theo Excel (1-indexed) → trừ 1
+      const backendHeader = String(Math.max(0, (parseInt(header_row, 10) || 1) - 1))
+      const res = await getFileColumns(workflowId, file, backendHeader)
+      const cols = (res.data?.columns || []).map(c => String(c))
+      setExcelReadCols(cols)
+      toast.success(`Đã tìm thấy ${cols.length} cột tiêu đề`)
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.message)
+    } finally {
+      setLoadingExcelReadCols(false)
+    }
+  }
 
   const handleFetchGoogleSheetsColumns = async () => {
     const url = form.getFieldValue('googleSheetsUrl')
@@ -729,7 +761,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
   useEffect(() => {
-    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql) && open && workflowId) {
+    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql || isExcelRead) && open && workflowId) {
       const fetchFiles = async () => {
         setLoadingFiles(true)
         try {
@@ -738,7 +770,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             getWorkflowOutputFiles(workflowId).catch(() => ({ data: [] }))
           ])
           let files = [...(inRes.data || []), ...(outRes.data || [])]
-          if (isMergeExcel || isPivotExcel || isExcelToSql) {
+          if (isMergeExcel || isPivotExcel || isExcelToSql || isExcelRead) {
             files = files.filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.csv'))
           }
           setAvailableFiles(files)
@@ -750,7 +782,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       }
       fetchFiles()
     }
-  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, open, workflowId])
+  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, isExcelRead, open, workflowId])
 
   // Fetch danh sách kết nối Database đã lưu (cho các khối cần chọn kết nối)
   useEffect(() => {
@@ -769,6 +801,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       form.resetFields()
       setGoogleSheetsCols(node.data.googleSheetsCols || [])
       setGoogleSheetsMappings(node.data.columnMappings || {})
+      setExcelReadCols(node.data.excelReadCols || [])
+      setExcelReadMappings(node.data.columnMappings || {})
     }
   }, [open, node.id])
 
@@ -1014,6 +1048,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       onSave(node.id, {
         ...values,
         ...(isGoogleSheets ? { googleSheetsCols, columnMappings: googleSheetsMappings } : {}),
+        ...(isExcelRead ? { excelReadCols, columnMappings: excelReadMappings } : {}),
         ...(isPython ? { code: editorRef.current ? editorRef.current.getValue() : code } : {}),
         ...(isSqlToExcel ? { sqlQuery: editorRef.current ? editorRef.current.getValue() : sqlCode } : {}),
         ...(isMergeExcel ? { mergeAllInput, mergeFileSource } : {}),
@@ -1045,7 +1080,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     // Mẫu 1: 1/3 màn hình
     if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
-    if (['run_sql_exec', 'loop', 'google_sheets_read'].includes(type)) return '50vw'
+    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
@@ -1162,6 +1197,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             googleSheetsUrl: node.data.googleSheetsUrl || '',
             googleSheetsSheetName: node.data.googleSheetsSheetName || 'Sheet1',
             googleSheetsHeaderRow: node.data.googleSheetsHeaderRow !== undefined ? node.data.googleSheetsHeaderRow : 1,
+            excelReadFile: node.data.excelReadFile || '',
+            excelReadSheetName: node.data.excelReadSheetName || '',
+            excelReadHeaderRow: node.data.excelReadHeaderRow !== undefined ? node.data.excelReadHeaderRow : 1,
             outputVarName: node.data.outputVarName || 'sheets_data',
             rowCountVarName: node.data.rowCountVarName || 'sheets_rows',
             loopArrayVar: node.data.loopArrayVar || 'sheets_data',
@@ -1585,6 +1623,71 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 </div>
               ) : (
                 <Alert title="Bấm 'Tải danh sách cột' để xem và tùy chỉnh tên biến từ dòng tiêu đề trên Google Sheet." type="info" showIcon style={{ marginBottom: 16 }} />
+              )}
+            </>
+          )}
+
+          {isExcelRead && (
+            <>
+              <Divider style={{ margin: '24px 0' }} />
+              <Title level={5} style={{ margin: '0 0 16px 0' }}><FileSpreadsheet size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#217346' }}/> Cấu hình Đọc Excel</Title>
+              <Form.Item label="Nguồn file (Excel/CSV)" name="excelReadFile" rules={[{ required: true, message: 'Chọn file hoặc nhập biến' }]} tooltip="Chọn file quét từ thư mục input/output, hoặc gõ tên biến dạng {{ten_file}}">
+                <AutoComplete
+                  placeholder="Chọn file hoặc nhập biến (VD: {{ten_file}})"
+                  options={availableFiles.map(f => ({ value: f.name, label: `${f.name} (${f.type})` }))}
+                  filterOption={(input, option) => (option?.value || '').toLowerCase().includes(input.toLowerCase())}
+                  allowClear
+                />
+              </Form.Item>
+              <Form.Item label="Tên Sheet / Tab" name="excelReadSheetName" tooltip="Để trống = đọc sheet đầu tiên">
+                <Input placeholder="(mặc định sheet đầu tiên)" />
+              </Form.Item>
+              <Form.Item label="Dòng tiêu đề (Header Row)" name="excelReadHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
+                <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
+              </Form.Item>
+              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data)">
+                <Input placeholder="sheets_data" />
+              </Form.Item>
+              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" tooltip="Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows)">
+                <Input placeholder="sheets_rows" />
+              </Form.Item>
+
+              <Divider style={{ margin: '16px 0' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Space>
+                  <TableProperties size={16} />
+                  <Text strong style={{ fontSize: '0.85rem' }}>Cột tiêu đề & Biến tùy chỉnh</Text>
+                </Space>
+                <Button type="primary" size="small" icon={<RefreshCw size={14} />} style={{ background: '#217346', borderColor: '#217346', color: '#ffffff', fontWeight: 500 }} loading={loadingExcelReadCols} onClick={handleFetchExcelReadColumns}>
+                  Tải danh sách cột
+                </Button>
+              </div>
+
+              {excelReadCols.length > 0 ? (
+                <div style={{ background: 'var(--bg-elevated)', padding: 12, borderRadius: 8, border: '1px solid var(--border-default)', marginBottom: 16 }}>
+                  <Text type="secondary" style={{ fontSize: '0.8rem', display: 'block', marginBottom: 8 }}>
+                    Danh sách cột tiêu đề tự động. Bạn có thể gõ Tên biến Custom tương ứng:
+                  </Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {excelReadCols.map(col => (
+                      <div key={col} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Tag color="green" style={{ minWidth: 110, margin: 0, textAlign: 'center' }}>{col}</Tag>
+                        <span style={{ color: 'var(--text-muted)' }}>➔</span>
+                        <Input
+                          size="small"
+                          placeholder={col}
+                          value={excelReadMappings[col] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setExcelReadMappings(prev => ({ ...prev, [col]: val }));
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <Alert title="Chọn 1 file cụ thể rồi bấm 'Tải danh sách cột' để xem & tùy chỉnh tên biến từ dòng tiêu đề. (Không dùng được khi nguồn là biến {{...}})" type="info" showIcon style={{ marginBottom: 16 }} />
               )}
             </>
           )}

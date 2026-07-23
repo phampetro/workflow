@@ -30,7 +30,7 @@ const BLOCK_GROUPS = [
   { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay'] },
   { title: 'Python Code', items: ['python'] },
   { title: 'Tự động hóa Web', items: ['browser'] },
-  { title: 'Xử lý Dữ liệu', items: ['google_sheets_read', 'merge_excel', 'pivot_excel'] },
+  { title: 'Xử lý Dữ liệu', items: ['google_sheets_read', 'excel_read', 'merge_excel', 'pivot_excel'] },
   { title: 'Cơ sở dữ liệu', items: ['sql_to_excel', 'excel_to_sql', 'run_sql_exec'] },
   { title: 'Gửi tin nhắn', items: ['telegram', 'telegram_listener', 'email'] },
   { title: 'Hệ thống', items: ['error_trigger', 'delete_files'] }
