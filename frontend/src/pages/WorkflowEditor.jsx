@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap, Panel,
   addEdge, useNodesState, useEdgesState, BackgroundVariant,
-  MarkerType, ReactFlowProvider, useReactFlow
+  MarkerType, ReactFlowProvider, useReactFlow, useNodesInitialized
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import BlockNode, { BLOCK_TYPES } from '../components/BlockNode'
@@ -80,6 +80,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const saveTimer = useRef(null)
   const reactFlowWrapper = useRef(null)
   const { screenToFlowPosition, fitView } = useReactFlow()
+  // true khi TẤT CẢ node đã được React Flow đo kích thước xong (không phải chỉ set vào state).
+  // Dùng để fitView đúng khoảnh khắc canvas sẵn sàng, thay cho setTimeout đoán mò.
+  const nodesInitialized = useNodesInitialized()
 
   // Refs giữ state mới nhất để các callback (đặc biệt là closure gắn vào edge)
   // không bao giờ đọc phải state cũ (stale closure)
@@ -89,6 +92,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   useEffect(() => { edgesRef.current = edges }, [edges])
   // Chỉ cho phép auto-save/snapshot sau khi graph đã tải xong từ server
   const graphLoadedRef = useRef(false)
+  // Chặn fitView tự động chạy lại sau lần fit đầu tiên của mỗi workflow — reset khi
+  // đổi workflow (trong effect load bên dưới). Nhờ vậy thêm/kéo khối KHÔNG bị fit lại giật màn hình.
+  const didInitialFitRef = useRef(false)
   // ETag: server updated_at của lần load/save gần nhất - gửi kèm để BE phát hiện
   // "người khác đã lưu trong lúc bạn đang sửa" và trả 409.
   const expectedUpdatedAtRef = useRef(null)
@@ -98,6 +104,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
   useEffect(() => {
     if (!workflow?.id) return
+    // Đổi workflow → cho phép fitView tự động chạy lại 1 lần cho graph mới
+    didInitialFitRef.current = false
     getWorkflow(workflow.id).then((res) => {
       const wf = res.data
       setWfData(wf)
@@ -138,7 +146,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           setNodes(uniqueNodes)
           setEdges(uniqueEdges)
           graphLoadedRef.current = true
-          setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100)
+          // fitView do effect [nodesInitialized] bên dưới lo — chạy đúng khi node đo xong
         } catch { setNodesFromDefault() }
       } else {
         setNodesFromDefault()
@@ -169,6 +177,16 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     }).catch(() => {}).finally(() => setCheckingStatus(false))
   }, [workflow?.id])
 
+  // Auto-fit khi vào workflow: chạy đúng khoảnh khắc React Flow đã đo xong TẤT CẢ node
+  // (nodesInitialized), nên luôn ôm trọn sơ đồ dù graph lớn/máy chậm. didInitialFitRef
+  // đảm bảo chỉ fit 1 lần cho mỗi lần load — kéo/thêm khối về sau không bị fit lại.
+  useEffect(() => {
+    if (nodesInitialized && graphLoadedRef.current && !didInitialFitRef.current) {
+      didInitialFitRef.current = true
+      fitView({ padding: 0.2, duration: 300 })
+    }
+  }, [nodesInitialized, fitView])
+
   const handleDeleteHistory = async () => {
     try {
       await deleteRunHistory(wfData?.id)
@@ -183,7 +201,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     setNodes(DEFAULT_GRAPH.nodes)
     setEdges(DEFAULT_GRAPH.edges)
     graphLoadedRef.current = true
-    setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100)
+    // fitView do effect [nodesInitialized] bên dưới lo
   }
 
   const triggerAutoSave = useCallback(() => {
@@ -345,19 +363,23 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     [triggerAutoSave, takeSnapshot]
   )
 
-  const openEditor = (nodeId) => {
-    const node = nodes.find((n) => n.id === nodeId)
+  // useCallback để 3 handler này giữ reference ổn định giữa các render —
+  // nhờ vậy nodesWithCb (useMemo bên dưới) không tạo lại object data mỗi render,
+  // memo(BlockNode) không bị vô hiệu → không re-render toàn bộ node khi gõ search/autosave.
+  // Đọc node từ nodesRef.current để không cần `nodes` làm dependency.
+  const openEditor = useCallback((nodeId) => {
+    const node = nodesRef.current.find((n) => n.id === nodeId)
     if (node) setEditingNode(node)
-  }
+  }, [])
 
-  const deleteNode = (nodeId) => {
+  const deleteNode = useCallback((nodeId) => {
     takeSnapshot(nodesRef.current, edgesRef.current)
     setNodes(nds => nds.filter((n) => n.id !== nodeId))
     setEdges(eds => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
     triggerAutoSave()
-  }
+  }, [takeSnapshot, setNodes, setEdges, triggerAutoSave])
 
-  const duplicateNode = (nodeId) => {
+  const duplicateNode = useCallback((nodeId) => {
     takeSnapshot(nodesRef.current, edgesRef.current)
     setNodes(prev => {
       const original = prev.find((n) => n.id === nodeId)
@@ -373,7 +395,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       return [...prev, newNode]
     })
     triggerAutoSave()
-  }
+  }, [takeSnapshot, setNodes, triggerAutoSave])
 
   const handleSaveBlock = (nodeId, data) => {
     takeSnapshot(nodes, edges)
@@ -486,7 +508,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     [screenToFlowPosition, triggerAutoSave]
   )
 
-  const nodesWithCb = nodes.map((n) => ({
+  // useMemo: chỉ dựng lại mảng khi nodes/edges hoặc handler thật sự đổi.
+  // Các handler đều đã useCallback nên object data giữ nguyên reference giữa các
+  // render không liên quan (gõ search, autosave, toggle logs) → memo(BlockNode) phát huy.
+  const nodesWithCb = useMemo(() => nodes.map((n) => ({
     ...n,
     data: {
       ...n.data,
@@ -494,14 +519,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       onDelete: () => deleteNode(n.id),
       onDuplicate: () => duplicateNode(n.id),
     },
-  }))
+  })), [nodes, openEditor, deleteNode, duplicateNode])
 
-  // Rebind onDelete mỗi render (giống nodesWithCb) — edge không bao giờ giữ closure cũ,
+  // Rebind onDelete (giống nodesWithCb) — edge không bao giờ giữ closure cũ,
   // và undo/redo (deep-clone làm mất function) cũng không làm chết nút xóa edge
-  const edgesWithCb = edges.map((e) => ({
+  const edgesWithCb = useMemo(() => edges.map((e) => ({
     ...e,
     data: { ...e.data, onDelete: handleDeleteEdge },
-  }))
+  })), [edges, handleDeleteEdge])
 
   const SaveIcon = saveStatus === 'saving' ? Loader
     : saveStatus === 'saved' ? CheckCircle
@@ -625,7 +650,6 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             onNodeDoubleClick={(e, node) => openEditor(node.id)}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            fitView
             defaultEdgeOptions={{
               animated: true, type: 'smoothstep',
               markerEnd: { type: MarkerType.ArrowClosed, color: '#0d9488' },
