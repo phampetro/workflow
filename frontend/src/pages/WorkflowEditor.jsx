@@ -5,7 +5,7 @@ import {
   MarkerType, ReactFlowProvider, useReactFlow, useNodesInitialized
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import BlockNode, { BLOCK_TYPES } from '../components/BlockNode'
+import BlockNode, { BLOCK_TYPES, NodeActionsContext } from '../components/BlockNode'
 import DeleteEdge from '../components/DeleteEdge'
 import BlockEditorModal from '../components/BlockEditorModal'
 import LogViewer from '../components/LogViewer'
@@ -364,8 +364,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   )
 
   // useCallback để 3 handler này giữ reference ổn định giữa các render —
-  // nhờ vậy nodesWithCb (useMemo bên dưới) không tạo lại object data mỗi render,
-  // memo(BlockNode) không bị vô hiệu → không re-render toàn bộ node khi gõ search/autosave.
+  // nhờ vậy nodeActions (Context value, useMemo bên dưới) không đổi reference,
+  // memo(BlockNode) không bị vô hiệu → không re-render toàn bộ node khi gõ search/autosave/kéo node.
   // Đọc node từ nodesRef.current để không cần `nodes` làm dependency.
   const openEditor = useCallback((nodeId) => {
     const node = nodesRef.current.find((n) => n.id === nodeId)
@@ -529,18 +529,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     [screenToFlowPosition, triggerAutoSave]
   )
 
-  // useMemo: chỉ dựng lại mảng khi nodes/edges hoặc handler thật sự đổi.
-  // Các handler đều đã useCallback nên object data giữ nguyên reference giữa các
-  // render không liên quan (gõ search, autosave, toggle logs) → memo(BlockNode) phát huy.
-  const nodesWithCb = useMemo(() => nodes.map((n) => ({
-    ...n,
-    data: {
-      ...n.data,
-      onEdit: () => openEditor(n.id),
-      onDelete: () => deleteNode(n.id),
-      onDuplicate: () => duplicateNode(n.id),
-    },
-  })), [nodes, openEditor, deleteNode, duplicateNode])
+  // Cấp 3 handler qua Context với value ổn định (chỉ đổi khi handler đổi — mà chúng
+  // đã useCallback nên gần như không bao giờ). Trước đây tiêm closure vào data từng
+  // node khiến mọi node re-render mỗi frame kéo; nay node nhận `nodes` nguyên bản,
+  // node không đổi giữ nguyên reference → memo(BlockNode) chỉ render node thật sự đổi.
+  const nodeActions = useMemo(
+    () => ({ onEdit: openEditor, onDelete: deleteNode, onDuplicate: duplicateNode }),
+    [openEditor, deleteNode, duplicateNode]
+  )
 
   // Rebind onDelete (giống nodesWithCb) — edge không bao giờ giữ closure cũ,
   // và undo/redo (deep-clone làm mất function) cũng không làm chết nút xóa edge
@@ -656,8 +652,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
         {/* Canvas Area */}
         <div className="canvas-area" ref={reactFlowWrapper}>
+          <NodeActionsContext.Provider value={nodeActions}>
           <ReactFlow
-            nodes={nodesWithCb}
+            nodes={nodes}
             edges={edgesWithCb}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
@@ -677,7 +674,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             }}
             style={{ background: 'transparent' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(255,255,255,0.04)" />
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--canvas-dot)" />
             <Controls style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }} />
             <MiniMap
               style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }}
@@ -685,9 +682,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
                 if (!n?.data?.type) return '#6c63ff'
                 return BLOCK_TYPES[n.data.type]?.color || '#6c63ff'
               }}
-              maskColor="rgba(0,0,0,0.6)"
+              maskColor="var(--canvas-mask)"
             />
           </ReactFlow>
+          </NodeActionsContext.Provider>
         </div>
 
         {showLogs && (

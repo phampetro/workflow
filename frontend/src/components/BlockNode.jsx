@@ -1,6 +1,12 @@
-import React, { memo, useState, useEffect } from 'react'
+import React, { memo, useState, useEffect, useContext, createContext } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
 import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass } from 'lucide-react'
+
+// Handler Sửa/Xóa/Nhân bản được cấp qua Context (value ổn định, memo hóa ở
+// WorkflowEditor) thay vì tiêm closure mới vào data từng node mỗi render.
+// Nhờ vậy khi kéo 1 node, data các node khác giữ nguyên reference → memo(BlockNode)
+// không re-render toàn canvas mỗi frame. BlockNode gọi kèm `id` của chính nó.
+export const NodeActionsContext = createContext(null)
 const BLOCK_TYPES = {
   start: {
     label: 'Start',
@@ -152,6 +158,7 @@ const STATUS_STYLES = {
 }
 
 const BlockNode = memo(({ id, data, selected }) => {
+  const actions = useContext(NodeActionsContext)
   const type = BLOCK_TYPES[data.type] || BLOCK_TYPES.python
   const runStatus = data.runStatus || 'idle'
   const style = STATUS_STYLES[runStatus] || STATUS_STYLES.idle
@@ -274,14 +281,14 @@ const BlockNode = memo(({ id, data, selected }) => {
       <div className="block-actions">
         <button
           className="block-action-btn"
-          onClick={() => data.onEdit?.()}
+          onClick={() => actions?.onEdit?.(id)}
           title="Chỉnh sửa"
         >
           <Settings size="0.875rem" />
         </button>
         <button
           className="block-action-btn"
-          onClick={(e) => { e.stopPropagation(); data.onDuplicate?.() }}
+          onClick={(e) => { e.stopPropagation(); actions?.onDuplicate?.(id) }}
           title="Sao chép khối"
           style={{ color: 'var(--accent-primary)' }}
         >
@@ -289,7 +296,7 @@ const BlockNode = memo(({ id, data, selected }) => {
         </button>
         <button
           className="block-action-btn danger"
-          onClick={() => data.onDelete?.()}
+          onClick={() => actions?.onDelete?.(id)}
           title="Xóa"
         >
           <Trash2 size="0.875rem" />
@@ -379,7 +386,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           border-radius: var(--radius-md);
           min-width: 120px;
           max-width: 160px;
-          transition: all var(--transition-fast);
+          transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
           position: relative;
           overflow: visible;
           box-shadow: var(--shadow-sm);
@@ -542,7 +549,9 @@ const BlockNode = memo(({ id, data, selected }) => {
           animation: spin 1s linear infinite;
         }
 
-        .status-running { animation: breathe 2s ease-in-out infinite; }
+        @media (prefers-reduced-motion: no-preference) {
+          .status-running { animation: breathe 2s ease-in-out infinite; }
+        }
 
         @keyframes breathe {
           0%, 100% { box-shadow: 0 0 8px rgba(34,197,94,0.3); }
