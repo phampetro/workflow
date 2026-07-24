@@ -1371,7 +1371,7 @@ output_data = {{"file_name": out_file}}
                     else:
                         continue
                 
-                packages_to_install = ["pandas", "openpyxl"]
+                packages_to_install = ["pandas", "openpyxl", "xlrd"]
                 ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
                 
                 if log_fn:
@@ -1494,7 +1494,7 @@ output_data = {{"file_name": out_file}}
                     else:
                         continue
                 
-                packages_to_install = ["pandas", "openpyxl"]
+                packages_to_install = ["pandas", "openpyxl", "xlrd"]
                 ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
                 
                 if log_fn:
@@ -1692,7 +1692,7 @@ output_data = {{"file_name": out_file}}
 
                 conn_str = build_conn_str(db_config)
                 db_type = db_config.get("db_type")
-                packages_to_install = ["pandas", "openpyxl", "sqlalchemy"]
+                packages_to_install = ["pandas", "openpyxl", "sqlalchemy", "xlrd"]
                 if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
                 elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
                 else: packages_to_install.append("pyodbc")
