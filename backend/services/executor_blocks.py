@@ -32,6 +32,7 @@ _active_procs = {}
 _workflow_run_ids = {}
 
 _active_listeners = {}
+_active_browser_profiles = {}
 
 def kill_run(run_id):
     """Force kill tất cả processes liên quan đến một run"""
@@ -535,6 +536,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         proj_dir = get_project_dir(project_id)
         wf_dir = proj_dir / f"wf_{slugify(workflow_name)}"
         input_dir = wf_dir / "input"
+        
+        # Thư mục chứa cấu hình và phiên đăng nhập (Profile) cho riêng lượt chạy này
+        browser_profile_dir = wf_dir / "runs" / run_id / "browser_profile"
+        _active_browser_profiles[run_id] = browser_profile_dir
         input_dir.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         # Lỗi trước vòng try chính (DB lock, PermissionError...) không được
@@ -1192,14 +1197,8 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     if log_fn:
                         log_fn(bid, "info", f"🌐 Đang chạy Browser: {label}...")
                     
-                    import asyncio
                     from services.browser_executor import run_browser_block
                     
-                    # Wrap sync log_fn to async
-                    async def async_log_cb(b_id, lvl, msg):
-                        if log_fn:
-                            log_fn(b_id, lvl, msg)
-                            
                     start_b = datetime.now()
                     try:
                         output_dir = wf_dir / "output"
@@ -1213,16 +1212,18 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             {k: (interpolate(v) if isinstance(v, str) else v) for k, v in step.items()}
                             for step in steps
                         ]
-                        b_result = asyncio.run(run_browser_block(
+                        b_result = run_browser_block(
                             block_id=bid,
                             workflow_id=workflow_id,
+                            run_id=run_id,
                             steps=steps_interpolated,
                             input_data=current_input,
                             headless=headless,
-                            log_callback=async_log_cb,
+                            log_callback=log_fn,
                             output_dir=str(output_dir).replace('\\', '/'),
                             stop_event=stop_event,
-                        ))
+                            browser_profile_dir=str(browser_profile_dir).replace('\\', '/'),
+                        )
                         if not b_result.get("success"):
                             if b_result.get("stopped"):
                                 # Không finish_run trực tiếp - để rơi xuống cuối vòng lặp,
@@ -2317,6 +2318,18 @@ def _finish_run(run_id, status, start, error=None):
         )
     _active_runs.pop(run_id, None)
     _active_procs.pop(run_id, None)
+    
+    # Dọn dẹp profile duyệt web tạm thời của lượt chạy này
+    profile_dir = _active_browser_profiles.pop(run_id, None)
+    if profile_dir and profile_dir.parent.exists():
+        import shutil
+        shutil.rmtree(profile_dir.parent, ignore_errors=True)
+        
+    try:
+        from services.browser_executor import cleanup_browser
+        cleanup_browser(run_id)
+    except Exception:
+        pass
     # Xóa run_id khỏi workflow mapping
     for wf_id, run_set in list(_workflow_run_ids.items()):
         run_set.discard(run_id)
