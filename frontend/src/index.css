@@ -57,6 +57,10 @@
   --border-subtle: rgba(255, 255, 255, 0.04);
   --border-accent: rgba(13, 148, 136, 0.6);
 
+  /* Canvas (React Flow) — lưới nền + lớp phủ minimap, khai đủ cả 2 theme */
+  --canvas-dot: rgba(255, 255, 255, 0.06);
+  --canvas-mask: rgba(0, 0, 0, 0.6);
+
   /* Spacing */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -138,6 +142,10 @@
 
   --border-default: #e2e8f0;
   --border-subtle: #f1f5f9;
+
+  /* Canvas — dots tối trên nền sáng để nhìn thấy được; mask minimap nhạt hơn */
+  --canvas-dot: rgba(15, 23, 42, 0.10);
+  --canvas-mask: rgba(148, 163, 184, 0.35);
 
   --shadow-glass: inset 0 1px 1px rgba(255, 255, 255, 0.8);
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -359,17 +367,12 @@ body {
 }
 
 /* React Flow Nodes */
+/* Hover/selected do BlockNode tự vẽ theo MÀU RIÊNG của từng khối. Không áp
+   box-shadow teal lên wrapper ở đây nữa — trước đây gây viền teal nhân đôi đè
+   màu khối + pulseGlow chạy vô hạn (repaint box-shadow) trên mọi node đang chọn. */
 .react-flow__node {
   border-radius: var(--radius-md) !important;
-  overflow: hidden;
   transition: box-shadow var(--transition-fast), transform var(--transition-fast) !important;
-}
-.react-flow__node:hover {
-  box-shadow: var(--shadow-lg), 0 0 0 2px var(--accent-primary) !important;
-}
-.react-flow__node.selected {
-  box-shadow: var(--shadow-lg), 0 0 0 2px var(--accent-primary) !important;
-  animation: pulseGlow 2s infinite;
 }
 
 /* Custom Scrollbar */
