@@ -682,11 +682,19 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     return [interpolate_deep(item, current_key) for item in val]
                 return val
 
-            # Nội suy các biến môi trường (đệ quy vào cả cấu trúc lồng nhau)
-            bdata = {k: interpolate_deep(v, k) for k, v in bdata.items()}
-
             btype = bdata.get("type", "python")
             bid = node["id"]
+            label = bdata.get("label", bid)
+
+            # Nội suy các biến môi trường (đệ quy vào cả cấu trúc lồng nhau)
+            # Ngoại trừ "steps" của khối Browser để giữ nguyên {{biến}} cho browser_executor tự nội suy động.
+            bdata_interpolated = {}
+            for k, v in bdata.items():
+                if btype == "browser" and k == "steps":
+                    bdata_interpolated[k] = v
+                else:
+                    bdata_interpolated[k] = interpolate_deep(v, k)
+            bdata = bdata_interpolated
             label = bdata.get("label", bid)
 
             # Execution flags for branching

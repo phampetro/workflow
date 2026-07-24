@@ -160,7 +160,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
         elif action == "type_slowly":
             get_locator(page, selector).first.type(value, delay=80, timeout=timeout)
-            log("info", f"'{selector}' ✓")
+            log("info", f"'{selector}' = '{value}' ✓")
 
         elif action == "clear":
             get_locator(page, selector).first.fill("", timeout=timeout)
