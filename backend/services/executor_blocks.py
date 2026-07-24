@@ -1207,7 +1207,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         # Không nội suy trước ở đây nữa vì sẽ gây lỗi lấy nhầm dữ liệu
                         # vòng lặp cũ (Race condition với các biến nội bộ sinh ra trong cùng block).
                         # Truyền nguyên steps và gom biến toàn cục vào cho browser_executor tự xử.
-                        merged_input = dict(global_vars)
+                        merged_input = dict(workflow_env)
                         if isinstance(current_input, dict):
                             merged_input.update(current_input)
                             
