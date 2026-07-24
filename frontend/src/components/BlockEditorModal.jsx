@@ -399,8 +399,8 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
                   {/* Timeout */}
                   {actionDef.needsSelector && (
                     <div>
-                      <label style={labelStyle}>Timeout (ms, mặc định 10000)</label>
-                      <input type="number" style={inputStyle} placeholder="10000" value={step.timeout || ''} onChange={e => updateStep(i, 'timeout', e.target.value)} min="1000" step="1000" />
+                      <label style={labelStyle}>Timeout (ms, mặc định 20000)</label>
+                      <input type="number" style={inputStyle} placeholder="20000" value={step.timeout || ''} onChange={e => updateStep(i, 'timeout', e.target.value)} min="1000" step="1000" />
                     </div>
                   )}
 
