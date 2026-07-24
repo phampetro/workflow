@@ -40,6 +40,8 @@ export default function DeleteEdge({
           >
             <button
               className="edge-delete-btn"
+              title="Xóa kết nối"
+              aria-label="Xóa kết nối"
               onClick={(e) => {
                 e.stopPropagation()
                 data?.onDelete?.(id)

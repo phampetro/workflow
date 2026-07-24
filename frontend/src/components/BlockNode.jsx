@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useContext, createContext } from 'react'
+import React, { memo, useState, useEffect, useRef, useContext, createContext } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
 import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass } from 'lucide-react'
 
@@ -182,8 +182,24 @@ const BlockNode = memo(({ id, data, selected }) => {
     updateNodeInternals(id)
   }, [id, inPos, outPos, loopPos, donePos, hasSource, hasTarget, data.type, updateNodeInternals])
 
+  // Thanh nút (Sửa/Sao chép/Xóa) mặc định nổi phía TRÊN node. Nếu node nằm sát mép
+  // trên vùng vẽ, thanh này bị .react-flow (overflow:hidden) cắt → không bấm được.
+  // Khi rê chuột vào, đo khoảng cách tới đỉnh pane: gần quá thì lật thanh nút xuống DƯỚI.
+  // Toggle class imperatively qua ref để KHÔNG tạo state → không re-render node.
+  const rootRef = useRef(null)
+  const handleMouseEnter = () => {
+    const el = rootRef.current
+    if (!el) return
+    const pane = el.closest('.react-flow')
+    if (!pane) return
+    const gap = el.getBoundingClientRect().top - pane.getBoundingClientRect().top
+    el.classList.toggle('actions-below', gap < 44)
+  }
+
   return (
     <div
+      ref={rootRef}
+      onMouseEnter={handleMouseEnter}
       className={`block-node ${selected ? 'selected' : ''} status-${runStatus}`}
       style={{
         '--block-color': type.color,
@@ -200,6 +216,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           position={inPos}
           className="block-handle block-handle-target"
           style={{ background: type.color }}
+          title="Cổng vào (IN)"
         />
       )}
 
@@ -283,6 +300,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           className="block-action-btn"
           onClick={() => actions?.onEdit?.(id)}
           title="Chỉnh sửa"
+          aria-label="Chỉnh sửa khối"
         >
           <Settings size="0.875rem" />
         </button>
@@ -290,6 +308,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           className="block-action-btn"
           onClick={(e) => { e.stopPropagation(); actions?.onDuplicate?.(id) }}
           title="Sao chép khối"
+          aria-label="Sao chép khối"
           style={{ color: 'var(--accent-primary)' }}
         >
           <Copy size="0.875rem" />
@@ -298,6 +317,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           className="block-action-btn danger"
           onClick={() => actions?.onDelete?.(id)}
           title="Xóa"
+          aria-label="Xóa khối"
         >
           <Trash2 size="0.875rem" />
         </button>
@@ -327,6 +347,7 @@ const BlockNode = memo(({ id, data, selected }) => {
                   background: '#22c55e'
                 }}
                 className="block-handle block-handle-source"
+                title="Đúng điều kiện (TRUE)"
               />
               <Handle
                 type="source"
@@ -337,6 +358,7 @@ const BlockNode = memo(({ id, data, selected }) => {
                   background: '#ef4444'
                 }}
                 className="block-handle block-handle-source"
+                title="Sai điều kiện (FALSE)"
               />
             </>
           )}
@@ -486,11 +508,22 @@ const BlockNode = memo(({ id, data, selected }) => {
           display: flex;
           flex-direction: row;
           gap: 6px;
+          /* padding-bottom nới hộp hover xuống chạm đỉnh node → không còn khe 8px
+             làm rớt hover khi rê chuột lên bấm nút */
+          padding-bottom: 8px;
           opacity: 0;
           pointer-events: none;
           transform: translateY(10px);
-          transition: all var(--transition-fast);
+          transition: opacity var(--transition-fast), transform var(--transition-fast);
           z-index: 100;
+        }
+
+        /* Node sát mép trên: lật thanh nút xuống dưới để không bị .react-flow cắt.
+           padding-top thay padding-bottom để vẫn có "cầu nối" chống rớt hover. */
+        .block-node.actions-below .block-actions {
+          top: 100%;
+          padding-bottom: 0;
+          padding-top: 8px;
         }
 
         .block-node:hover .block-actions,
