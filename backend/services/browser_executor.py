@@ -349,6 +349,14 @@ def run_browser_block(
     log("info", f"🌐 Block Browser [{block_id}] — {len(steps)} bước | headless={headless}")
 
     collected_data = {}
+    
+    # Khởi tạo sẵn giá trị rỗng cho các biến sắp được lấy
+    # Tránh việc step bị lỗi/bỏ qua dẫn đến giữ nguyên giá trị của vòng lặp trước đó.
+    for step in steps:
+        action = step.get("action", "")
+        if action in ["get_text", "get_attribute", "get_all_text", "get_url", "screenshot", "evaluate_js", "click_and_download"]:
+            key = step.get("key_name", "result")
+            collected_data[key] = ""
 
     try:
         from playwright.sync_api import sync_playwright
