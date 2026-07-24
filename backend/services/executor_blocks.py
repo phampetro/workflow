@@ -1203,21 +1203,20 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     try:
                         output_dir = wf_dir / "output"
                         output_dir.mkdir(exist_ok=True)
-                        # bdata_interpolated ở trên chỉ nội suy field string cấp cao nhất
-                        # của block, không đi sâu vào từng step - nên {{key}} trong value
-                        # của mỗi step (VD: khối Nhập văn bản) chưa đọc được input.json.
-                        # Nội suy lại đây để mọi field string trong step cũng dùng được
-                        # biến từ Dữ liệu Workflow, giống các khối khác.
-                        steps_interpolated = [
-                            {k: (interpolate(v) if isinstance(v, str) else v) for k, v in step.items()}
-                            for step in steps
-                        ]
+                        
+                        # Không nội suy trước ở đây nữa vì sẽ gây lỗi lấy nhầm dữ liệu
+                        # vòng lặp cũ (Race condition với các biến nội bộ sinh ra trong cùng block).
+                        # Truyền nguyên steps và gom biến toàn cục vào cho browser_executor tự xử.
+                        merged_input = dict(global_vars)
+                        if isinstance(current_input, dict):
+                            merged_input.update(current_input)
+                            
                         b_result = run_browser_block(
                             block_id=bid,
                             workflow_id=workflow_id,
                             run_id=run_id,
-                            steps=steps_interpolated,
-                            input_data=current_input,
+                            steps=steps,
+                            input_data=merged_input,
                             headless=headless,
                             log_callback=log_fn,
                             output_dir=str(output_dir).replace('\\', '/'),
