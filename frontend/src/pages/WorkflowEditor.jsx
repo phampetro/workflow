@@ -615,14 +615,35 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             />
           </div>
           <div className="palette-list">
+            {(() => {
+              const q = searchBlock.toLowerCase();
+              const groupsWithItems = BLOCK_GROUPS
+                .map(group => ({
+                  group,
+                  items: group.items.filter(key => {
+                    const bt = BLOCK_TYPES[key];
+                    return bt && (bt.label.toLowerCase().includes(q) || (bt.description && bt.description.toLowerCase().includes(q)));
+                  }),
+                }))
+                .filter(g => g.items.length > 0);
+
+              if (groupsWithItems.length === 0) {
+                return (
+                  <div className="palette-empty">
+                    Không tìm thấy khối phù hợp với “{searchBlock}”.
+                  </div>
+                );
+              }
+              return null;
+            })()}
             {BLOCK_GROUPS.map(group => {
               const groupItems = group.items.filter(key => {
                 const bt = BLOCK_TYPES[key];
                 return bt && (bt.label.toLowerCase().includes(searchBlock.toLowerCase()) || (bt.description && bt.description.toLowerCase().includes(searchBlock.toLowerCase())));
               });
-              
+
               if (groupItems.length === 0) return null;
-              
+
               return (
                 <div key={group.title} className="palette-group">
                   <div className="palette-group-title">{group.title}</div>
@@ -812,6 +833,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           display: flex;
           flex-direction: column;
           gap: 1.25rem;
+        }
+        .palette-empty {
+          font-size: 0.8rem;
+          color: var(--text-muted);
+          text-align: center;
+          padding: 1.5rem 0.75rem;
+          line-height: 1.5;
         }
         .palette-group {
           display: flex;
