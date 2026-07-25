@@ -1,6 +1,6 @@
 import React, { memo, useState, useEffect, useRef, useContext, createContext } from 'react'
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
-import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass } from 'lucide-react'
+import { Play, Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Database, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput } from 'lucide-react'
 
 // Handler Sửa/Xóa/Nhân bản được cấp qua Context (value ổn định, memo hóa ở
 // WorkflowEditor) thay vì tiêm closure mới vào data từng node mỗi render.
@@ -49,6 +49,13 @@ const BLOCK_TYPES = {
     color: '#8b5cf6',
     gradient: 'linear-gradient(135deg, #8b5cf6, #c084fc)',
     description: 'Dừng chờ theo số giây',
+  },
+  input_vars: {
+    label: 'Biến đầu vào',
+    icon: <FormInput size="0.875rem" />,
+    color: '#f97316',
+    gradient: 'linear-gradient(135deg, #f97316, #ea580c)',
+    description: 'Chờ người dùng nhập biến giữa chừng',
   },
   queue: {
     label: 'Xếp hàng',
@@ -249,6 +256,10 @@ const BlockNode = memo(({ id, data, selected }) => {
         ) : data.type === 'browser' ? (
           <div className="block-desc" style={{ color: '#0ea5e9', fontWeight: 600 }}>
             {data.debugMode ? '🔍 Debug Mode' : '🤖'} {data.steps?.length || 0} bước
+          </div>
+        ) : data.type === 'input_vars' ? (
+          <div className="block-desc" style={{ color: '#f97316', fontWeight: 600 }}>
+            ✍️ {data.inputFields?.length || 0} biến · chờ {data.inputTimeout || 120}s
           </div>
         ) : (
           <div className="block-desc">

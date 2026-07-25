@@ -34,6 +34,57 @@ _workflow_run_ids = {}
 _active_listeners = {}
 _active_browser_profiles = {}
 
+# ── Khối "Biến đầu vào": trạng thái chờ người dùng nhập (khóa an toàn đa thread) ──
+# run_id -> {block_id, label, fields, deadline, event(threading.Event), values}
+_pending_inputs = {}
+_pending_lock = threading.Lock()
+
+
+def register_pending_input(run_id, block_id, label, fields, deadline):
+    """Đăng ký một yêu cầu nhập; trả threading.Event để executor thread chờ."""
+    ev = threading.Event()
+    with _pending_lock:
+        _pending_inputs[run_id] = {
+            "block_id": block_id, "label": label, "fields": fields,
+            "deadline": deadline, "event": ev, "values": None,
+        }
+    return ev
+
+
+def clear_pending_input(run_id):
+    with _pending_lock:
+        _pending_inputs.pop(run_id, None)
+
+
+def get_pending_input(run_id):
+    """Cho API đọc: trả spec + số giây còn lại (nguồn cho đếm ngược), hoặc None."""
+    import time
+    with _pending_lock:
+        p = _pending_inputs.get(run_id)
+        if not p:
+            return None
+        return {
+            "block_id": p["block_id"],
+            "label": p["label"],
+            "fields": p["fields"],
+            "remaining_seconds": max(0, int(round(p["deadline"] - time.time()))),
+        }
+
+
+def submit_input(run_id, values):
+    """API giao giá trị người dùng nhập cho executor thread đang chờ."""
+    import time
+    with _pending_lock:
+        p = _pending_inputs.get(run_id)
+        if not p:
+            return {"ok": False, "reason": "Không có yêu cầu nhập nào đang chờ (có thể đã hết thời gian hoặc đã nhập)."}
+        if time.time() > p["deadline"]:
+            return {"ok": False, "reason": "Đã hết thời gian nhập."}
+        p["values"] = values or {}
+        p["event"].set()
+    return {"ok": True}
+
+
 def kill_run(run_id):
     """Force kill tất cả processes liên quan đến một run"""
     # Kill subproc nếu đang chạy
@@ -729,6 +780,71 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 else:
                     if log_fn:
                         log_fn(bid, "success", f"✅ Đã chờ xong {delay_sec} giây.")
+            elif btype == "input_vars":
+                import time
+                fields = bdata.get("inputFields") or []
+                timeout = float(bdata.get("inputTimeout") or 120)
+                # Chuẩn hoá field gửi cho FE (bỏ field thiếu tên biến)
+                safe_fields = [
+                    {
+                        "name": (f.get("name") or "").strip(),
+                        "label": f.get("label") or f.get("name") or "",
+                        "type": f.get("type") or "text",
+                        "required": bool(f.get("required")),
+                        "defaultValue": f.get("defaultValue", ""),
+                        "placeholder": f.get("placeholder", ""),
+                    }
+                    for f in fields if (f.get("name") or "").strip()
+                ]
+                if not safe_fields:
+                    if log_fn:
+                        log_fn(bid, "warning", f"⚠️ [Biến đầu vào] {label} - Chưa cấu hình biến, bỏ qua.")
+                else:
+                    deadline = time.time() + timeout
+                    ev = register_pending_input(run_id, bid, label, safe_fields, deadline)
+                    if log_fn:
+                        log_fn(bid, "info", f"⌨️ [Biến đầu vào] {label} - Chờ người dùng nhập {len(safe_fields)} biến (tối đa {int(timeout)}s)...")
+
+                    got_input = False
+                    stopped = False
+                    while time.time() < deadline:
+                        if stop_event and stop_event.is_set():
+                            stopped = True
+                            break
+                        if ev.wait(timeout=0.5):
+                            got_input = True
+                            break
+
+                    with _pending_lock:
+                        p = _pending_inputs.get(run_id)
+                        values = (p or {}).get("values") if got_input else None
+                    clear_pending_input(run_id)
+
+                    if stopped:
+                        if log_fn:
+                            log_fn(bid, "warning", "⏹ [Biến đầu vào] Bị dừng bởi người dùng")
+                        final_status = "stopped"
+                        break
+
+                    if not got_input or values is None:
+                        err = f"Hết thời gian chờ nhập biến ({int(timeout)}s) tại khối [{label}]"
+                        if log_fn:
+                            log_fn(bid, "error", f"⏱ {err}")
+                        if handle_workflow_error(err, bid, label):
+                            return
+                        else:
+                            continue
+
+                    # Gộp vào current_input → tự merge vào workflow_env cho khối sau
+                    if not isinstance(current_input, dict):
+                        current_input = {}
+                    applied = []
+                    for f in safe_fields:
+                        name = f["name"]
+                        current_input[name] = values.get(name, f.get("defaultValue", "")) if isinstance(values, dict) else f.get("defaultValue", "")
+                        applied.append(name)
+                    if log_fn:
+                        log_fn(bid, "success", f"✅ [Biến đầu vào] Đã nhận: {', '.join(applied)}")
             elif btype == "queue":
                 # Khối "Xếp hàng": 1 vào - 1 ra, không xử lý gì, không đổi biến.
                 # Cơ chế "lấy số chờ tới lượt": nếu trong hàng đợi còn khối THƯỜNG

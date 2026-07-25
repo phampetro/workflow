@@ -474,6 +474,12 @@ async def run_workflow(workflow_id: str, session: AsyncSession = Depends(get_ses
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
 
+    # Luật tương thích khối (nguồn sự thật) — chặn cả khi import/lách FE
+    from services.block_rules import validate_workflow
+    _check = validate_workflow(wf.graph_json)
+    if not _check["ok"]:
+        raise HTTPException(400, " ".join(_check["violations"]))
+
     run_id = str(uuid.uuid4())
     asyncio.create_task(run_workflow_internal(workflow_id, triggered_by="manual", run_id=run_id))
     return {"status": "started", "workflow_id": workflow_id, "run_id": run_id}
@@ -492,8 +498,27 @@ async def stop_workflow(workflow_id: str):
     # Also kill processes directly for immediate stop
     from services.executor_blocks import stop_all_runs_for_workflow
     stop_all_runs_for_workflow(workflow_id)
-    
+
     return {"stopped": True, "runs": stopped_runs}
+
+
+# ── Khối "Biến đầu vào": chờ người dùng nhập ────────────────────────────────
+@router.get("/api/runs/{run_id}/pending-input")
+async def get_run_pending_input(run_id: str):
+    """FE poll khi run đang chạy → nếu có yêu cầu nhập, trả spec + số giây còn lại."""
+    from services.executor_blocks import get_pending_input
+    p = get_pending_input(run_id)
+    return p or {"pending": False}
+
+
+@router.post("/api/runs/{run_id}/input")
+async def submit_run_input(run_id: str, body: dict):
+    """FE gửi giá trị người dùng nhập cho executor thread đang chờ."""
+    from services.executor_blocks import submit_input
+    res = submit_input(run_id, body.get("values") or {})
+    if not res["ok"]:
+        raise HTTPException(400, res["reason"])
+    return {"ok": True}
 
 
 # ── Run History ─────────────────────────────────────────────

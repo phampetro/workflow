@@ -37,6 +37,14 @@ export const deleteUser      = (id)         => api.delete(`/api/users/${id}`)
 export const activateUser    = (id)         => api.post(`/api/users/${id}/activate`)
 export const getUserStats    = (id)         => api.get(`/api/users/${id}/stats`)
 
+// ── License ───────────────────────────────────────────────
+export const getLicenseStatus  = ()          => api.get('/api/license/status')
+export const activateLicense   = (key)       => api.post('/api/license/activate', { key })
+
+// ── Biến đầu vào (khối input_vars) ────────────────────────
+export const getPendingInput   = (runId)        => api.get(`/api/runs/${runId}/pending-input`)
+export const submitRunInput    = (runId, values) => api.post(`/api/runs/${runId}/input`, { values })
+
 // ── Dashboard ─────────────────────────────────────────────
 export const getDashboardStats = ()         => api.get('/api/dashboard/stats')
 

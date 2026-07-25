@@ -483,6 +483,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const [telegramFiles, setTelegramFiles] = useState([])
   const [loadingTelegramFiles, setLoadingTelegramFiles] = useState(false)
   const [listenerCommands, setListenerCommands] = useState(node.data.telegramListenerCommands || [{ command: '/hi', description: 'Gửi lời chào', reply: 'Xin chào! 👋', runWorkflow: false }])
+  const [inputFields, setInputFields] = useState(node.data.inputFields || [{ name: 'bien_1', label: 'Nhập giá trị', type: 'text', required: true, defaultValue: '' }])
   const [listenerRunning, setListenerRunning] = useState(false)
   const dragCmdItem = React.useRef(null)
   const dragCmdOverItem = React.useRef(null)
@@ -546,6 +547,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isRunSqlExec = node.data.type === 'run_sql_exec'
   const isGoogleSheets = node.data.type === 'google_sheets_read'
   const isExcelRead = node.data.type === 'excel_read'
+  const isInputVars = node.data.type === 'input_vars'
   const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel
 
   // Excel to SQL states
@@ -1057,6 +1059,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         ...(isMergeExcel ? { mergeMode } : {}),
         ...(isBrowser ? { steps: browserSteps } : {}),
         ...(isTelegramListener ? { telegramListenerCommands: listenerCommands } : {}),
+        ...(isInputVars ? { inputFields } : {}),
         ...(isExcelToSql ? { excelToSqlMapping } : {}),
         ...(isEmail ? {
           mailTo: (values.mailTo || []).join(','),
@@ -1068,6 +1071,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       // validation error already surfaced via form fields
     }
   }
+
+  // Helpers cho danh sách biến của khối "Biến đầu vào"
+  const updateInputField = (idx, key, val) =>
+    setInputFields(prev => prev.map((f, i) => i === idx ? { ...f, [key]: val } : f))
+  const removeInputField = (idx) =>
+    setInputFields(prev => prev.filter((_, i) => i !== idx))
+  const addInputField = () =>
+    setInputFields(prev => [...prev, { name: `bien_${prev.length + 1}`, label: '', type: 'text', required: false, defaultValue: '' }])
 
   const applyTemplate = (key) => {
     const newCode = BLOCK_TEMPLATES.python[key];
@@ -1083,7 +1094,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     // Mẫu 1: 1/3 màn hình
     if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger', 'queue'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
-    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read'].includes(type)) return '50vw'
+    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read', 'input_vars'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
@@ -1140,6 +1151,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 condValue: node.data.condValue || '',
             }),
             delaySeconds: node.data.delaySeconds || 3,
+            inputTimeout: node.data.inputTimeout || 120,
             loopMode: node.data.loopMode || 'count',
             loopCount: node.data.loopCount || 5,
             loopMaxCount: node.data.loopMaxCount || 50,
@@ -1375,6 +1387,80 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <Form.Item label="Thời gian chờ (giây)" name="delaySeconds" rules={[{ required: true, message: 'Nhập số giây' }]}>
               <InputNumber min={1} style={{ width: '100%' }} />
             </Form.Item>
+          )}
+
+          {isInputVars && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                description="Khi chạy tới khối này, workflow tạm dừng và hiện form cho người dùng nhập. Hết thời gian chờ mà chưa nhập → khối BÁO LỖI (đi nhánh Bắt Lỗi nếu có). Biến nhập được đưa vào global cho các khối sau (biến ngày lưu dạng YYYY-MM-DD)."
+              />
+              <Form.Item
+                label="Thời gian chờ nhập (giây)"
+                name="inputTimeout"
+                rules={[{ required: true, message: 'Nhập số giây' }]}
+                extra="Hết thời gian này người dùng không nhập nữa, khối sẽ báo lỗi."
+              >
+                <InputNumber min={5} max={3600} style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Divider style={{ margin: '8px 0 16px' }}>Danh sách biến</Divider>
+
+              {inputFields.map((f, idx) => (
+                <div key={idx} style={{ border: '1px solid var(--border-default)', borderRadius: 8, padding: 12, marginBottom: 10, background: 'var(--bg-surface)' }}>
+                  <Row gutter={8} align="middle">
+                    <Col span={8}>
+                      <Input
+                        placeholder="tên_biến (không dấu, không cách)"
+                        value={f.name}
+                        onChange={(e) => updateInputField(idx, 'name', e.target.value.replace(/[^\w]/g, '_'))}
+                        addonBefore="{{ }}"
+                      />
+                    </Col>
+                    <Col span={9}>
+                      <Input
+                        placeholder="Nhãn hiển thị cho người dùng"
+                        value={f.label}
+                        onChange={(e) => updateInputField(idx, 'label', e.target.value)}
+                      />
+                    </Col>
+                    <Col span={5}>
+                      <Select
+                        style={{ width: '100%' }}
+                        value={f.type || 'text'}
+                        onChange={(v) => updateInputField(idx, 'type', v)}
+                        options={[
+                          { value: 'text', label: 'Chữ' },
+                          { value: 'number', label: 'Số' },
+                          { value: 'date', label: 'Ngày' },
+                        ]}
+                      />
+                    </Col>
+                    <Col span={2} style={{ textAlign: 'right' }}>
+                      <Button danger type="text" icon={<Trash2 size={16} />} aria-label="Xóa biến"
+                        onClick={() => removeInputField(idx)} disabled={inputFields.length <= 1} />
+                    </Col>
+                  </Row>
+                  <Row gutter={8} align="middle" style={{ marginTop: 8 }}>
+                    <Col span={17}>
+                      <Input
+                        placeholder="Giá trị mặc định (tùy chọn)"
+                        value={f.defaultValue}
+                        onChange={(e) => updateInputField(idx, 'defaultValue', e.target.value)}
+                      />
+                    </Col>
+                    <Col span={7} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Switch checked={!!f.required} onChange={(v) => updateInputField(idx, 'required', v)} size="small" />
+                      <span className="text-secondary text-sm">Bắt buộc</span>
+                    </Col>
+                  </Row>
+                </div>
+              ))}
+
+              <Button type="dashed" block icon={<Plus size={16} />} onClick={addInputField}>Thêm biến</Button>
+            </>
           )}
 
           {isEnd && (

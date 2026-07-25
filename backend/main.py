@@ -7,7 +7,10 @@ import uvicorn
 
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
-from routers import projects, workflows, users, dashboard, files, schedule_endpoints, ai_codegen, database, system
+from routers import projects, workflows, users, dashboard, files, schedule_endpoints, ai_codegen, database, system, license
+from services import licensing
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("pyflow.main")
@@ -81,20 +84,25 @@ async def reload_schedules():
         
         if user:
             # Join schedule -> workflow -> project
-            stmt = select(Schedule, Workflow.project_id).join(
+            stmt = select(Schedule, Workflow.project_id, Workflow.graph_json).join(
                 Workflow, Schedule.workflow_id == Workflow.id
             ).join(
                 Project, Workflow.project_id == Project.id
             ).where(Schedule.enabled == True, Project.user_id == user.id)
-            
+
             rows = (await session.execute(stmt)).all()
             loaded = 0
 
             from services.scheduler import scheduler as aps_scheduler, trigger_workflow_job, build_cron_trigger, get_next_run_time
+            from services.block_rules import is_feature_disabled
             # Remove all jobs
             aps_scheduler.remove_all_jobs()
 
-            for sched, proj_id in rows:
+            for sched, proj_id, graph_json in rows:
+                # Luật: workflow có khối interactive không được chạy theo lịch
+                if is_feature_disabled(graph_json, "scheduler"):
+                    logger.info(f"⏭ Bỏ qua lịch {sched.id}: workflow có khối chờ người nhập")
+                    continue
                 try:
                     aps_scheduler.add_job(
                         trigger_workflow_job,
@@ -146,6 +154,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="PyFlow Studio API")
 
+# ── License guard ────────────────────────────────────────────────────────────
+# Khi PYFLOW_LICENSE_ENFORCE=1 và license không hợp lệ/hết hạn → chặn mọi API
+# (trừ health, /api/license/* để kích hoạt, /api/system/* để vẫn cập nhật được).
+# Mặc định TẮT (env=0) → middleware thoát ngay, không ảnh hưởng bản dev.
+_LICENSE_ALLOW = ("/health", "/api/license", "/api/system")
+
+async def _license_guard(request, call_next):
+    if licensing.ENFORCE:
+        path = request.url.path
+        if not any(path.startswith(p) for p in _LICENSE_ALLOW) and licensing.is_locked():
+            return JSONResponse(
+                status_code=403,
+                content={"error": "license_required",
+                         "detail": "Phần mềm chưa kích hoạt hoặc đã hết hạn."},
+            )
+    return await call_next(request)
+
+# Thêm guard TRƯỚC CORS để CORS bọc ngoài (response 403 vẫn có header CORS).
+app.add_middleware(BaseHTTPMiddleware, dispatch=_license_guard)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:9000", "http://127.0.0.1:9000"],
@@ -163,6 +191,7 @@ app.include_router(schedule_endpoints.router)
 app.include_router(ai_codegen.router)
 app.include_router(database.router)
 app.include_router(system.router)
+app.include_router(license.router)
 
 @app.get("/health")
 def health_check():

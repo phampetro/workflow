@@ -16,18 +16,20 @@ import {
   ArrowLeft, Play, Square, Calendar, Terminal, History,
   Save, Loader, CheckCircle, AlertCircle, Database, Table, Files, RefreshCw, Trash2
 } from 'lucide-react'
-import { Button, Drawer, Space, Input, Popconfirm, Tag, App } from 'antd'
+import { Button, Drawer, Space, Input, Popconfirm, Tag, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
-import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory } from '../api/client'
+import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory, getPendingInput } from '../api/client'
+import InputVarsModal from '../components/InputVarsModal'
 import useStore from '../store/useStore'
 import useUndoRedo from '../hooks/useUndoRedo'
+import { canAddBlock, isFeatureDisabled } from '../config/blockRules'
 
 const nodeTypes = { block: BlockNode }
 const edgeTypes = { custom: DeleteEdge }
 
 const BLOCK_GROUPS = [
   { title: 'Bắt đầu - Kết thúc', items: ['start', 'end'] },
-  { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay', 'queue'] },
+  { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay', 'queue', 'input_vars'] },
   { title: 'Python Code', items: ['python'] },
   { title: 'Tự động hóa Web', items: ['browser'] },
   { title: 'Xử lý Dữ liệu', items: ['google_sheets_read', 'excel_read', 'merge_excel', 'pivot_excel'] },
@@ -76,6 +78,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   }, [currentRunId])
 
   const [wfData, setWfData] = useState(workflow)
+  const [pendingInput, setPendingInput] = useState(null)
   const [checkingStatus, setCheckingStatus] = useState(true)
   const saveTimer = useRef(null)
   const reactFlowWrapper = useRef(null)
@@ -474,6 +477,22 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     return () => { cancelled = true; clearInterval(interval) }
   }, [isRunning, wfData?.id, currentRunId])
 
+  // Poll yêu cầu nhập biến (khối input_vars) khi đang chạy → hiện modal nhập
+  useEffect(() => {
+    if (!isRunning || !currentRunId) { setPendingInput(null); return }
+    let cancelled = false
+    const check = async () => {
+      try {
+        const res = await getPendingInput(currentRunId)
+        const p = res.data
+        if (!cancelled) setPendingInput(p && p.fields ? { ...p, runId: currentRunId } : null)
+      } catch { /* mạng lỗi tạm — lần sau thử lại */ }
+    }
+    check()
+    const interval = setInterval(check, 1500)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [isRunning, currentRunId])
+
   // Drag and drop support
   const onDragStart = (event, nodeType) => {
     event.dataTransfer.setData('application/reactflow', nodeType)
@@ -491,6 +510,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       const type = event.dataTransfer.getData('application/reactflow')
       // Guard: bỏ qua nếu không phải block type hợp lệ từ palette (tránh nhầm với drag node nội bộ)
       if (!type || !BLOCK_TYPES[type]) return
+
+      // Luật tương thích khối: chặn thêm khối xung khắc với khối đang có
+      const allow = canAddBlock(nodesRef.current, type)
+      if (!allow.ok) {
+        toast.error(allow.msg)
+        return
+      }
 
       const position = screenToFlowPosition({
         x: event.clientX,
@@ -518,6 +544,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           ] : undefined,
           steps: type === 'browser' ? [] : undefined,
           debugMode: type === 'browser' ? false : undefined,
+          inputFields: type === 'input_vars' ? [{ name: 'bien_1', label: 'Nhập giá trị', type: 'text', required: true, defaultValue: '' }] : undefined,
+          inputTimeout: type === 'input_vars' ? 120 : undefined,
           sqlCommand: type === 'run_sql_exec' ? '' : undefined,
           sqlExecDbConfigKey: type === 'run_sql_exec' ? '' : undefined,
         },
@@ -550,6 +578,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     : saveStatus === 'error' ? AlertCircle
     : null
 
+  // Luật: workflow có khối interactive không được đặt lịch → khóa nút Lịch chạy
+  const schedulerDisabled = isFeatureDisabled(nodes, 'scheduler')
+
   return (
     <div className="workflow-editor">
       <div className="editor-toolbar">
@@ -578,7 +609,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           <Space>
             <Button icon={<Database size="0.875rem" />} onClick={() => setShowInputModal(true)}>Dữ liệu Workflow</Button>
             <Button icon={<History size="0.875rem" />} onClick={() => setShowHistory(true)}>Lịch sử</Button>
-            <Button icon={<Calendar size="0.875rem" />} onClick={() => setShowScheduler(true)}>Lịch chạy</Button>
+            <Tooltip title={schedulerDisabled ? 'Workflow có khối "Biến đầu vào" (chờ người nhập) nên không thể đặt lịch tự động.' : ''}>
+              <Button icon={<Calendar size="0.875rem" />} onClick={() => setShowScheduler(true)} disabled={schedulerDisabled}>Lịch chạy</Button>
+            </Tooltip>
             <Button
               icon={<Terminal size="0.875rem" />}
               onClick={() => setShowLogs(!showLogs)}
@@ -785,6 +818,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
       {showScheduler && (
         <SchedulerPanel workflow={wfData} onClose={() => setShowScheduler(false)} />
+      )}
+
+      {pendingInput && (
+        <InputVarsModal
+          runId={pendingInput.runId}
+          spec={pendingInput}
+          onDone={() => setPendingInput(null)}
+        />
       )}
 
       <style>{`
