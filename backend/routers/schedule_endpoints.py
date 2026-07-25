@@ -23,7 +23,13 @@ async def create_schedule(workflow_id: str, body: dict, session: AsyncSession = 
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
-        
+
+    # Luật: workflow có khối interactive (chờ người nhập) không được đặt lịch
+    from services.block_rules import validate_workflow
+    _check = validate_workflow(wf.graph_json)
+    if "scheduler" in _check["disabled_features"]:
+        raise HTTPException(400, 'Workflow có khối "Biến đầu vào" (chờ người nhập) nên không thể đặt lịch chạy tự động.')
+
     cron_expr = body.get("cron_expr", "").strip()
     if not cron_expr:
         raise HTTPException(400, "Thiếu cron_expr")
