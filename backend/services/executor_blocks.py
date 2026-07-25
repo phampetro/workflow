@@ -1787,7 +1787,7 @@ with engine.begin() as connection:
         connection.execute(text(f"TRUNCATE TABLE [{{table_name}}]"))
 
 print(f"Đang Bulk Insert {{len(sql_df)}} dòng vào bảng {{table_name}}...")
-sql_df.to_sql(name=table_name, con=engine, if_exists='append', index=False, chunksize=10000)
+sql_df.to_sql(name=table_name, con=engine, if_exists='append', index=False, chunksize=5000)
 
 print(f"✅ Đã Import thành công {{len(sql_df)}} dòng.")
 output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
@@ -1852,7 +1852,7 @@ engine = create_engine(conn_str)
 sql_command = {sql_command!r}
 print(f"Đang thực thi: {{sql_command}}")
 
-with engine.begin() as conn:
+with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
     result = conn.execute(text(sql_command))
     if result.returns_rows:
         rows = [dict(r._mapping) for r in result.fetchall()]
