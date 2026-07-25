@@ -14,3 +14,9 @@ backend_log.txt
 .agents/skills/ui-ux-pro-max/data/
 .agents/skills/ui-ux-pro-max/scripts/
 *.db
+
+# License — TUYỆT ĐỐI không commit private key ký license
+secrets/
+*.pem
+license_private*.txt
+backend/data/license.key

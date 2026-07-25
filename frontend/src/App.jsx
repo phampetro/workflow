@@ -6,13 +6,14 @@ import WorkflowEditor from './pages/WorkflowEditor'
 import UserPickerModal from './components/UserPickerModal'
 import AiSettingsModal from './components/AiSettingsModal'
 import AboutModal from './components/AboutModal'
+import LicenseGate from './components/LicenseGate'
 import { Toaster } from 'react-hot-toast'
 import { ConfigProvider, theme as antdTheme, Spin, App as AntApp } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import 'dayjs/locale/vi'
 import dayjs from 'dayjs'
 import useStore from './store/useStore'
-import { checkHealth, getUsers, getDashboardStats, importProject } from './api/client'
+import { checkHealth, getUsers, getDashboardStats, importProject, getLicenseStatus } from './api/client'
 import toast from 'react-hot-toast'
 
 dayjs.locale('vi')
@@ -37,6 +38,8 @@ export default function App() {
   const [backendOnline, setBackendOnline] = useState(true)
   const [showUserPicker, setShowUserPicker] = useState(false)
   const [noUsersExist, setNoUsersExist] = useState(false)
+  // License: mặc định coi như không cần kích hoạt (enforce tắt) → không đổi UX bản dev.
+  const [licenseStatus, setLicenseStatus] = useState({ enforced: false, valid: true })
 
   // Shared stats for Navbar
   const [stats, setStats] = useState(null)
@@ -89,6 +92,20 @@ export default function App() {
         setBackendOnline(false)
         setBootstrapDone(true)
         return
+      }
+
+      // Kiểm tra license TRƯỚC. Nếu enforce bật mà chưa hợp lệ → dừng bootstrap,
+      // hiện màn khóa (bỏ qua luôn bước chọn user). Lỗi mạng → coi như không enforce.
+      try {
+        const licRes = await getLicenseStatus()
+        const lic = licRes.data || { enforced: false, valid: true }
+        setLicenseStatus(lic)
+        if (lic.enforced && !lic.valid) {
+          setBootstrapDone(true)
+          return
+        }
+      } catch {
+        setLicenseStatus({ enforced: false, valid: true })
       }
 
       // Check users
@@ -187,6 +204,9 @@ export default function App() {
     }
   }
 
+  // Khóa app khi license được enforce nhưng chưa hợp lệ/hết hạn
+  const licenseLocked = licenseStatus?.enforced && !licenseStatus?.valid
+
   // ── Render ─────────────────────────────────────────────────
   return (
     <ConfigProvider
@@ -283,13 +303,20 @@ export default function App() {
           </div>
         )}
 
+        {/* Màn khóa kích hoạt — che toàn bộ khi license chưa hợp lệ */}
+        {bootstrapDone && licenseLocked && (
+          <LicenseGate status={licenseStatus} onActivated={() => window.location.reload()} />
+        )}
+
         {/* User Picker Modal */}
+        {!licenseLocked && (
         <UserPickerModal
           open={showUserPicker}
           onClose={() => !noUsersExist && setShowUserPicker(false)}
           onSelect={handleUserSelected}
           allowClose={!noUsersExist}
         />
+        )}
 
         <AiSettingsModal
           open={openAiSettings}
@@ -301,7 +328,7 @@ export default function App() {
           onClose={() => setOpenAbout(false)}
         />
 
-        {bootstrapDone && (
+        {bootstrapDone && !licenseLocked && (
           <>
             {/* Navbar */}
             {view !== VIEWS.EDITOR && (
