@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Modal, Button, Input, Tag, Progress, Spin, Empty, Tooltip } from 'antd'
+import { Modal, Button, Input, Tag, Progress, Spin, Empty, Tooltip, Alert } from 'antd'
 import { PackagePlus, Plus, X, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { scanPackages, autoInstallPackages, getInstallStatus } from '../api/client'
@@ -28,7 +28,8 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
       .then(res => {
         const its = res.data?.packages || []
         setItems(its)
-        setSelected(its.map(i => i.package))
+        // Mặc định chỉ chọn cài những gói CÒN THIẾU (chưa có trong venv)
+        setSelected(its.filter(i => !i.installed).map(i => i.package))
         setPhase('review')
       })
       .catch(err => { toast.error('Lỗi quét: ' + err.message); setPhase('review'); setItems([]); setSelected([]) })
@@ -100,39 +101,57 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
         </div>
       )}
 
-      {phase === 'review' && (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0 }}>
-            Hệ thống quét các khối trong mọi workflow của project. Thư viện từ khối <b>Python</b> là dự đoán từ <code>import</code> — bạn có thể bớt/thêm trước khi cài.
-          </p>
-          {selected.length === 0 && items.length === 0 ? (
-            <Empty description="Không phát hiện thư viện nào cần cài" />
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-              {selected.map(p => {
-                const reason = items.find(i => i.package === p)?.reasons?.join('; ') || 'Bạn tự thêm'
-                return (
-                  <Tooltip key={p} title={reason}>
-                    <Tag closable onClose={(e) => { e.preventDefault(); removePkg(p) }} style={{ padding: '4px 8px', fontSize: '0.8rem' }}>
-                      {p}
-                    </Tag>
-                  </Tooltip>
-                )
-              })}
+      {phase === 'review' && (() => {
+        const installedItems = items.filter(i => i.installed)
+        return (
+          <div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0 }}>
+              Đã quét mọi workflow của project (lọc trùng, chỉ chọn gói còn thiếu). Thư viện từ khối <b>Python</b> là dự đoán từ <code>import</code> — bạn có thể bớt/thêm trước khi cài.
+            </p>
+
+            {selected.length === 0 ? (
+              installedItems.length > 0
+                ? <Alert type="success" showIcon message="Tất cả thư viện cần thiết đã được cài đủ." style={{ marginBottom: 12 }} />
+                : <Empty description="Không phát hiện thư viện nào cần cài" />
+            ) : (
+              <>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Cần cài ({selected.length}):
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {selected.map(p => {
+                    const reason = items.find(i => i.package === p)?.reasons?.join('; ') || 'Bạn tự thêm'
+                    return (
+                      <Tooltip key={p} title={reason}>
+                        <Tag color="orange" closable onClose={(e) => { e.preventDefault(); removePkg(p) }} style={{ padding: '4px 8px', fontSize: '0.8rem' }}>
+                          {p}
+                        </Tag>
+                      </Tooltip>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {installedItems.length > 0 && (
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.6 }}>
+                ✓ Đã có sẵn trong môi trường ({installedItems.length}): {installedItems.map(i => i.package).join(', ')}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input
+                placeholder="Thêm thư viện thủ công (vd: requests)"
+                value={custom}
+                onChange={e => setCustom(e.target.value)}
+                onPressEnter={addCustom}
+                size="small"
+              />
+              <Button icon={<Plus size={14} />} onClick={addCustom} size="small">Thêm</Button>
             </div>
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input
-              placeholder="Thêm thư viện thủ công (vd: requests)"
-              value={custom}
-              onChange={e => setCustom(e.target.value)}
-              onPressEnter={addCustom}
-              size="small"
-            />
-            <Button icon={<Plus size={14} />} onClick={addCustom} size="small">Thêm</Button>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {(installing || phase === 'done') && (
         <div>

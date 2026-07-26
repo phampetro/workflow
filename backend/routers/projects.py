@@ -367,7 +367,17 @@ async def scan_project_packages(project_id: str, session: AsyncSession = Depends
             except Exception:
                 pass
     from services.pkg_scanner import scan_packages
-    return {"packages": scan_packages(graphs)}
+    items = scan_packages(graphs)
+
+    # Đối chiếu với gói đã có trong venv → gắn cờ installed (để FE chỉ chọn cái thiếu)
+    from services.executor_blocks import list_pkgs_sync
+    def _norm(x):
+        return str(x).strip().lower().replace("_", "-")
+    installed = {_norm(p["name"]) for p in list_pkgs_sync(project_id)}
+    for it in items:
+        it["installed"] = _norm(it["package"]) in installed
+
+    return {"packages": items, "missing_count": sum(1 for it in items if not it["installed"])}
 
 
 @router.post("/{project_id}/packages/auto-install")
