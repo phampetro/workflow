@@ -81,7 +81,7 @@ export default function InputVarsModal({ runId, spec, onDone }) {
     <Modal
       open
       closable={false}
-      maskClosable={false}
+      mask={{ closable: false }}
       keyboard={false}
       title={
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>

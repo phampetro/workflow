@@ -58,7 +58,7 @@
   --border-accent: rgba(13, 148, 136, 0.6);
 
   /* Canvas (React Flow) — lưới nền + lớp phủ minimap, khai đủ cả 2 theme */
-  --canvas-dot: rgba(255, 255, 255, 0.06);
+  --canvas-dot: rgba(255, 255, 255, 0.12);
   --canvas-mask: rgba(0, 0, 0, 0.6);
 
   /* Spacing */
@@ -144,7 +144,7 @@
   --border-subtle: #f1f5f9;
 
   /* Canvas — dots tối trên nền sáng để nhìn thấy được; mask minimap nhạt hơn */
-  --canvas-dot: rgba(15, 23, 42, 0.10);
+  --canvas-dot: rgba(15, 23, 42, 0.18);
   --canvas-mask: rgba(148, 163, 184, 0.35);
 
   --shadow-glass: inset 0 1px 1px rgba(255, 255, 255, 0.8);
