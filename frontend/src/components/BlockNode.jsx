@@ -240,7 +240,9 @@ const BlockNode = memo(({ id, data, selected }) => {
 
       {/* Body */}
       <div className="block-body">
-        <div className="block-name">{data.label || `${type.label} Block`}</div>
+        {!['browser', 'merge_excel', 'pivot_excel'].includes(data.type) && (
+          <div className="block-name">{data.label || `${type.label} Block`}</div>
+        )}
         {data.type === 'delay' ? (
           <div className="block-desc" style={{ color: 'var(--accent-warning)', fontWeight: 600 }}>
             Dừng chờ {data.delaySeconds || 3} giây
@@ -252,6 +254,10 @@ const BlockNode = memo(({ id, data, selected }) => {
         ) : data.type === 'merge_excel' ? (
           <div className="block-desc" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
             {data.excelFileName || 'merged.xlsx'}
+          </div>
+        ) : data.type === 'pivot_excel' ? (
+          <div className="block-desc" style={{ color: '#f59e0b', fontWeight: 600 }}>
+            {data.excelFileName || 'pivot.xlsx'}
           </div>
         ) : data.type === 'browser' ? (
           <div className="block-desc" style={{ color: '#0ea5e9', fontWeight: 600 }}>
