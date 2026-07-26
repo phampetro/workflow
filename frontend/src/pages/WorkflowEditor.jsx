@@ -732,7 +732,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             defaultEdgeOptions={{
-              animated: true, type: 'smoothstep',
+              animated: true, type: 'default',
               markerEnd: { type: MarkerType.ArrowClosed, color: '#0d9488' },
             }}
             style={{ background: 'transparent' }}

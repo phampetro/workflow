@@ -27,9 +27,9 @@ export default function DeleteEdge({
   const wps = drag ? waypoints.map((w, i) => (i === drag.idx ? { x: drag.x, y: drag.y } : w)) : waypoints
   const allPts = [{ x: sourceX, y: sourceY }, ...wps, { x: targetX, y: targetY }]
 
-  // getBezierPath chỉ dùng để lấy vị trí giữa cạnh cho nút xóa; đường vẽ luôn THẲNG
-  const [, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
-  const path = straightPath(allPts)   // thẳng: nguồn → các điểm → đích
+  // Dùng Bezier (cong mềm) nếu không có điểm bẻ (waypoints), ngược lại dùng thẳng
+  const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
+  const path = waypoints.length > 0 ? straightPath(allPts) : edgePath
 
   const commit = (newWps) => data?.onWaypointsChange?.(id, newWps)
 
