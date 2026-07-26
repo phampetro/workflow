@@ -352,6 +352,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     triggerAutoSave()
   }, [triggerAutoSave, takeSnapshot])
 
+  // Thêm/kéo/xóa điểm uốn (waypoint) của 1 cạnh — lưu vào edge.data.waypoints (autosave lo phần lưu)
+  const handleEdgeWaypoints = useCallback((edgeId, waypoints) => {
+    takeSnapshot(nodesRef.current, edgesRef.current)
+    setEdges(eds => eds.map(e => e.id === edgeId ? { ...e, data: { ...e.data, waypoints } } : e))
+    triggerAutoSave()
+  }, [triggerAutoSave, takeSnapshot, setEdges])
+
   const onConnect = useCallback(
     (params) => {
       takeSnapshot(nodesRef.current, edgesRef.current)
@@ -570,8 +577,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   // và undo/redo (deep-clone làm mất function) cũng không làm chết nút xóa edge
   const edgesWithCb = useMemo(() => edges.map((e) => ({
     ...e,
-    data: { ...e.data, onDelete: handleDeleteEdge },
-  })), [edges, handleDeleteEdge])
+    data: { ...e.data, onDelete: handleDeleteEdge, onWaypointsChange: handleEdgeWaypoints },
+  })), [edges, handleDeleteEdge, handleEdgeWaypoints])
 
   const SaveIcon = saveStatus === 'saving' ? Loader
     : saveStatus === 'saved' ? CheckCircle
@@ -720,6 +727,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             onDragOver={onDragOver}
             onNodeDragStart={() => takeSnapshot(nodesRef.current, edgesRef.current)}
             onNodeDoubleClick={(e, node) => openEditor(node.id)}
+            snapToGrid
+            snapGrid={[20, 20]}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             defaultEdgeOptions={{
@@ -728,7 +737,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             }}
             style={{ background: 'transparent' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--canvas-dot)" />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={2} color="var(--canvas-dot)" />
             <Controls style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }} />
             <MiniMap
               style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }}
@@ -955,6 +964,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         .save-status svg { color: var(--accent-success); }
 
         .spinning { animation: spin 1s linear infinite; }
+
+        .edge-waypoint {
+          position: absolute; width: 12px; height: 12px; border-radius: 50%;
+          background: var(--accent-primary); border: 2px solid var(--bg-surface);
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.2); cursor: grab; pointer-events: all;
+          touch-action: none;
+        }
+        .edge-waypoint:hover { box-shadow: 0 0 0 4px var(--accent-primary-glow); }
+        .edge-waypoint:active { cursor: grabbing; }
 
         .edge-delete-btn { width: 1.5rem; height: 1.5rem; background: var(--bg-surface); border: 1px solid var(--accent-danger); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--accent-danger); transition: all 0.2s; box-shadow: var(--shadow-sm); }
         .edge-delete-btn:hover { background: var(--accent-danger); color: white; transform: scale(1.15); box-shadow: 0 4px 12px rgba(239,68,68,0.4); }

@@ -207,7 +207,7 @@ const BlockNode = memo(({ id, data, selected }) => {
     <div
       ref={rootRef}
       onMouseEnter={handleMouseEnter}
-      className={`block-node ${selected ? 'selected' : ''} status-${runStatus}`}
+      className={`block-node ${selected ? 'selected' : ''} status-${runStatus} ${(data.type === 'condition' || data.type === 'loop') ? 'block-tall' : ''}`}
       style={{
         '--block-color': type.color,
         borderColor: selected ? type.color : style.border,
@@ -261,11 +261,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           <div className="block-desc" style={{ color: '#f97316', fontWeight: 600 }}>
             ✍️ {data.inputFields?.length || 0} biến · chờ {data.inputTimeout || 120}s
           </div>
-        ) : (
-          <div className="block-desc">
-            {data.description || type.description}
-          </div>
-        )}
+        ) : null}
 
 
 
@@ -334,91 +330,64 @@ const BlockNode = memo(({ id, data, selected }) => {
         </button>
       </div>
 
-      {/* Source Handle */}
-      {hasSource && (
-        <>
-          {data.type !== 'condition' && data.type !== 'loop' && (
+      {/* Source Handles */}
+      {(() => {
+        const sourceHandles = []
+        if (hasSource) {
+          if (data.type === 'condition') {
+            sourceHandles.push({ id: 'true', pos: loopPos, color: '#22c55e', title: 'Đúng điều kiện (TRUE)' })
+            sourceHandles.push({ id: 'false', pos: donePos, color: '#ef4444', title: 'Sai điều kiện (FALSE)' })
+          } else if (data.type === 'loop') {
+            sourceHandles.push({ id: 'loop', pos: loopPos, color: '#f59e0b', title: 'Lặp lại (LOOP)' })
+            sourceHandles.push({ id: 'true', pos: outPos, color: '#22c55e', title: 'Đúng điều kiện (TRUE)' })
+            sourceHandles.push({ id: 'endloop', pos: donePos, color: '#ef4444', title: 'Kết thúc lặp (ENDLOOP)' })
+          } else {
+            sourceHandles.push({ id: 'default', pos: outPos, color: type.color, title: 'Cổng ra (OUT)' })
+          }
+
+          const posCounts = {}
+          sourceHandles.forEach(h => { posCounts[h.pos] = (posCounts[h.pos] || 0) + 1 })
+
+          const posIndexes = {}
+          sourceHandles.forEach(h => {
+            posIndexes[h.pos] = (posIndexes[h.pos] || 0) + 1
+            const total = posCounts[h.pos]
+            h.offset = (posIndexes[h.pos] / (total + 1)) * 100
+          })
+        }
+
+        return sourceHandles.map(h => {
+          const isVertical = h.pos === 'top' || h.pos === 'bottom'
+          return (
             <Handle
+              key={h.id}
               type="source"
-              position={outPos}
-              id="default"
+              position={h.pos}
+              id={h.id}
               className="block-handle block-handle-source"
-              style={{ background: type.color }}
-              title="Cổng ra (OUT)"
+              style={{
+                ...(isVertical ? { left: `${h.offset}%` } : { top: `${h.offset}%` }),
+                background: h.color
+              }}
+              title={h.title}
             />
-          )}
-          {data.type === 'condition' && (
-            <>
-              <Handle
-                type="source"
-                position={loopPos}
-                id="true"
-                style={{
-                  ...(isLoopVertical ? { left: '30%' } : { top: '30%' }),
-                  background: '#22c55e'
-                }}
-                className="block-handle block-handle-source"
-                title="Đúng điều kiện (TRUE)"
-              />
-              <Handle
-                type="source"
-                position={donePos}
-                id="false"
-                style={{
-                  ...(isDoneVertical ? { left: '70%' } : { top: '70%' }),
-                  background: '#ef4444'
-                }}
-                className="block-handle block-handle-source"
-                title="Sai điều kiện (FALSE)"
-              />
-            </>
-          )}
-          {data.type === 'loop' && (
-            <>
-              <Handle
-                type="source"
-                position={loopPos}
-                id="loop"
-                style={{
-                  ...(isLoopVertical ? { left: '30%' } : { top: '30%' }),
-                  background: '#f59e0b'
-                }}
-                className="block-handle block-handle-source"
-                title="Lặp lại (LOOP)"
-              />
-              <Handle
-                type="source"
-                position={outPos}
-                id="true"
-                style={{
-                  background: '#22c55e'
-                }}
-                className="block-handle block-handle-source"
-                title="Đúng điều kiện (TRUE)"
-              />
-              <Handle
-                type="source"
-                position={donePos}
-                id="endloop"
-                style={{
-                  ...(isDoneVertical ? { left: '70%' } : { top: '70%' }),
-                  background: '#ef4444'
-                }}
-                className="block-handle block-handle-source"
-                title="Kết thúc lặp (ENDLOOP)"
-              />
-            </>
-          )}
-        </>
-      )}
+          )
+        })
+      })()}
 
       <style>{`
         .block-node {
           background: var(--bg-surface);
           border: 1px solid var(--border-default);
           border-radius: var(--radius-md);
-          min-width: 120px;
-          max-width: 160px;
+          width: 120px;                 /* Cố định bề ngang 120px theo yêu cầu */
+          height: 60px;                 /* Cố định bề dọc chia hết cho 10 */
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box !important; /* Đảm bảo border nằm bên trong kích thước */
+        }
+        .block-node.block-tall {
+          height: 100px; /* 100px để chia hết cho lưới 20px */
           transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
           position: relative;
           overflow: visible;
@@ -452,6 +421,9 @@ const BlockNode = memo(({ id, data, selected }) => {
           text-transform: uppercase;
           letter-spacing: 0.05em;
           flex: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .block-status-icon {
@@ -465,17 +437,26 @@ const BlockNode = memo(({ id, data, selected }) => {
         }
 
         .block-body {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 6px; /* Thay margin bằng gap để dàn đều theo chiều dọc */
           padding: 8px;
           border-radius: 0 0 11px 11px;
           background: var(--bg-surface);
+          overflow: hidden;
         }
 
         .block-name {
           font-size: 0.75rem;
           font-weight: 600;
           color: var(--text-primary);
-          margin-bottom: 2px;
           line-height: 1.2;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .block-desc {
@@ -484,16 +465,22 @@ const BlockNode = memo(({ id, data, selected }) => {
           line-height: 1.2;
           overflow: hidden;
           text-overflow: ellipsis;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
+          white-space: nowrap;
         }
 
         .block-condition {
-          margin-top: 8px;
           display: flex;
           align-items: center;
           gap: 6px;
+          min-width: 0;
+        }
+        .block-condition code {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          display: inline-block;
+          line-height: 1.2;
+          padding: 3px 6px;
         }
 
         .condition-label {

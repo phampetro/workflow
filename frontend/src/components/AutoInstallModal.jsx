@@ -78,7 +78,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
       open={open}
       title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><PackagePlus size={18} color="var(--accent-primary)" /> Tự động cài thư viện</span>}
       onCancel={installing ? undefined : onClose}
-      maskClosable={!installing}
+      mask={{ closable: !installing }}
       closable={!installing}
       keyboard={!installing}
       width={620}
