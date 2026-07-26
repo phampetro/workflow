@@ -305,6 +305,28 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
         return BrowserStepResult(success=False, error=error_msg)
 
 
+def _find_system_browser():
+    import os, sys
+    if sys.platform == "win32":
+        paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        ]
+    elif sys.platform == "darwin":
+        paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+        ]
+    else:
+        paths = []
+        
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+
 # Global registry for keeping browser sessions alive across blocks in the same run
 _active_browser_sessions = {}
 
@@ -365,10 +387,13 @@ def run_browser_block(
             log("info", "🚀 Khởi động trình duyệt mới cho lượt chạy này...")
             pw = sync_playwright().start()
             
+            browser_exe = _find_system_browser()
+            
             if browser_profile_dir:
                 os.makedirs(browser_profile_dir, exist_ok=True)
                 context = pw.chromium.launch_persistent_context(
                     user_data_dir=browser_profile_dir,
+                    executable_path=browser_exe,
                     headless=headless,
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
                     viewport={"width": 1280, "height": 800},
@@ -382,6 +407,7 @@ def run_browser_block(
                 browser = None
             else:
                 browser = pw.chromium.launch(
+                    executable_path=browser_exe,
                     headless=headless,
                     args=["--no-sandbox", "--disable-dev-shm-usage"]
                 )
