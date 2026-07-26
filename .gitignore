@@ -20,3 +20,6 @@ secrets/
 *.pem
 license_private*.txt
 backend/data/license.key
+
+# File dump debug tạm (không phải mã nguồn)
+scratch_*.json
