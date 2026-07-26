@@ -108,8 +108,16 @@ async def create_project(request: Request, body: dict, session: AsyncSession = D
     return project.to_dict()
 
 
+# Các project đang tạo venv (kể cả tạo ngầm lúc create/import) — để FE hiện trạng
+# thái "đang tạo" và chặn tạo trùng khi user bấm nút nhiều lần.
+_venv_creating = set()
+
+
 async def _init_venv_bg(project_id: str):
     """Background task: tạo venv và update DB"""
+    if project_id in _venv_creating:
+        return
+    _venv_creating.add(project_id)
     try:
         from database import AsyncSessionLocal
         result = await create_venv(project_id)
@@ -123,6 +131,8 @@ async def _init_venv_bg(project_id: str):
     except Exception as e:
         import logging
         logging.getLogger("pyflow").error(f"Lỗi tạo venv cho {project_id}: {e}")
+    finally:
+        _venv_creating.discard(project_id)
 
 
 @router.get("/{project_id}")
@@ -138,6 +148,7 @@ async def get_project(project_id: str, session: AsyncSession = Depends(get_sessi
 
     result = proj.to_dict()
     result["workflows_count"] = len(workflows)
+    result["venv_creating"] = project_id in _venv_creating
     return result
 
 
@@ -267,6 +278,12 @@ async def init_venv_manual(project_id: str, session: AsyncSession = Depends(get_
     proj = await session.get(Project, project_id)
     if not proj:
         raise HTTPException(404, "Project không tồn tại")
+    # Đã sẵn sàng hoặc đang tạo ngầm (từ create/import) → không tạo trùng
+    if proj.venv_ready:
+        return {"status": "ready"}
+    if project_id in _venv_creating:
+        return {"status": "creating"}
+    _venv_creating.add(project_id)
     try:
         r = await create_venv(project_id)
         proj.venv_ready = True
@@ -276,6 +293,113 @@ async def init_venv_manual(project_id: str, session: AsyncSession = Depends(get_
         return {"status": "ok", "path": r["path"]}
     except Exception as e:
         raise HTTPException(500, str(e))
+    finally:
+        _venv_creating.discard(project_id)
+
+
+# ── Auto cài thư viện: quét mọi workflow/khối → gom package → cài, stream log ──
+_pkg_jobs = {}  # project_id -> {status, log, current, total, done, error}
+
+
+def _install_worker(project_id: str, packages: list):
+    import subprocess, sqlite3, time
+    from services.executor_blocks import create_venv_sync
+    from services.venv_manager import venv_exists, get_pip_path, DATA_DIR
+    j = _pkg_jobs[project_id]
+    try:
+        # Nếu venv đang được tạo ngầm (create/import) → đợi xong, tránh tạo trùng gây hỏng
+        waited = 0
+        while project_id in _venv_creating and waited < 180:
+            if waited == 0:
+                j["log"].append("⏳ Đợi tạo môi trường xong...")
+            time.sleep(1)
+            waited += 1
+        if not venv_exists(project_id):
+            j["log"].append("🔧 Đang tạo môi trường (venv)...")
+            create_venv_sync(project_id)
+            # đánh dấu venv_ready để UI khác đồng bộ
+            try:
+                with sqlite3.connect(str(DATA_DIR / "pyflow.db"), timeout=5) as conn:
+                    conn.execute("UPDATE project SET venv_ready=1 WHERE id=?", (project_id,))
+                    conn.commit()
+            except Exception:
+                pass
+        pip = get_pip_path(project_id)
+        for i, pkg in enumerate(packages):
+            j["current"] = pkg
+            j["log"].append(f"📦 Đang cài {pkg}...")
+            proc = subprocess.Popen(
+                [pip, "install", pkg],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    j["log"].append("   " + line)
+            proc.wait()
+            if proc.returncode != 0:
+                j["log"].append(f"❌ Lỗi cài {pkg}")
+                j["error"] = f"Một số gói cài lỗi (vd: {pkg})"
+            else:
+                j["log"].append(f"✅ Đã cài {pkg}")
+            j["done"] = i + 1
+        j["current"] = ""
+        j["status"] = "error" if j["error"] else "done"
+        j["log"].append("⚠ Hoàn tất (có gói lỗi)." if j["error"] else "🎉 Hoàn tất — môi trường đã sẵn sàng.")
+    except Exception as e:
+        j["status"] = "error"
+        j["error"] = str(e)
+        j["log"].append(f"❌ {e}")
+
+
+@router.post("/{project_id}/packages/scan")
+async def scan_project_packages(project_id: str, session: AsyncSession = Depends(get_session)):
+    """Quét mọi workflow của project → danh sách package dự kiến (kèm nguồn)."""
+    import json as _json
+    from models import Workflow
+    wfs = (await session.execute(select(Workflow).where(Workflow.project_id == project_id))).scalars().all()
+    graphs = []
+    for w in wfs:
+        if w.graph_json:
+            try:
+                graphs.append(_json.loads(w.graph_json))
+            except Exception:
+                pass
+    from services.pkg_scanner import scan_packages
+    return {"packages": scan_packages(graphs)}
+
+
+@router.post("/{project_id}/packages/auto-install")
+async def auto_install_packages(project_id: str, body: dict, session: AsyncSession = Depends(get_session)):
+    """Cài danh sách package (người dùng đã xem/sửa) vào project venv, chạy nền + stream log."""
+    proj = await session.get(Project, project_id)
+    if not proj:
+        raise HTTPException(404, "Project không tồn tại")
+    j = _pkg_jobs.get(project_id)
+    if j and j["status"] == "running":
+        return {"status": "running"}
+    packages = [str(p).strip() for p in (body.get("packages") or []) if str(p).strip()]
+    if not packages:
+        raise HTTPException(400, "Danh sách package trống")
+    import threading
+    _pkg_jobs[project_id] = {"status": "running", "log": [], "current": "", "total": len(packages), "done": 0, "error": None}
+    threading.Thread(target=_install_worker, args=(project_id, packages), daemon=True).start()
+    return {"status": "started", "total": len(packages)}
+
+
+@router.get("/{project_id}/packages/install-status")
+async def auto_install_status(project_id: str):
+    """FE poll: trạng thái + log (300 dòng cuối) + tiến độ."""
+    j = _pkg_jobs.get(project_id)
+    if not j:
+        return {"status": "idle"}
+    return {
+        "status": j["status"], "current": j["current"],
+        "total": j["total"], "done": j["done"], "error": j["error"],
+        "log": j["log"][-300:],
+    }
+
 
 from fastapi.responses import StreamingResponse
 

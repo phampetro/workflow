@@ -73,6 +73,9 @@ export const getPackages       = (projectId)  => api.get(`/api/projects/${projec
 export const installPackage    = (projectId, pkg) => api.post(`/api/projects/${projectId}/packages/install`, { package: pkg })
 export const uninstallPackage  = (projectId, pkg) => api.post(`/api/projects/${projectId}/packages/uninstall`, { package: pkg })
 export const initVenv          = (projectId)  => api.post(`/api/projects/${projectId}/venv/init`)
+export const scanPackages         = (projectId)           => api.post(`/api/projects/${projectId}/packages/scan`)
+export const autoInstallPackages  = (projectId, packages) => api.post(`/api/projects/${projectId}/packages/auto-install`, { packages })
+export const getInstallStatus     = (projectId)           => api.get(`/api/projects/${projectId}/packages/install-status`)
 
 // ── Workflows ─────────────────────────────────────────────
 export const getWorkflows      = (projectId)  => api.get(`/api/projects/${projectId}/workflows`)
