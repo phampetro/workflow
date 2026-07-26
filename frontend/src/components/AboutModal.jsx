@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Modal, Space, Typography, Button, Spin, Alert, message } from 'antd'
-import { Info, Zap, Mail, Send, Tag, Clock, DownloadCloud, CheckCircle } from 'lucide-react'
+import { ShieldCheck, Info, Zap, Mail, Send, Tag, Clock, DownloadCloud, CheckCircle } from 'lucide-react'
 import { APP_INFO } from '../config/appInfo'
 import { systemApi, checkHealth } from '../api/client'
+import dayjs from 'dayjs'
 
 const { Text } = Typography
 
@@ -16,7 +17,7 @@ function InfoRow({ icon, label, value }) {
   )
 }
 
-export default function AboutModal({ open, onClose }) {
+export default function AboutModal({ open, onClose, licenseStatus }) {
   const [sysInfo, setSysInfo] = useState(null)
   const [loading, setLoading] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -121,6 +122,24 @@ export default function AboutModal({ open, onClose }) {
         <InfoRow icon={<Mail size={14} />} label="Liên hệ" value={APP_INFO.email} />
         <InfoRow icon={<Send size={14} />} label="Telegram" value={APP_INFO.telegram} />
         
+        {licenseStatus && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+            <div style={{ color: 'var(--text-muted)', display: 'flex' }}><ShieldCheck size={14} /></div>
+            <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Bản quyền</Text>
+            {!licenseStatus.enforced ? (
+              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>Bản phát triển (Mở khóa)</Text>
+            ) : licenseStatus.activated && licenseStatus.valid ? (
+              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>
+                Đã kích hoạt {licenseStatus.expiry ? `(Hết hạn: ${dayjs(licenseStatus.expiry).format('DD/MM/YYYY')})` : '(Vĩnh viễn)'}
+              </Text>
+            ) : (
+              <Text style={{ fontWeight: 500, color: 'var(--accent-danger)' }}>
+                Chưa kích hoạt hoặc hết hạn
+              </Text>
+            )}
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
           <div style={{ color: 'var(--text-muted)', display: 'flex' }}><Tag size={14} /></div>
           <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Version</Text>

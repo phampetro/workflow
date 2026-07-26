@@ -170,7 +170,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   }
 
   const handleExport = (project) => {
-    window.location.href = `http://localhost:7000/api/projects/${project.id}/export`
+    window.location.href = `${api.defaults.baseURL}/api/projects/${project.id}/export`
     toast.success(`Đang tải xuống project ${project.name}...`)
   }
 
