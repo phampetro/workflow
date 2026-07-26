@@ -207,7 +207,7 @@ const BlockNode = memo(({ id, data, selected }) => {
     <div
       ref={rootRef}
       onMouseEnter={handleMouseEnter}
-      className={`block-node ${selected ? 'selected' : ''} status-${runStatus} ${(data.type === 'condition' || data.type === 'loop') ? 'block-tall' : ''}`}
+      className={`block-node ${selected ? 'selected' : ''} status-${runStatus}`}
       style={{
         '--block-color': type.color,
         borderColor: selected ? type.color : style.border,
@@ -240,7 +240,7 @@ const BlockNode = memo(({ id, data, selected }) => {
 
       {/* Body */}
       <div className="block-body">
-        {!['browser', 'merge_excel', 'pivot_excel'].includes(data.type) && (
+        {!['browser', 'merge_excel', 'pivot_excel', 'input_vars', 'sql_to_excel', 'delay', 'condition', 'loop'].includes(data.type) && (
           <div className="block-name">{data.label || `${type.label} Block`}</div>
         )}
         {data.type === 'delay' ? (
@@ -373,6 +373,7 @@ const BlockNode = memo(({ id, data, selected }) => {
               className="block-handle block-handle-source"
               style={{
                 ...(isVertical ? { left: `${h.offset}%` } : { top: `${h.offset}%` }),
+                transform: 'translate(-50%, -50%)',
                 background: h.color
               }}
               title={h.title}
@@ -391,13 +392,6 @@ const BlockNode = memo(({ id, data, selected }) => {
           display: flex;
           flex-direction: column;
           box-sizing: border-box !important; /* Đảm bảo border nằm bên trong kích thước */
-        }
-        .block-node.block-tall {
-          height: 100px; /* 100px để chia hết cho lưới 20px */
-          transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
-          position: relative;
-          overflow: visible;
-          box-shadow: var(--shadow-sm);
         }
 
         .block-node:hover {
@@ -579,7 +573,7 @@ const BlockNode = memo(({ id, data, selected }) => {
         }
 
         .block-handle:hover {
-          transform: scale(1.4) !important;
+          transform: translate(-50%, -50%) scale(1.4) !important;
         }
 
         .spinning {
