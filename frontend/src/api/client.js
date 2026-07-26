@@ -2,7 +2,7 @@ import axios from 'axios'
 import useStore from '../store/useStore'
 
 const api = axios.create({
-  baseURL: 'http://localhost:7000',
+  baseURL: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:7000' : window.location.origin),
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -24,7 +24,17 @@ api.interceptors.response.use(
     return res
   },
   (err) => {
-    const msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Lỗi kết nối'
+    let msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Lỗi kết nối'
+    if (msg === 'Network Error') {
+      msg = 'Lỗi kết nối mạng hoặc máy chủ không phản hồi'
+    } else if (typeof msg === 'string' && msg.includes('timeout')) {
+      msg = 'Yêu cầu quá hạn, máy chủ phản hồi quá chậm'
+    } else if (typeof msg === 'string' && msg.includes('status code 400')) {
+      msg = 'Yêu cầu không hợp lệ (Lỗi 400)'
+    } else if (typeof msg === 'string' && msg.includes('status code')) {
+      msg = `Lỗi máy chủ (${msg.replace('Request failed with ', '')})`
+    }
+    
     console.error('[API Error]', err.config?.url, msg)
     return Promise.reject(new Error(msg))
   }

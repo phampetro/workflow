@@ -11,4 +11,4 @@ Chỉ là PUBLIC key → công khai được, an toàn khi nằm trong code. Pri
 Khi để nguyên PLACEHOLDER và bật enforce, mọi license đều bị coi là không hợp lệ
 (fail-safe) — nhắc bạn chưa nhúng khóa thật.
 """
-PUBLIC_KEY_B64 = "PLACEHOLDER_REPLACE_ME"
+PUBLIC_KEY_B64 = "eosvZFyHbMRkC2LDhkcA7L7Bx7iz-A5qcxpeckpJ-IA"

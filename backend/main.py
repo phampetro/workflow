@@ -3,7 +3,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
+import os
 
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
@@ -163,12 +166,14 @@ _LICENSE_ALLOW = ("/health", "/api/license", "/api/system")
 async def _license_guard(request, call_next):
     if licensing.ENFORCE:
         path = request.url.path
-        if not any(path.startswith(p) for p in _LICENSE_ALLOW) and licensing.is_locked():
-            return JSONResponse(
-                status_code=403,
-                content={"error": "license_required",
-                         "detail": "Phần mềm chưa kích hoạt hoặc đã hết hạn."},
-            )
+        # Chỉ chặn nếu là gọi API (và không nằm trong danh sách cho phép)
+        if path.startswith("/api/") and not any(path.startswith(p) for p in _LICENSE_ALLOW):
+            if licensing.is_locked():
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "license_required",
+                             "detail": "Phần mềm chưa kích hoạt hoặc đã hết hạn."},
+                )
     return await call_next(request)
 
 # Thêm guard TRƯỚC CORS để CORS bọc ngoài (response 403 vẫn có header CORS).
@@ -197,5 +202,29 @@ app.include_router(license.router)
 def health_check():
     return {"status": "ok"}
 
+# ── Serve Frontend ───────────────────────────────────────────────────────────
+import sys
+if getattr(sys, 'frozen', False):
+    # Dang chay tu file thuc thi (PyInstaller)
+    base_dir = os.path.dirname(sys.executable)
+else:
+    # Dang chay tu ma nguon Python
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+frontend_dist = os.path.join(base_dir, "..", "frontend", "dist")
+
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Nếu yêu cầu file cụ thể trong dist (ví dụ favicon.ico)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # Còn lại (các route của react-router) trả về index.html
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=7000, reload=False)
+    port = 8000 if getattr(sys, 'frozen', False) else 7000
+    uvicorn.run(app, host="127.0.0.1", port=port)
