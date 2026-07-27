@@ -19,6 +19,7 @@ import {
 import { Button, Drawer, Space, Input, Popconfirm, Tag, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory, getPendingInput } from '../api/client'
+import { createLogStream } from '../api/client'
 import InputVarsModal from '../components/InputVarsModal'
 import useStore from '../store/useStore'
 import useUndoRedo from '../hooks/useUndoRedo'
@@ -189,6 +190,63 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       fitView({ padding: 0.2, duration: 300 })
     }
   }, [nodesInitialized, fitView])
+
+  // Lắng nghe SSE log để cập nhật trạng thái Node (Real-time Status) và Store
+  useEffect(() => {
+    if (!activeRunId) return
+
+    // Reset toàn bộ trạng thái runStatus về 'idle' khi bắt đầu run
+    setNodes(nds => nds.map(n => ({
+      ...n,
+      data: { ...n.data, runStatus: 'idle' }
+    })))
+
+    const cached = useStore.getState().runLogs[activeRunId] || []
+    
+    const cleanup = createLogStream(
+      activeRunId,
+      (data) => {
+        // 1. Lưu log vào store
+        const entry = {
+          time: data.time || new Date().toLocaleTimeString(),
+          level: data.level || 'info',
+          msg: data.message || ''
+        }
+        useStore.getState().appendLog(activeRunId, entry)
+
+        // 2. Cập nhật trạng thái cho Node (Real-time highlight)
+        if (data.block_id) {
+          setNodes(nds => nds.map(n => {
+            if (n.id === data.block_id) {
+              let nextStatus = n.data.runStatus
+              if (data.level === 'ERROR') nextStatus = 'error'
+              else if (data.level === 'SUCCESS') nextStatus = 'success'
+              else if (nextStatus !== 'error' && nextStatus !== 'success') {
+                nextStatus = 'running'
+              }
+              if (n.data.runStatus !== nextStatus) {
+                return { ...n, data: { ...n.data, runStatus: nextStatus } }
+              }
+            }
+            return n
+          }))
+        }
+
+        // 3. Xử lý kết thúc run
+        if (data.message && (
+          data.message.includes('✅ Workflow hoàn thành') ||
+          data.message.includes('❌ Lỗi hệ thống khi chạy workflow') ||
+          data.message.includes('⏹ Đã dừng')
+        )) {
+          useStore.getState().clearActiveRun(wfData?.id)
+        }
+      },
+      (err) => { console.error('SSE Error:', err) },
+      cached.length
+    )
+
+    return () => cleanup()
+  }, [activeRunId, setNodes, wfData?.id])
 
   const handleDeleteHistory = async () => {
     try {
