@@ -164,6 +164,13 @@ const STATUS_STYLES = {
   error:   { border: '#ef4444', glow: '0 0 16px rgba(239,68,68,0.4)' },
 }
 
+const HANDLE_TRANSLATES = {
+  left: 'translate(-50%, -50%)',
+  top: 'translate(-50%, -50%)',
+  right: 'translate(50%, -50%)',
+  bottom: 'translate(-50%, 50%)',
+}
+
 const BlockNode = memo(({ id, data, selected }) => {
   const actions = useContext(NodeActionsContext)
   const type = BLOCK_TYPES[data.type] || BLOCK_TYPES.python
@@ -222,7 +229,10 @@ const BlockNode = memo(({ id, data, selected }) => {
           type="target"
           position={inPos}
           className="block-handle block-handle-target"
-          style={{ background: type.color }}
+          style={{ 
+            background: type.color, 
+            '--handle-translate': HANDLE_TRANSLATES[inPos] || 'translate(-50%, -50%)' 
+          }}
           title="Cổng vào (IN)"
         />
       )}
@@ -373,7 +383,7 @@ const BlockNode = memo(({ id, data, selected }) => {
               className="block-handle block-handle-source"
               style={{
                 ...(isVertical ? { left: `${h.offset}%` } : { top: `${h.offset}%` }),
-                transform: 'translate(-50%, -50%)',
+                '--handle-translate': HANDLE_TRANSLATES[h.pos] || 'translate(-50%, -50%)',
                 background: h.color
               }}
               title={h.title}
@@ -567,13 +577,14 @@ const BlockNode = memo(({ id, data, selected }) => {
           height: 10px !important;
           border: 2px solid var(--bg-surface) !important;
           border-radius: 50% !important;
+          transform: var(--handle-translate, translate(-50%, -50%)) !important;
           transition: transform var(--transition-fast) !important;
           z-index: 10 !important;
           box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
         }
 
         .block-handle:hover {
-          transform: translate(-50%, -50%) scale(1.4) !important;
+          transform: var(--handle-translate, translate(-50%, -50%)) scale(1.4) !important;
         }
 
         .spinning {
