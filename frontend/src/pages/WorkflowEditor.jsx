@@ -193,7 +193,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
   // Lắng nghe SSE log để cập nhật trạng thái Node (Real-time Status) và Store
   useEffect(() => {
-    if (!activeRunId) return
+    if (!currentRunId) return
 
     // Reset toàn bộ trạng thái runStatus về 'idle' khi bắt đầu run
     setNodes(nds => nds.map(n => ({
@@ -201,10 +201,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       data: { ...n.data, runStatus: 'idle' }
     })))
 
-    const cached = useStore.getState().runLogs[activeRunId] || []
+    const cached = useStore.getState().runLogs[currentRunId] || []
     
     const cleanup = createLogStream(
-      activeRunId,
+      currentRunId,
       (data) => {
         // 1. Lưu log vào store
         const entry = {
@@ -212,7 +212,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           level: data.level || 'info',
           msg: data.message || ''
         }
-        useStore.getState().appendLog(activeRunId, entry)
+        useStore.getState().appendLog(currentRunId, entry)
 
         // 2. Cập nhật trạng thái cho Node (Real-time highlight)
         if (data.block_id) {
@@ -246,7 +246,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     )
 
     return () => cleanup()
-  }, [activeRunId, setNodes, wfData?.id])
+  }, [currentRunId, setNodes, wfData?.id])
 
   const handleDeleteHistory = async () => {
     try {
