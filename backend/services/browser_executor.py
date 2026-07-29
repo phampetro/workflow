@@ -78,6 +78,40 @@ def get_locator(page, selector: str):
     return page.locator(selector)
 
 
+# Các action có dùng selector và được hưởng lợi từ fallback chain.
+# (Không gồm wait_for_selector vì nó có state hidden/detached, không nên pre-check attached.)
+_SELECTOR_FALLBACK_ACTIONS = {
+    "click", "double_click", "right_click", "hover", "scroll_to",
+    "fill", "type_slowly", "clear", "press_key", "upload_file", "click_and_download",
+    "select_option", "check", "uncheck",
+    "get_text", "get_attribute", "get_all_text",
+}
+
+
+def resolve_selector(page, candidates, timeout: int) -> str:
+    """Thử lần lượt các selector (bền → giòn), trả về cái đầu tiên gắn được vào DOM.
+
+    Đây là "self-healing" chống React/Angular re-render: nếu selector chính đã đổi
+    (class băm, id auto...), executor tự chuyển sang selector dự phòng còn hợp lệ.
+    Cái cuối cùng luôn được trả về (kể cả chưa attach) để action tự chờ full timeout.
+    """
+    valid = [c for c in candidates if c]
+    if not valid:
+        return ""
+    if len(valid) == 1:
+        return valid[0]
+    per = max(800, int(timeout / len(valid)))
+    for i, sel in enumerate(valid):
+        if i == len(valid) - 1:
+            return sel
+        try:
+            get_locator(page, sel).first.wait_for(state="attached", timeout=per)
+            return sel
+        except Exception:
+            continue
+    return valid[-1]
+
+
 def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None) -> BrowserStepResult:
     """Thực thi một bước browser action."""
     action = step.get("action", "")
@@ -86,6 +120,13 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
     attribute = step.get("attribute", "")
     key_name = step.get("key_name", "result")
     timeout = int(step.get("timeout", 20000))
+
+    # Fallback selector chain (do recorder sinh ra): thử lần lượt để chống UI đổi DOM.
+    raw_selectors = step.get("selectors")
+    if isinstance(raw_selectors, list):
+        candidates = [str(s) for s in raw_selectors if s]
+        if len(candidates) > 1 and action in _SELECTOR_FALLBACK_ACTIONS:
+            selector = resolve_selector(page, candidates, timeout)
 
     label = ACTION_LABELS.get(action, f"[{action}]")
 
@@ -327,8 +368,57 @@ def _find_system_browser():
     return None
 
 
+def _get_run_browser_executable(pw):
+    """Chọn trình duyệt cho lúc CHẠY workflow.
+
+    Ưu tiên **Chromium riêng của Playwright** (trả về None → Playwright tự dùng bản bundled).
+    Lý do: nếu dùng Chrome/Edge hệ thống trong khi người dùng đang mở PyFlow bằng chính
+    Chrome/Edge đó, hai instance tranh GPU process → tab PyFlow bị "đen màn hình".
+    Chromium riêng là một cài đặt tách biệt nên không xung đột.
+    Nếu máy chưa cài Chromium bundled thì mới fallback về Chrome/Edge hệ thống.
+    """
+    try:
+        p = pw.chromium.executable_path
+        if p and os.path.exists(p):
+            return None
+    except Exception:
+        pass
+    return _find_system_browser()
+
+
 # Global registry for keeping browser sessions alive across blocks in the same run
 _active_browser_sessions = {}
+
+
+def force_kill_browser_by_marker(marker: str):
+    """Tắt CỨNG tiến trình Chrome/Edge có `marker` (thường là run_id) trong command line.
+
+    Dùng khi người dùng bấm Dừng nhưng khối Browser đang kẹt trong 1 lệnh Playwright
+    (VD retry click chờ timeout) — không thể ngắt từ thread khác. Kill tiến trình khiến
+    lệnh Playwright đang treo lập tức raise "browser closed" → vòng lặp thoát ngay.
+    An toàn: chỉ khớp tiến trình có đúng marker (run_id là uuid, duy nhất).
+    """
+    if not marker:
+        return
+    import sys
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            ps = (
+                "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe'\" | "
+                "Where-Object { $_.CommandLine -like '*" + marker + "*' } | "
+                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                capture_output=True, timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        else:
+            subprocess.run(["pkill", "-f", marker], capture_output=True, timeout=15)
+    except Exception:
+        pass
+
 
 def cleanup_browser(run_id: str):
     """Đóng dọn dẹp browser của một lượt chạy khi workflow kết thúc."""
@@ -386,16 +476,26 @@ def run_browser_block(
         if run_id not in _active_browser_sessions:
             log("info", "🚀 Khởi động trình duyệt mới cho lượt chạy này...")
             pw = sync_playwright().start()
-            
-            browser_exe = _find_system_browser()
-            
+
+            # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
+            # mở PyFlow) để không tranh GPU gây "đen màn hình". Fallback Chrome hệ thống.
+            browser_exe = _get_run_browser_executable(pw)
+            log("info", "🧭 Trình duyệt: " + ("Chromium riêng (Playwright)" if browser_exe is None else browser_exe))
+
+            # Tắt GPU khi: (a) chạy ẩn; hoặc (b) buộc dùng Chrome/Edge hệ thống
+            # (browser_exe != None) — trường hợp dễ tranh GPU với tab PyFlow gây "đen màn hình".
+            launch_args = ["--no-sandbox", "--disable-dev-shm-usage"]
+            # Luôn tắt GPU để tránh lỗi đen màn hình do tranh chấp GPU với UI PyFlow (WebView2)
+            # dù là Chrome hệ thống hay Chromium bundle của Playwright.
+            launch_args += ["--disable-gpu", "--disable-software-rasterizer"]
+
             if browser_profile_dir:
                 os.makedirs(browser_profile_dir, exist_ok=True)
                 context = pw.chromium.launch_persistent_context(
                     user_data_dir=browser_profile_dir,
                     executable_path=browser_exe,
                     headless=headless,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    args=launch_args,
                     viewport={"width": 1280, "height": 800},
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -409,7 +509,7 @@ def run_browser_block(
                 browser = pw.chromium.launch(
                     executable_path=browser_exe,
                     headless=headless,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+                    args=launch_args
                 )
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 800},

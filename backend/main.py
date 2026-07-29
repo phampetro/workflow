@@ -226,5 +226,28 @@ if os.path.exists(frontend_dist):
         return FileResponse(os.path.join(frontend_dist, "index.html"))
 
 if __name__ == "__main__":
+    # ── Chế độ phụ: cài Chromium riêng cho Playwright ────────────────────────
+    # Được start.vbs gọi ("pyflow-backend.exe install-browser") khi máy khách chưa
+    # có Chromium riêng. Dùng driver Playwright đã bundle sẵn trong exe (không cần pip).
+    # Chromium riêng giúp automation tách khỏi Chrome đang mở giao diện PyFlow, tránh
+    # tranh GPU làm "đen" tab ứng dụng.
+    if len(sys.argv) > 1 and sys.argv[1] in ("install-browser", "install-chromium"):
+        print("=" * 60)
+        print(" PyFlow Studio - Cai dat trinh duyet Chromium (chi 1 lan)")
+        print(" Dang tai (~150MB), vui long cho va giu ket noi Internet...")
+        print("=" * 60)
+        try:
+            from playwright.__main__ import main as _pw_main
+            sys.argv = ["playwright", "install", "chromium"]
+            _pw_main()
+        except SystemExit:
+            pass
+        except Exception as e:
+            print("\n[LOI] Khong cai duoc Chromium:", e)
+            print(" PyFlow van chay duoc bang Chrome he thong (nhung tab app co the bi den khi chay).")
+            import time as _t
+            _t.sleep(6)
+        sys.exit(0)
+
     port = 8000 if getattr(sys, 'frozen', False) else 7000
     uvicorn.run(app, host="127.0.0.1", port=port)

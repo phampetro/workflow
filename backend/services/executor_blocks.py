@@ -95,6 +95,14 @@ def kill_run(run_id):
                 proc.kill()
             except Exception:
                 pass
+    # Kill CỨNG trình duyệt Playwright đang treo (nếu có) theo marker = run_id.
+    # Chrome/Edge do khối Browser mở không nằm trong _active_procs nên phải kill riêng.
+    if run_id in _active_browser_profiles:
+        try:
+            from services.browser_executor import force_kill_browser_by_marker
+            force_kill_browser_by_marker(run_id)
+        except Exception:
+            pass
     # Set cờ dừng để vòng lặp workflow không chạy tiếp block kế
     ev = _active_runs.pop(run_id, None)
     if ev is not None:
