@@ -222,6 +222,30 @@ export const streamAiCodegen = (payload, { onToken, onDone, onError } = {}) => {
   return () => controller.abort()
 }
 
+// ── Ghi thao tác trình duyệt (Recorder) ──────────────────
+export const startBrowserRecording = (workflowId, url) =>
+  api.post(`/api/workflows/${workflowId}/record/start`, { url })
+
+export const stopBrowserRecording = (workflowId) =>
+  api.post(`/api/workflows/${workflowId}/record/stop`)
+
+// SSE nhận step realtime khi người dùng thao tác. Trả về hàm huỷ.
+export const createRecordingStream = (workflowId, { onStep, onReplaceLast, onDone, onError } = {}) => {
+  const url = `${api.defaults.baseURL}/api/workflows/${workflowId}/record/stream`
+  const es = new EventSource(url)
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data)
+      if (d.type === 'step') onStep?.(d.step)
+      else if (d.type === 'replace_last') onReplaceLast?.(d.step)
+      else if (d.type === 'done') { onDone?.(d.steps || []); try { es.close() } catch (_) {} }
+      else if (d.type === 'error') onError?.(new Error(d.message || 'Lỗi ghi'))
+    } catch (_) {}
+  }
+  es.onerror = () => { /* EventSource tự reconnect; sau 'done' đã tự close */ }
+  return () => { try { es.close() } catch (_) {} }
+}
+
 // ── Health ────────────────────────────────────────────────
 export const checkHealth = () => api.get('/health')
 

@@ -245,6 +245,12 @@ body {
 }
 
 .animate-slide-up { animation: slideUpFade var(--transition-bounce) forwards; }
+
+/* Chấm nhấp nháy khi đang ghi thao tác trình duyệt */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes pyflowRecBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .pyflow-rec-dot { animation: pyflowRecBlink 1.1s ease-in-out infinite; }
+}
 .pulse-dot {
   display: inline-block;
   width: 8px; height: 8px;

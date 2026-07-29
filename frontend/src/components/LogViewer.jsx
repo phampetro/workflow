@@ -17,6 +17,12 @@ const LEVEL_CONFIG = {
   error:   { color: 'var(--log-error)',   bg: 'var(--log-error-bg)' },
 }
 
+// Zustand v5 so sánh snapshot bằng Object.is. Selector TUYỆT ĐỐI không được tạo
+// reference mới mỗi lần gọi (VD `|| []`, `.map()`, `.filter()`): getSnapshot sẽ không
+// bao giờ ổn định → React 19 re-render vô hạn → "Maximum update depth exceeded" (crash
+// trắng/đen cả app). Dùng 1 hằng số rỗng dùng chung để giữ reference bất biến.
+const EMPTY_LOGS = []
+
 function LogRow({ log }) {
   const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
   return (
@@ -43,7 +49,7 @@ function LogRow({ log }) {
 }
 
 export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
-  const logs = useStore(state => state.runLogs[runId] || [])
+  const logs = useStore(state => state.runLogs[runId] || EMPTY_LOGS)
   const [autoScroll, setAutoScroll] = useState(true)
   const virtuosoRef = useRef(null)
 
@@ -99,7 +105,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
           <span style={{ fontWeight: 600 }}>Tiến trình chạy</span>
           {runId && (
             <Tag variant="filled" style={{ margin: 0, fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
-              #{runId}
+              #{runId.split('-')[0]}
             </Tag>
           )}
           {isRunning && (
@@ -108,7 +114,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
         </Space>
       }
       placement="bottom"
-      size="42vh"
+      size={350}
       onClose={onClose}
       open={true}
       mask={false}
