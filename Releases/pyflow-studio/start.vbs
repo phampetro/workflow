@@ -19,29 +19,6 @@ If Not fso.FileExists(backendExe) Then
     WScript.Quit 1
 End If
 
-' ── Kiem tra Chromium rieng cua Playwright; neu chua co thi cai (mot lan) ──
-' Chromium rieng giup automation tach khoi Chrome dang mo giao dien PyFlow,
-' tranh tranh GPU lam "den" tab ung dung.
-localAppData = ws.ExpandEnvironmentStrings("%LOCALAPPDATA%")
-pwDir = localAppData & "\ms-playwright"
-chromiumFound = False
-If fso.FolderExists(pwDir) Then
-    For Each f In fso.GetFolder(pwDir).SubFolders
-        If LCase(Left(f.Name, 9)) = "chromium-" Then
-            If fso.FileExists(f.Path & "\chrome-win64\chrome.exe") Then
-                chromiumFound = True
-            End If
-        End If
-    Next
-End If
-
-If Not chromiumFound Then
-    q = Chr(34)
-    ' Mo console cai dat (hien tien trinh tai), doi cai xong roi moi chay tiep
-    ws.CurrentDirectory = scriptDir & "\backend"
-    ws.Run "cmd /c " & q & q & backendExe & q & " install-browser" & q, 1, True
-End If
-
 ' Khoi dong Backend
 ws.CurrentDirectory = scriptDir & "\backend"
 ws.Run """" & backendExe & """", 0, False

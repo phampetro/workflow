@@ -371,11 +371,10 @@ def _find_system_browser():
 def _get_run_browser_executable(pw):
     """Chọn trình duyệt cho lúc CHẠY workflow.
 
-    Ưu tiên **Chromium riêng của Playwright** (trả về None → Playwright tự dùng bản bundled).
-    Lý do: nếu dùng Chrome/Edge hệ thống trong khi người dùng đang mở PyFlow bằng chính
-    Chrome/Edge đó, hai instance tranh GPU process → tab PyFlow bị "đen màn hình".
-    Chromium riêng là một cài đặt tách biệt nên không xung đột.
-    Nếu máy chưa cài Chromium bundled thì mới fallback về Chrome/Edge hệ thống.
+    Ưu tiên **Chromium riêng của Playwright** (trả về None → Playwright tự dùng bản bundled)
+    để automation tách biệt hoàn toàn khỏi Chrome/Edge cá nhân của người dùng: không dùng
+    chung profile, không ảnh hưởng phiên đăng nhập/tab đang mở của họ.
+    Nếu máy chưa cài Chromium bundled thì fallback về Chrome/Edge hệ thống.
     """
     try:
         p = pw.chromium.executable_path
@@ -384,6 +383,62 @@ def _get_run_browser_executable(pw):
     except Exception:
         pass
     return _find_system_browser()
+
+
+# Flag tắt hộp thoại "Lưu mật khẩu?" và các popup gây nhiễu automation.
+# Dùng chung cho cả lúc chạy workflow và lúc ghi thao tác (recorder).
+QUIET_BROWSER_ARGS = [
+    "--disable-save-password-bubble",       # tắt bong bóng "Lưu mật khẩu?"
+    "--password-store=basic",               # không gọi keyring/credential manager của OS
+    "--disable-notifications",
+    "--no-default-browser-check",
+    "--no-first-run",
+    "--disable-features=PasswordLeakDetection,AutofillServerCommunication",
+]
+
+
+def harden_profile_prefs(profile_dir: str):
+    """Ghi Preferences của profile để Chrome KHÔNG hỏi lưu mật khẩu.
+
+    Launch flag một mình không đủ trên Chrome mới — pref `credentials_enable_service`
+    mới là thứ quyết định. Hàm này MERGE vào Preferences sẵn có (không ghi đè) để giữ
+    nguyên các thiết lập/phiên đăng nhập đã lưu trong profile.
+    Gọi TRƯỚC khi launch persistent context.
+    """
+    try:
+        default_dir = os.path.join(profile_dir, "Default")
+        os.makedirs(default_dir, exist_ok=True)
+        pref_path = os.path.join(default_dir, "Preferences")
+
+        data = {}
+        if os.path.exists(pref_path):
+            try:
+                with open(pref_path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            except Exception:
+                data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        # Tắt password manager (khoá then chốt cho hộp thoại "Lưu mật khẩu?")
+        data["credentials_enable_service"] = False
+        data["credentials_enable_autosignin"] = False
+
+        profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
+        profile["password_manager_enabled"] = False
+        profile["password_manager_leak_detection"] = False
+        data["profile"] = profile
+
+        # Tắt luôn thanh gợi ý dịch trang (hay che mất nội dung khi automation)
+        translate = data.get("translate") if isinstance(data.get("translate"), dict) else {}
+        translate["enabled"] = False
+        data["translate"] = translate
+
+        with open(pref_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        # Không được để lỗi ghi pref làm chết cả lượt chạy
+        pass
 
 
 # Global registry for keeping browser sessions alive across blocks in the same run
@@ -489,8 +544,12 @@ def run_browser_block(
             # dù là Chrome hệ thống hay Chromium bundle của Playwright.
             launch_args += ["--disable-gpu", "--disable-software-rasterizer"]
 
+            # Không hỏi "Lưu mật khẩu?" / không hiện popup gây nhiễu automation
+            launch_args += QUIET_BROWSER_ARGS
+
             if browser_profile_dir:
                 os.makedirs(browser_profile_dir, exist_ok=True)
+                harden_profile_prefs(browser_profile_dir)
                 context = pw.chromium.launch_persistent_context(
                     user_data_dir=browser_profile_dir,
                     executable_path=browser_exe,

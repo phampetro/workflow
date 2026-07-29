@@ -399,17 +399,21 @@ def _run_session(session):
     context = None
     try:
         from playwright.sync_api import sync_playwright
-        from services.browser_executor import _find_system_browser
+        from services.browser_executor import (
+            _find_system_browser, QUIET_BROWSER_ARGS, harden_profile_prefs,
+        )
 
         pw = sync_playwright().start()
         browser_exe = _find_system_browser()
         os.makedirs(session["profile_dir"], exist_ok=True)
+        # Không để Chrome hỏi "Lưu mật khẩu?" khi người dùng đăng nhập lúc ghi
+        harden_profile_prefs(session["profile_dir"])
 
         context = pw.chromium.launch_persistent_context(
             user_data_dir=session["profile_dir"],
             executable_path=browser_exe,
             headless=False,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--start-maximized"],
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--start-maximized"] + QUIET_BROWSER_ARGS,
             no_viewport=True,
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

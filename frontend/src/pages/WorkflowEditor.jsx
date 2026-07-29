@@ -119,7 +119,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           const graph = JSON.parse(wf.graph_json)
           const loadedNodes = (graph.nodes || []).map(n => ({
             ...n,
-            data: { ...n.data, onEdit: undefined, onDelete: undefined },
+            // runStatus là trạng thái TẠM của một lượt chạy, không bao giờ được lấy từ DB.
+            // Bản cũ lưu nhầm runStatus vào graph_json → mở workflow lên là 3 khối nháy
+            // xanh + xoay vòng vĩnh viễn dù đã dừng. Ép về 'idle' để tự chữa dữ liệu cũ.
+            data: { ...n.data, runStatus: 'idle', onEdit: undefined, onDelete: undefined },
           }))
           // Remove duplicate nodes by ID (keep first occurrence)
           const seenIds = new Set()
@@ -216,11 +219,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
 
         // 2. Cập nhật trạng thái cho Node (Real-time highlight)
         if (data.block_id) {
+          // Backend gửi level CHỮ THƯỜNG ('error'/'success'/'info'/'warning'). Trước đây so
+          // sánh với 'ERROR'/'SUCCESS' nên không bao giờ khớp → mọi khối kẹt ở 'running'
+          // và nháy xanh mãi. Chuẩn hoá về chữ thường trước khi so.
+          const level = String(data.level || '').toLowerCase()
           setNodes(nds => nds.map(n => {
             if (n.id === data.block_id) {
               let nextStatus = n.data.runStatus
-              if (data.level === 'ERROR') nextStatus = 'error'
-              else if (data.level === 'SUCCESS') nextStatus = 'success'
+              if (level === 'error') nextStatus = 'error'
+              else if (level === 'success') nextStatus = 'success'
               else if (nextStatus !== 'error' && nextStatus !== 'success') {
                 nextStatus = 'running'
               }
@@ -233,11 +240,19 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         }
 
         // 3. Xử lý kết thúc run
-        if (data.message && (
-          data.message.includes('✅ Workflow hoàn thành') ||
-          data.message.includes('❌ Lỗi hệ thống khi chạy workflow') ||
-          data.message.includes('⏹ Đã dừng')
-        )) {
+        const msg = data.message || ''
+        const doneOk = msg.includes('✅ Workflow hoàn thành')
+        const doneErr = msg.includes('❌ Lỗi hệ thống khi chạy workflow')
+        const doneStop = msg.includes('⏹ Đã dừng')
+        if (doneOk || doneErr || doneStop) {
+          // Khối nào còn 'running' thì phải thôi nháy: hoàn thành → success,
+          // còn dừng/lỗi hệ thống → idle (không báo success sai sự thật).
+          const fallback = doneOk ? 'success' : 'idle'
+          setNodes(nds => nds.map(n => (
+            n.data.runStatus === 'running'
+              ? { ...n, data: { ...n.data, runStatus: fallback } }
+              : n
+          )))
           useStore.getState().clearActiveRun(wfData?.id)
         }
       },
@@ -330,6 +345,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         delete cleanData.onDelete
         delete cleanData.onEdit
         delete cleanData.onDuplicate
+        // Trạng thái chạy chỉ tồn tại trong phiên xem hiện tại — KHÔNG persist, nếu không
+        // autosave lúc đang chạy sẽ đóng băng 'running' vào DB (khối nháy xanh mãi mãi).
+        delete cleanData.runStatus
         return {
           id: n.id,
           type: n.type,
@@ -534,13 +552,21 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         const run = (res.data || []).find(r => r.id === currentRunId)
         if (!cancelled && run && run.status !== 'running') {
           useStore.getState().clearActiveRun(wfData.id)
+          // Dự phòng cho khi lỡ mất dòng log kết thúc (SSE reconnect, đóng panel log...):
+          // vẫn phải tắt hiệu ứng đang chạy trên khối, không để nháy vô tận.
+          const fallback = run.status === 'success' ? 'success' : 'idle'
+          setNodes(nds => nds.map(n => (
+            n.data.runStatus === 'running'
+              ? { ...n, data: { ...n.data, runStatus: fallback } }
+              : n
+          )))
         }
       } catch { /* mạng lỗi tạm — lần poll sau thử lại */ }
     }
     check() // kiểm tra ngay để bắt run kết thúc rất nhanh
     const interval = setInterval(check, 1500)
     return () => { cancelled = true; clearInterval(interval) }
-  }, [isRunning, wfData?.id, currentRunId])
+  }, [isRunning, wfData?.id, currentRunId, setNodes])
 
   // Poll yêu cầu nhập biến (khối input_vars) khi đang chạy → hiện modal nhập
   useEffect(() => {
