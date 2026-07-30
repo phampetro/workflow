@@ -2023,6 +2023,11 @@ with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
 
 if rows:
     print(f"✅ Thực thi thành công. {{len(rows)}} dòng kết quả trả về.")
+    print("Preview kết quả (tối đa 5 dòng):")
+    for r in rows[:5]:
+        print(f"  {{r}}")
+    if len(rows) > 5:
+        print("  ...")
 else:
     if row_count == -1:
         print(f"✅ Thực thi thành công (Hệ thống DB không trả về số dòng ảnh hưởng).")
