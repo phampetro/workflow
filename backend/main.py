@@ -20,20 +20,6 @@ def _setup_playwright_browsers_path() -> str:
 
 PLAYWRIGHT_BROWSERS_DIR = _setup_playwright_browsers_path()
 
-
-def find_installed_chromium() -> str:
-    """Đường dẫn Chromium riêng đã tải, hoặc "" nếu chưa có."""
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as pw:
-            p = pw.chromium.executable_path
-            if p and os.path.exists(p):
-                return p
-    except Exception:
-        pass
-    return ""
-
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -275,13 +261,16 @@ if __name__ == "__main__":
             from playwright.__main__ import main as _pw_main
             sys.argv = ["playwright", "install", "chromium"]
             _pw_main()
-        except SystemExit:
-            pass
+        except SystemExit as e:
+            # _pw_main() luôn sys.exit(mã trả về của driver) → mã ≠ 0 là tải lỗi
+            if e.code:
+                install_err = f"playwright install tra ve ma loi {e.code}"
         except Exception as e:
             install_err = e
 
         # Xác minh thật sự đã có chrome.exe — trước đây tải fail vẫn exit 0 nên
         # máy khách âm thầm chạy bằng Chrome hệ thống mà không ai biết.
+        from services.browser_executor import find_installed_chromium
         chromium_exe = find_installed_chromium()
         if chromium_exe:
             print("\n[OK] Da co Chromium rieng:", chromium_exe)
