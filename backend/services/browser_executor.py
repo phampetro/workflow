@@ -540,9 +540,10 @@ def run_browser_block(
             # Tắt GPU khi: (a) chạy ẩn; hoặc (b) buộc dùng Chrome/Edge hệ thống
             # (browser_exe != None) — trường hợp dễ tranh GPU với tab PyFlow gây "đen màn hình".
             launch_args = ["--no-sandbox", "--disable-dev-shm-usage"]
-            # Luôn tắt GPU để tránh lỗi đen màn hình do tranh chấp GPU với UI PyFlow (WebView2)
-            # dù là Chrome hệ thống hay Chromium bundle của Playwright.
-            launch_args += ["--disable-gpu", "--disable-software-rasterizer"]
+            # Luôn tắt GPU hardware để tránh lỗi đen màn hình do tranh chấp GPU với UI PyFlow (WebView2).
+            # BỎ CỜ --disable-software-rasterizer để WebGL có thể fallback về SwiftShader (CPU),
+            # giúp vượt qua các bài kiểm tra Bot Detection (như Cloudflare) khi đăng nhập.
+            launch_args += ["--disable-gpu"]
 
             # Không hỏi "Lưu mật khẩu?" / không hiện popup gây nhiễu automation
             launch_args += QUIET_BROWSER_ARGS
@@ -555,12 +556,8 @@ def run_browser_block(
                     executable_path=browser_exe,
                     headless=headless,
                     args=launch_args,
-                    viewport={"width": 1280, "height": 800},
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    )
+                    ignore_default_args=["--enable-automation"],
+                    viewport={"width": 1280, "height": 800}
                 )
                 page = context.pages[0] if context.pages else context.new_page()
                 browser = None
@@ -568,15 +565,11 @@ def run_browser_block(
                 browser = pw.chromium.launch(
                     executable_path=browser_exe,
                     headless=headless,
-                    args=launch_args
+                    args=launch_args,
+                    ignore_default_args=["--enable-automation"]
                 )
                 context = browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    )
+                    viewport={"width": 1280, "height": 800}
                 )
                 page = context.new_page()
             

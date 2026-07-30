@@ -414,12 +414,8 @@ def _run_session(session):
             executable_path=browser_exe,
             headless=False,
             args=["--no-sandbox", "--disable-dev-shm-usage", "--start-maximized"] + QUIET_BROWSER_ARGS,
+            ignore_default_args=["--enable-automation"],
             no_viewport=True,
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
         )
         # Tiêm recorder vào mọi trang/iframe + đăng ký binding trước khi điều hướng
         context.add_init_script(RECORDER_JS)
