@@ -65,16 +65,32 @@ def venv_exists(project_id: str) -> bool:
     return os.path.isfile(python)
 
 
+def get_system_python() -> str:
+    """Lấy lệnh Python của hệ thống để dùng khi phần mềm bị đóng gói thành EXE"""
+    if not getattr(sys, 'frozen', False):
+        return sys.executable
+    
+    import shutil
+    if shutil.which("python"):
+        return "python"
+    if shutil.which("python3"):
+        return "python3"
+    raise RuntimeError("Hệ thống không tìm thấy Python. Vui lòng cài đặt Python trên máy tính này.")
+
 async def create_venv(project_id: str) -> dict:
     """Tạo virtual environment mới cho project"""
     venv_path = get_venv_path(project_id)
     venv_path.mkdir(parents=True, exist_ok=True)
 
+    # Khi đóng gói EXE, sys.executable là pyflow-backend.exe chứ không phải python.exe
+    # Nên phải gọi python của hệ điều hành.
+    python_cmd = get_system_python()
+
     # subprocess.run chặn (blocking) - chạy trong thread riêng để không đứng hình
     # toàn bộ event loop (mọi request khác của app) trong lúc tạo venv (vài giây).
     result = await asyncio.to_thread(
         subprocess.run,
-        [sys.executable, "-m", "venv", str(venv_path)],
+        [python_cmd, "-m", "venv", str(venv_path)],
         capture_output=True,
         text=True,
         timeout=120

@@ -595,6 +595,67 @@ async def stream_logs(run_id: str, offset: int = 0):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+# ── Ghi thao tác trình duyệt (Recorder) ─────────────────────
+# Mở trình duyệt headed, tiêm recorder.js để ghi lại thao tác của người dùng và
+# tự sinh ra danh sách step (kèm fallback selector chain) cho khối Browser.
+
+@router.post("/api/workflows/{workflow_id}/record/start")
+async def record_start(workflow_id: str, body: dict, session: AsyncSession = Depends(get_session)):
+    wf = await session.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow không tồn tại")
+
+    from services import browser_recorder
+    from services.venv_manager import get_project_dir, slugify as _slug
+
+    wf_dir = get_project_dir(wf.project_id) / f"wf_{_slug(wf.name)}"
+    # Profile riêng cho việc ghi — giữ phiên đăng nhập giữa các lần ghi.
+    profile_dir = str(wf_dir / "browser_profile_record").replace("\\", "/")
+
+    loop = asyncio.get_running_loop()
+    start_url = (body.get("url") or "").strip()
+    res = browser_recorder.start(workflow_id, profile_dir, start_url, loop)
+    if not res["ok"]:
+        raise HTTPException(400, res["reason"])
+    return {"ok": True}
+
+
+@router.post("/api/workflows/{workflow_id}/record/stop")
+async def record_stop(workflow_id: str):
+    from services import browser_recorder
+    browser_recorder.stop(workflow_id)
+    return {"ok": True}
+
+
+@router.get("/api/workflows/{workflow_id}/record/stream")
+async def record_stream(workflow_id: str):
+    import json as _json
+    from services import browser_recorder
+
+    if not browser_recorder.get_session(workflow_id):
+        raise HTTPException(404, "Không có phiên ghi nào đang chạy")
+
+    queue = asyncio.Queue()
+    # Phát lại các sự kiện đã có (vd bước navigate ban đầu ghi trước khi SSE kết nối)
+    for ev in browser_recorder.snapshot_events(workflow_id):
+        queue.put_nowait(ev)
+    browser_recorder.subscribe(workflow_id, queue)
+
+    async def event_generator():
+        try:
+            while True:
+                ev = await queue.get()
+                yield f"data: {_json.dumps(ev, ensure_ascii=False)}\n\n"
+                if ev.get("type") == "done":
+                    break
+        except asyncio.CancelledError:
+            pass
+        finally:
+            browser_recorder.unsubscribe(workflow_id, queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 # ── Telegram Listener ───────────────────────────────────────
 # Listener chỉ được bật/tắt thông qua nút Chạy/Dừng của workflow (xem
 # services/executor_blocks.py, khối telegram_listener), endpoint dưới đây

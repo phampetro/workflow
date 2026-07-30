@@ -19,6 +19,7 @@ import {
 import { Button, Drawer, Space, Input, Popconfirm, Tag, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory, getPendingInput } from '../api/client'
+import { createLogStream } from '../api/client'
 import InputVarsModal from '../components/InputVarsModal'
 import useStore from '../store/useStore'
 import useUndoRedo from '../hooks/useUndoRedo'
@@ -118,7 +119,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           const graph = JSON.parse(wf.graph_json)
           const loadedNodes = (graph.nodes || []).map(n => ({
             ...n,
-            data: { ...n.data, onEdit: undefined, onDelete: undefined },
+            // runStatus là trạng thái TẠM của một lượt chạy, không bao giờ được lấy từ DB.
+            // Bản cũ lưu nhầm runStatus vào graph_json → mở workflow lên là 3 khối nháy
+            // xanh + xoay vòng vĩnh viễn dù đã dừng. Ép về 'idle' để tự chữa dữ liệu cũ.
+            data: { ...n.data, runStatus: 'idle', onEdit: undefined, onDelete: undefined },
           }))
           // Remove duplicate nodes by ID (keep first occurrence)
           const seenIds = new Set()
@@ -189,6 +193,75 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       fitView({ padding: 0.2, duration: 300 })
     }
   }, [nodesInitialized, fitView])
+
+  // Lắng nghe SSE log để cập nhật trạng thái Node (Real-time Status) và Store
+  useEffect(() => {
+    if (!currentRunId) return
+
+    // Reset toàn bộ trạng thái runStatus về 'idle' khi bắt đầu run
+    setNodes(nds => nds.map(n => ({
+      ...n,
+      data: { ...n.data, runStatus: 'idle' }
+    })))
+
+    const cached = useStore.getState().runLogs[currentRunId] || []
+    
+    const cleanup = createLogStream(
+      currentRunId,
+      (data) => {
+        // 1. Lưu log vào store
+        const entry = {
+          time: data.time || new Date().toLocaleTimeString(),
+          level: data.level || 'info',
+          msg: data.message || ''
+        }
+        useStore.getState().appendLog(currentRunId, entry)
+
+        // 2. Cập nhật trạng thái cho Node (Real-time highlight)
+        if (data.block_id) {
+          // Backend gửi level CHỮ THƯỜNG ('error'/'success'/'info'/'warning'). Trước đây so
+          // sánh với 'ERROR'/'SUCCESS' nên không bao giờ khớp → mọi khối kẹt ở 'running'
+          // và nháy xanh mãi. Chuẩn hoá về chữ thường trước khi so.
+          const level = String(data.level || '').toLowerCase()
+          setNodes(nds => nds.map(n => {
+            if (n.id === data.block_id) {
+              let nextStatus = n.data.runStatus
+              if (level === 'error') nextStatus = 'error'
+              else if (level === 'success') nextStatus = 'success'
+              else if (nextStatus !== 'error' && nextStatus !== 'success') {
+                nextStatus = 'running'
+              }
+              if (n.data.runStatus !== nextStatus) {
+                return { ...n, data: { ...n.data, runStatus: nextStatus } }
+              }
+            }
+            return n
+          }))
+        }
+
+        // 3. Xử lý kết thúc run
+        const msg = data.message || ''
+        const doneOk = msg.includes('✅ Workflow hoàn thành')
+        const doneErr = msg.includes('❌ Lỗi hệ thống khi chạy workflow')
+        const doneStop = msg.includes('⏹ Đã dừng')
+        if (doneOk || doneErr || doneStop) {
+          // Khối nào còn 'running' thì phải thôi nháy: hoàn thành → success,
+          // còn dừng/lỗi hệ thống → idle (không báo success sai sự thật).
+          const fallback = doneOk ? 'success' : 'idle'
+          setNodes(nds => nds.map(n => (
+            n.data.runStatus === 'running'
+              ? { ...n, data: { ...n.data, runStatus: fallback } }
+              : n
+          )))
+          useStore.getState().clearActiveRun(wfData?.id)
+        }
+      },
+      (err) => { console.error('SSE Error:', err) },
+      cached.length
+    )
+
+    return () => cleanup()
+  }, [currentRunId, setNodes, wfData?.id])
 
   const handleDeleteHistory = async () => {
     try {
@@ -272,6 +345,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         delete cleanData.onDelete
         delete cleanData.onEdit
         delete cleanData.onDuplicate
+        // Trạng thái chạy chỉ tồn tại trong phiên xem hiện tại — KHÔNG persist, nếu không
+        // autosave lúc đang chạy sẽ đóng băng 'running' vào DB (khối nháy xanh mãi mãi).
+        delete cleanData.runStatus
         return {
           id: n.id,
           type: n.type,
@@ -351,6 +427,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     setEdges(eds => eds.filter(e => e.id !== edgeId))
     triggerAutoSave()
   }, [triggerAutoSave, takeSnapshot])
+
+  // Thêm/kéo/xóa điểm uốn (waypoint) của 1 cạnh — lưu vào edge.data.waypoints (autosave lo phần lưu)
+  const handleEdgeWaypoints = useCallback((edgeId, waypoints) => {
+    takeSnapshot(nodesRef.current, edgesRef.current)
+    setEdges(eds => eds.map(e => e.id === edgeId ? { ...e, data: { ...e.data, waypoints } } : e))
+    triggerAutoSave()
+  }, [triggerAutoSave, takeSnapshot, setEdges])
 
   const onConnect = useCallback(
     (params) => {
@@ -469,13 +552,21 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         const run = (res.data || []).find(r => r.id === currentRunId)
         if (!cancelled && run && run.status !== 'running') {
           useStore.getState().clearActiveRun(wfData.id)
+          // Dự phòng cho khi lỡ mất dòng log kết thúc (SSE reconnect, đóng panel log...):
+          // vẫn phải tắt hiệu ứng đang chạy trên khối, không để nháy vô tận.
+          const fallback = run.status === 'success' ? 'success' : 'idle'
+          setNodes(nds => nds.map(n => (
+            n.data.runStatus === 'running'
+              ? { ...n, data: { ...n.data, runStatus: fallback } }
+              : n
+          )))
         }
       } catch { /* mạng lỗi tạm — lần poll sau thử lại */ }
     }
     check() // kiểm tra ngay để bắt run kết thúc rất nhanh
     const interval = setInterval(check, 1500)
     return () => { cancelled = true; clearInterval(interval) }
-  }, [isRunning, wfData?.id, currentRunId])
+  }, [isRunning, wfData?.id, currentRunId, setNodes])
 
   // Poll yêu cầu nhập biến (khối input_vars) khi đang chạy → hiện modal nhập
   useEffect(() => {
@@ -570,8 +661,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   // và undo/redo (deep-clone làm mất function) cũng không làm chết nút xóa edge
   const edgesWithCb = useMemo(() => edges.map((e) => ({
     ...e,
-    data: { ...e.data, onDelete: handleDeleteEdge },
-  })), [edges, handleDeleteEdge])
+    data: { ...e.data, onDelete: handleDeleteEdge, onWaypointsChange: handleEdgeWaypoints },
+  })), [edges, handleDeleteEdge, handleEdgeWaypoints])
 
   const SaveIcon = saveStatus === 'saving' ? Loader
     : saveStatus === 'saved' ? CheckCircle
@@ -720,15 +811,17 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             onDragOver={onDragOver}
             onNodeDragStart={() => takeSnapshot(nodesRef.current, edgesRef.current)}
             onNodeDoubleClick={(e, node) => openEditor(node.id)}
+            snapToGrid
+            snapGrid={[20, 20]}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             defaultEdgeOptions={{
-              animated: true, type: 'smoothstep',
+              animated: true, type: 'default',
               markerEnd: { type: MarkerType.ArrowClosed, color: '#0d9488' },
             }}
             style={{ background: 'transparent' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--canvas-dot)" />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={2} color="var(--canvas-dot)" />
             <Controls style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }} />
             <MiniMap
               style={{ background:'var(--bg-elevated)', border:'1px solid var(--border-default)', borderRadius:10 }}
@@ -955,6 +1048,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         .save-status svg { color: var(--accent-success); }
 
         .spinning { animation: spin 1s linear infinite; }
+
+        .edge-waypoint {
+          position: absolute; width: 12px; height: 12px; border-radius: 50%;
+          background: var(--accent-primary); border: 2px solid var(--bg-surface);
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.2); cursor: grab; pointer-events: all;
+          touch-action: none;
+        }
+        .edge-waypoint:hover { box-shadow: 0 0 0 4px var(--accent-primary-glow); }
+        .edge-waypoint:active { cursor: grabbing; }
 
         .edge-delete-btn { width: 1.5rem; height: 1.5rem; background: var(--bg-surface); border: 1px solid var(--accent-danger); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--accent-danger); transition: all 0.2s; box-shadow: var(--shadow-sm); }
         .edge-delete-btn:hover { background: var(--accent-danger); color: white; transform: scale(1.15); box-shadow: 0 4px 12px rgba(239,68,68,0.4); }
