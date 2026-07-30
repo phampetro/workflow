@@ -1352,6 +1352,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             sqlToExcelSavedConnectionId: node.data.sqlToExcelSavedConnectionId || undefined,
             sqlExecSavedConnectionId: node.data.sqlExecSavedConnectionId || undefined,
             sqlCommand: node.data.sqlCommand || '',
+            sqlExecTimeout: node.data.sqlExecTimeout ?? 7200,
             googleSheetsUrl: node.data.googleSheetsUrl || '',
             googleSheetsSheetName: node.data.googleSheetsSheetName || 'Sheet1',
             googleSheetsHeaderRow: node.data.googleSheetsHeaderRow !== undefined ? node.data.googleSheetsHeaderRow : 1,
@@ -1723,6 +1724,22 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               {renderDbConnectionField('sqlExecSavedConnectionId')}
               {renderVarNameField('sqlExecResultVarName', 'Lưu kết quả (rows) vào biến', 'Mặc định trùng tên biến trả về ({{result}}, dạng danh sách object). Nếu workflow có nhiều khối Chạy Hàm SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: result', { marginBottom: 12 })}
               {renderVarNameField('sqlExecRowCountVarName', 'Lưu số dòng vào biến', 'Mặc định trùng tên biến trả về ({{row_count}}). Nếu workflow có nhiều khối Chạy Hàm SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: row_count', { marginBottom: 16 })}
+              <Form.Item
+                label="Giới hạn thời gian chạy (giây)"
+                name="sqlExecTimeout"
+                extra={
+                  // Màu mặc định của .ant-form-item-extra là --text-muted → chỉ 2.56:1
+                  // trên nền trắng (dưới ngưỡng 4.5:1). Dùng --text-secondary: 7.58:1
+                  // (light) và 6.96:1 (dark).
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    Nhập 0 để chờ vô hạn — dùng cho thủ tục nặng chạy vài tiếng. Hết thời gian này khối sẽ báo lỗi
+                    và đi nhánh Bắt Lỗi. Dù đặt bao nhiêu vẫn dừng được bằng nút Dừng.
+                  </span>
+                }
+                style={{ marginBottom: 16 }}
+              >
+                <InputNumber min={0} max={604800} step={600} style={{ width: '100%' }} placeholder="7200" />
+              </Form.Item>
             </>
           )}
 
