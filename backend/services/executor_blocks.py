@@ -617,11 +617,28 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         for e in edges:
             edges_from.setdefault(e["source"], []).append(e)
 
-        listener_nodes = [n for n in nodes if n.get("data", {}).get("type") == "telegram_listener" and "_initial_input" in n.get("data", {})]
+        triggered_by = None
+        try:
+            import sqlite3
+            with sqlite3.connect(str(WORKFLOW_DB)) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT triggered_by FROM workflow_run WHERE id=?", (run_id,))
+                row = cursor.fetchone()
+                if row:
+                    triggered_by = row[0]
+        except Exception:
+            pass
+
+        tg_listener_nodes = [n for n in nodes if n.get("data", {}).get("type") == "telegram_listener"]
+        listener_nodes_with_input = [n for n in tg_listener_nodes if "_initial_input" in n.get("data", {})]
         
-        if listener_nodes:
-            start_nodes = listener_nodes
-            initial_input = listener_nodes[0]["data"]["_initial_input"]
+        if listener_nodes_with_input:
+            start_nodes = listener_nodes_with_input
+            initial_input = listener_nodes_with_input[0]["data"]["_initial_input"]
+        elif triggered_by == "listener_autostart" and tg_listener_nodes:
+            # Khởi động lại backend -> bật thẳng khối listener không qua Start
+            start_nodes = tg_listener_nodes
+            initial_input = None
         else:
             start_nodes = [n for n in nodes if n.get("data", {}).get("type") == "start"]
             initial_input = None
