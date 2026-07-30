@@ -11,6 +11,7 @@ export default function LicenseGate({ status, onActivated }) {
   const { message } = App.useApp()
   const [key, setKey] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const machine = status?.machine || '—'
   const expired = status?.activated && !status?.valid
@@ -27,12 +28,13 @@ export default function LicenseGate({ status, onActivated }) {
   const handleActivate = async () => {
     if (!key.trim()) return
     setLoading(true)
+    setError(null)
     try {
       await activateLicense(key.trim())
       message.success('Kích hoạt thành công!')
       setTimeout(() => (onActivated ? onActivated() : window.location.reload()), 600)
     } catch (err) {
-      message.error(err.message || 'Kích hoạt thất bại')
+      setError(err.message || 'Kích hoạt thất bại')
       setLoading(false)
     }
   }
@@ -73,11 +75,13 @@ export default function LicenseGate({ status, onActivated }) {
           <Input.TextArea
             id="license-key"
             value={key}
-            onChange={(e) => setKey(e.target.value)}
+            onChange={(e) => { setKey(e.target.value); setError(null); }}
             placeholder="Dán key (PF1.xxxx.yyyy) vào đây"
             autoSize={{ minRows: 3, maxRows: 5 }}
             spellCheck={false}
+            status={error ? 'error' : ''}
           />
+          {error && <div className="license-error-text">{error}</div>}
         </div>
 
         <Button
@@ -95,7 +99,7 @@ export default function LicenseGate({ status, onActivated }) {
 
       <style>{`
         .license-gate {
-          position: fixed; inset: 0; z-index: 10000;
+          position: fixed; inset: 0; z-index: 1000;
           display: flex; align-items: center; justify-content: center;
           background: var(--bg-base); padding: 1.5rem;
         }
@@ -136,6 +140,7 @@ export default function LicenseGate({ status, onActivated }) {
           color: var(--text-primary); overflow-wrap: anywhere; user-select: all;
         }
         .license-hint { font-size: 0.72rem; color: var(--text-muted); margin: 0.375rem 0 0; line-height: 1.4; }
+        .license-error-text { color: var(--accent-danger); font-size: 0.8rem; margin-top: 0.375rem; }
       `}</style>
     </div>
   )

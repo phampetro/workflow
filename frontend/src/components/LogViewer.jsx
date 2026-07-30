@@ -17,6 +17,12 @@ const LEVEL_CONFIG = {
   error:   { color: 'var(--log-error)',   bg: 'var(--log-error-bg)' },
 }
 
+// Zustand v5 so sánh snapshot bằng Object.is. Selector TUYỆT ĐỐI không được tạo
+// reference mới mỗi lần gọi (VD `|| []`, `.map()`, `.filter()`): getSnapshot sẽ không
+// bao giờ ổn định → React 19 re-render vô hạn → "Maximum update depth exceeded" (crash
+// trắng/đen cả app). Dùng 1 hằng số rỗng dùng chung để giữ reference bất biến.
+const EMPTY_LOGS = []
+
 function LogRow({ log }) {
   const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
   return (
@@ -43,19 +49,19 @@ function LogRow({ log }) {
 }
 
 export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
-  const [logs, setLogs] = useState([])
+  const logs = useStore(state => state.runLogs[runId] || EMPTY_LOGS)
   const [autoScroll, setAutoScroll] = useState(true)
   const virtuosoRef = useRef(null)
 
   useEffect(() => {
-    if (!runId) {
-      setLogs([])
-      return
-    }
+    if (!runId) return
+    
+    // Nếu luồng đang chạy, WorkflowEditor đã tự mở stream và ghi vào useStore.
+    // Component này chỉ việc re-render nhờ hook useStore(state => state.runLogs[runId]).
+    if (isRunning) return
 
+    // Đối với các luồng cũ, component này sẽ tự mở stream (cũng để lấy lại lịch sử log).
     const cached = useStore.getState().runLogs[runId] || []
-    setLogs([...cached])
-
     const cleanup = createLogStream(
       runId,
       (data) => {
@@ -64,26 +70,14 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
           level: data.level || 'info',
           msg: data.message || ''
         }
-        setLogs(prev => [...prev, entry])
         useStore.getState().appendLog(runId, entry)
-
-        // Các chuỗi này phải khớp CHÍNH XÁC log BE phát ở cuối execute_workflow_thread
-        // (services/executor_blocks.py cuối file). Trước đây match "✅ Hoàn thành workflow"
-        // không khớp bất cứ log nào -> onFinished không được gọi ở case success.
-        if (data.message && (
-          data.message.includes('✅ Workflow hoàn thành') ||
-          data.message.includes('❌ Lỗi hệ thống khi chạy workflow') ||
-          data.message.includes('⏹ Đã dừng')
-        )) {
-          if (onFinished) onFinished(runId)
-        }
       },
       (err) => { console.error('SSE Error:', err) },
       cached.length
     )
 
     return () => cleanup()
-  }, [runId])
+  }, [runId, isRunning])
 
   const jumpToBottom = () => {
     setAutoScroll(true)
@@ -111,7 +105,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
           <span style={{ fontWeight: 600 }}>Tiến trình chạy</span>
           {runId && (
             <Tag variant="filled" style={{ margin: 0, fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
-              #{runId}
+              #{runId.split('-')[0]}
             </Tag>
           )}
           {isRunning && (
@@ -120,7 +114,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
         </Space>
       }
       placement="bottom"
-      size="42vh"
+      size={350}
       onClose={onClose}
       open={true}
       mask={false}

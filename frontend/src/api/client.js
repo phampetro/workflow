@@ -2,7 +2,7 @@ import axios from 'axios'
 import useStore from '../store/useStore'
 
 const api = axios.create({
-  baseURL: 'http://localhost:7000',
+  baseURL: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:7000' : window.location.origin),
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -24,7 +24,17 @@ api.interceptors.response.use(
     return res
   },
   (err) => {
-    const msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Lỗi kết nối'
+    let msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Lỗi kết nối'
+    if (msg === 'Network Error') {
+      msg = 'Lỗi kết nối mạng hoặc máy chủ không phản hồi'
+    } else if (typeof msg === 'string' && msg.includes('timeout')) {
+      msg = 'Yêu cầu quá hạn, máy chủ phản hồi quá chậm'
+    } else if (typeof msg === 'string' && msg.includes('status code 400')) {
+      msg = 'Yêu cầu không hợp lệ (Lỗi 400)'
+    } else if (typeof msg === 'string' && msg.includes('status code')) {
+      msg = `Lỗi máy chủ (${msg.replace('Request failed with ', '')})`
+    }
+    
     console.error('[API Error]', err.config?.url, msg)
     return Promise.reject(new Error(msg))
   }
@@ -63,6 +73,9 @@ export const getPackages       = (projectId)  => api.get(`/api/projects/${projec
 export const installPackage    = (projectId, pkg) => api.post(`/api/projects/${projectId}/packages/install`, { package: pkg })
 export const uninstallPackage  = (projectId, pkg) => api.post(`/api/projects/${projectId}/packages/uninstall`, { package: pkg })
 export const initVenv          = (projectId)  => api.post(`/api/projects/${projectId}/venv/init`)
+export const scanPackages         = (projectId)           => api.post(`/api/projects/${projectId}/packages/scan`)
+export const autoInstallPackages  = (projectId, packages) => api.post(`/api/projects/${projectId}/packages/auto-install`, { packages })
+export const getInstallStatus     = (projectId)           => api.get(`/api/projects/${projectId}/packages/install-status`)
 
 // ── Workflows ─────────────────────────────────────────────
 export const getWorkflows      = (projectId)  => api.get(`/api/projects/${projectId}/workflows`)
@@ -207,6 +220,30 @@ export const streamAiCodegen = (payload, { onToken, onDone, onError } = {}) => {
     }
   })()
   return () => controller.abort()
+}
+
+// ── Ghi thao tác trình duyệt (Recorder) ──────────────────
+export const startBrowserRecording = (workflowId, url) =>
+  api.post(`/api/workflows/${workflowId}/record/start`, { url })
+
+export const stopBrowserRecording = (workflowId) =>
+  api.post(`/api/workflows/${workflowId}/record/stop`)
+
+// SSE nhận step realtime khi người dùng thao tác. Trả về hàm huỷ.
+export const createRecordingStream = (workflowId, { onStep, onReplaceLast, onDone, onError } = {}) => {
+  const url = `${api.defaults.baseURL}/api/workflows/${workflowId}/record/stream`
+  const es = new EventSource(url)
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data)
+      if (d.type === 'step') onStep?.(d.step)
+      else if (d.type === 'replace_last') onReplaceLast?.(d.step)
+      else if (d.type === 'done') { onDone?.(d.steps || []); try { es.close() } catch (_) {} }
+      else if (d.type === 'error') onError?.(new Error(d.message || 'Lỗi ghi'))
+    } catch (_) {}
+  }
+  es.onerror = () => { /* EventSource tự reconnect; sau 'done' đã tự close */ }
+  return () => { try { es.close() } catch (_) {} }
 }
 
 // ── Health ────────────────────────────────────────────────

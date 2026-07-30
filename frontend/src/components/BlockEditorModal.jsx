@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet } from 'lucide-react'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns, startBrowserRecording, stopBrowserRecording, createRecordingStream } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col, Checkbox } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -166,11 +166,80 @@ const STEP_COLORS = {
   wait: '#f97316', wait_for_url: '#f97316',
 }
 
-const BrowserStepEditorPanel = ({ steps, onChange }) => {
+const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
   const [expandedIdx, setExpandedIdx] = useState(null)
 
   const dragItem = React.useRef(null)
   const dragOverItem = React.useRef(null)
+
+  // ── Ghi thao tác (Recorder) ──
+  const [recording, setRecording] = useState(false)
+  const [starting, setStarting] = useState(false)
+  const [showUrlPrompt, setShowUrlPrompt] = useState(false)
+  const [recUrl, setRecUrl] = useState('')
+  const [recCount, setRecCount] = useState(0)
+  const stepsBeforeRef = React.useRef([])
+  const liveRef = React.useRef([])
+  const stopStreamRef = React.useRef(null)
+  const recordingRef = React.useRef(false)
+
+  const finishRecordingUI = () => {
+    recordingRef.current = false
+    setRecording(false)
+    setStarting(false)
+    if (stopStreamRef.current) { stopStreamRef.current(); stopStreamRef.current = null }
+  }
+
+  const applyLive = () => onChange([...stepsBeforeRef.current, ...liveRef.current])
+
+  const beginRecording = async () => {
+    if (!workflowId) { toast.error('Hãy lưu workflow trước khi ghi thao tác'); return }
+    let url = recUrl.trim()
+    if (!url) { toast.error('Nhập địa chỉ trang cần thao tác (VD: example.com)'); return }
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+
+    setStarting(true)
+    try {
+      // Tạo phiên ghi trước (mở trình duyệt), rồi mới mở SSE để nhận step.
+      await startBrowserRecording(workflowId, url)
+      stepsBeforeRef.current = Array.isArray(steps) ? steps : []
+      liveRef.current = []
+      recordingRef.current = true
+      setRecCount(0)
+      setRecording(true)
+      setShowUrlPrompt(false)
+      stopStreamRef.current = createRecordingStream(workflowId, {
+        onStep: (s) => { liveRef.current = [...liveRef.current, s]; setRecCount(liveRef.current.length); applyLive() },
+        onReplaceLast: (s) => { liveRef.current = [...liveRef.current.slice(0, -1), s]; setRecCount(liveRef.current.length); applyLive() },
+        onDone: (finalSteps) => {
+          if (Array.isArray(finalSteps)) onChange([...stepsBeforeRef.current, ...finalSteps])
+          finishRecordingUI()
+          toast.success('Đã dừng ghi — kiểm tra & tinh chỉnh các bước nếu cần')
+        },
+        onError: (e) => { toast.error('Lỗi ghi: ' + e.message); finishRecordingUI() },
+      })
+      toast.success('Đã mở trình duyệt — hãy thao tác, các bước sẽ tự sinh')
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.message || 'Không mở được trình duyệt ghi')
+      finishRecordingUI()
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const stopRecording = async () => {
+    try { await stopBrowserRecording(workflowId) } catch (_) {}
+    // onDone từ SSE sẽ dọn UI; phòng khi SSE lỗi, dọn sau 2s.
+    setTimeout(() => { if (recordingRef.current) finishRecordingUI() }, 2500)
+  }
+
+  // Dọn dẹp khi đóng panel/modal: dừng phiên ghi nếu còn.
+  useEffect(() => () => {
+    if (recordingRef.current) {
+      if (stopStreamRef.current) { try { stopStreamRef.current() } catch (_) {} }
+      if (workflowId) stopBrowserRecording(workflowId).catch(() => {})
+    }
+  }, [])
 
   const addStep = () => {
     const newStep = { action: 'navigate', selector: '', value: '', key_name: 'result', note: '', continue_on_error: false }
@@ -228,14 +297,73 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
             Danh sách bước ({steps.length})
           </span>
         </div>
-        <button
-          type="button"
-          onClick={addStep}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
-        >
-          <Plus size={14} /> Thêm bước
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {!recording ? (
+            <button
+              type="button"
+              onClick={() => setShowUrlPrompt(v => !v)}
+              disabled={starting}
+              aria-label="Ghi lại thao tác trên trình duyệt"
+              title="Mở trình duyệt và tự động ghi lại thao tác của bạn thành các bước"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: showUrlPrompt ? 'var(--bg-hover)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.82rem', cursor: starting ? 'wait' : 'pointer', opacity: starting ? 0.6 : 1 }}
+            >
+              <Circle size={13} fill="#ef4444" color="#ef4444" /> Ghi thao tác
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={stopRecording}
+              aria-label="Dừng ghi thao tác"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
+            >
+              <Square size={13} fill="#fff" /> Dừng ghi
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={addStep}
+            aria-label="Thêm bước thủ công"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
+          >
+            <Plus size={14} /> Thêm bước
+          </button>
+        </div>
       </div>
+
+      {/* Ô nhập URL để bắt đầu ghi */}
+      {showUrlPrompt && !recording && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
+          <input
+            style={{ ...inputStyle, flex: 1 }}
+            placeholder="Địa chỉ trang cần thao tác — VD: id.company.com/login"
+            value={recUrl}
+            autoFocus
+            onChange={e => setRecUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') beginRecording() }}
+          />
+          <button
+            type="button"
+            onClick={beginRecording}
+            disabled={starting}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: starting ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: starting ? 0.7 : 1 }}
+          >
+            <Video size={14} /> {starting ? 'Đang mở...' : 'Bắt đầu ghi'}
+          </button>
+        </div>
+      )}
+
+      {/* Banner khi đang ghi */}
+      {recording && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'color-mix(in srgb, #ef4444 12%, transparent)', borderBottom: '1px solid #ef444455', flexShrink: 0 }}>
+          <span className="pyflow-rec-dot" style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+            Đang ghi trên cửa sổ trình duyệt vừa mở · <span style={{ color: '#ef4444' }}>{recCount} bước</span>
+          </span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+            Thao tác bình thường — bấm "✓ Xong" trên cửa sổ đó hoặc "Dừng ghi" để kết thúc
+          </span>
+        </div>
+      )}
 
       {/* Steps list */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -303,6 +431,11 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
                     <div>
                       <label style={labelStyle}>Selector (CSS / XPath / text=...)</label>
                       <input style={inputStyle} placeholder="VD: #login-btn, .submit, text=Đăng nhập" value={step.selector || ''} onChange={e => updateStep(i, 'selector', e.target.value)} />
+                      {Array.isArray(step.selectors) && step.selectors.length > 1 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: '0.7rem', color: 'var(--accent-success)' }} title={step.selectors.join('\n')}>
+                          <ShieldAlert size={12} /> {step.selectors.length} selector dự phòng (tự chuyển nếu giao diện đổi)
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -318,6 +451,11 @@ const BrowserStepEditorPanel = ({ steps, onChange }) => {
                     <div>
                       <label style={labelStyle}>Nội dung nhập (hỗ trợ {'{{key}}'})</label>
                       <input style={inputStyle} placeholder="VD: hello world hoặc {{username}}" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                      {step.is_password && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: '0.7rem', color: 'var(--accent-warning)' }}>
+                          <ShieldAlert size={12} /> Ô mật khẩu — vì bảo mật giá trị không được ghi lại. Hãy nhập tay hoặc dùng {'{{biến}}'}.
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2381,7 +2519,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               )}
             </div>
           ) : isBrowser ? (
-            <BrowserStepEditorPanel steps={browserSteps} onChange={setBrowserSteps} />
+            <BrowserStepEditorPanel steps={browserSteps} onChange={setBrowserSteps} workflowId={workflowId} />
           ) : (
             <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>

@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+import sys
 import traceback
 import time
 from typing import Optional, Callable
@@ -78,6 +79,40 @@ def get_locator(page, selector: str):
     return page.locator(selector)
 
 
+# Các action có dùng selector và được hưởng lợi từ fallback chain.
+# (Không gồm wait_for_selector vì nó có state hidden/detached, không nên pre-check attached.)
+_SELECTOR_FALLBACK_ACTIONS = {
+    "click", "double_click", "right_click", "hover", "scroll_to",
+    "fill", "type_slowly", "clear", "press_key", "upload_file", "click_and_download",
+    "select_option", "check", "uncheck",
+    "get_text", "get_attribute", "get_all_text",
+}
+
+
+def resolve_selector(page, candidates, timeout: int) -> str:
+    """Thử lần lượt các selector (bền → giòn), trả về cái đầu tiên gắn được vào DOM.
+
+    Đây là "self-healing" chống React/Angular re-render: nếu selector chính đã đổi
+    (class băm, id auto...), executor tự chuyển sang selector dự phòng còn hợp lệ.
+    Cái cuối cùng luôn được trả về (kể cả chưa attach) để action tự chờ full timeout.
+    """
+    valid = [c for c in candidates if c]
+    if not valid:
+        return ""
+    if len(valid) == 1:
+        return valid[0]
+    per = max(800, int(timeout / len(valid)))
+    for i, sel in enumerate(valid):
+        if i == len(valid) - 1:
+            return sel
+        try:
+            get_locator(page, sel).first.wait_for(state="attached", timeout=per)
+            return sel
+        except Exception:
+            continue
+    return valid[-1]
+
+
 def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None) -> BrowserStepResult:
     """Thực thi một bước browser action."""
     action = step.get("action", "")
@@ -86,6 +121,13 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
     attribute = step.get("attribute", "")
     key_name = step.get("key_name", "result")
     timeout = int(step.get("timeout", 20000))
+
+    # Fallback selector chain (do recorder sinh ra): thử lần lượt để chống UI đổi DOM.
+    raw_selectors = step.get("selectors")
+    if isinstance(raw_selectors, list):
+        candidates = [str(s) for s in raw_selectors if s]
+        if len(candidates) > 1 and action in _SELECTOR_FALLBACK_ACTIONS:
+            selector = resolve_selector(page, candidates, timeout)
 
     label = ACTION_LABELS.get(action, f"[{action}]")
 
@@ -305,8 +347,279 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
         return BrowserStepResult(success=False, error=error_msg)
 
 
+def _find_system_browser():
+    import os, sys
+    if sys.platform == "win32":
+        paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        ]
+    elif sys.platform == "darwin":
+        paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+        ]
+    else:
+        paths = []
+        
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+# Vị trí binary Chromium bên trong <registry>/chromium-<rev>/ theo từng OS.
+_CHROMIUM_BINARIES = (
+    os.path.join("chrome-win64", "chrome.exe"),
+    os.path.join("chrome-linux", "chrome"),
+    os.path.join("chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
+    os.path.join("chrome-mac-arm64", "Chromium.app", "Contents", "MacOS", "Chromium"),
+)
+
+
+def playwright_registry_dir() -> str:
+    """Thư mục Playwright chứa các bản browser đã tải.
+
+    Tôn trọng PLAYWRIGHT_BROWSERS_PATH (main.py set khi có thư mục ms-playwright
+    portable cạnh exe) — nếu biến này được set thì Playwright CHỈ tìm ở đó, nên
+    không được fallback về cache mặc định.
+    """
+    env_dir = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if env_dir:
+        return env_dir
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        return os.path.join(base, "ms-playwright")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Caches/ms-playwright")
+    return os.path.expanduser("~/.cache/ms-playwright")
+
+
+def find_installed_chromium() -> str:
+    """Đường dẫn Chromium riêng đã tải, hoặc "" nếu chưa có.
+
+    Quét thẳng filesystem thay vì gọi ``sync_playwright()``: ở chế độ frozen
+    (PyInstaller) việc khởi động driver chỉ để hỏi đường dẫn không đáng tin —
+    đã gặp trường hợp exe báo "chưa cài" trong khi Chromium có sẵn. Cấu trúc
+    ``<registry>/chromium-<rev>/chrome-win64/chrome.exe`` thì ổn định.
+    """
+    import glob
+    root = playwright_registry_dir()
+    if not root or not os.path.isdir(root):
+        return ""
+    for d in sorted(glob.glob(os.path.join(root, "chromium-*")), reverse=True):
+        for rel in _CHROMIUM_BINARIES:
+            p = os.path.join(d, rel)
+            if os.path.exists(p):
+                return p
+    return ""
+
+
+def pick_browser(pw):
+    """Chọn trình duyệt cho automation → trả về ``(executable_path, warning)``.
+
+    Ưu tiên **Chromium riêng của Playwright** (``executable_path=None`` → Playwright tự
+    dùng bản bundled) để automation tách biệt hoàn toàn khỏi Chrome/Edge cá nhân của
+    người dùng: không dùng chung profile, không ảnh hưởng phiên đăng nhập/tab đang mở,
+    và **không bị group policy / tiện ích của máy can thiệp**.
+
+    Nếu máy chưa tải Chromium bundled thì fallback về Chrome/Edge hệ thống, nhưng phải
+    cảnh báo: đây là nguồn gốc của kiểu bug "máy này chạy được, máy khách thì không"
+    (Chrome chính hãng bị policy công ty, tiện ích, phiên bản khác… chặn đăng nhập).
+    """
+    expected = ""
+    try:
+        expected = pw.chromium.executable_path or ""
+        if expected and os.path.exists(expected):
+            return None, ""
+    except Exception:
+        pass
+
+    # Lớp 2: driver không trả được đường dẫn (đã gặp ở chế độ frozen) nhưng
+    # Chromium vẫn nằm trên đĩa → chỉ thẳng vào binary, đừng tụt xuống Chrome hệ thống.
+    scanned = find_installed_chromium()
+    if scanned:
+        return scanned, ""
+
+    exe = _find_system_browser()
+    if exe:
+        warn = (
+            f"⚠️ Chưa tải Chromium riêng của Playwright → đang tạm dùng trình duyệt hệ thống: {exe}. "
+            "Trình duyệt hệ thống chịu ảnh hưởng bởi group policy / tiện ích / phiên bản của máy "
+            "nên có thể bị chặn đăng nhập. Chạy `pyflow-backend.exe install-browser` để cài Chromium riêng."
+        )
+    else:
+        warn = (
+            "⚠️ Không tìm thấy Chromium riêng lẫn Chrome/Edge hệ thống. "
+            "Chạy `pyflow-backend.exe install-browser` để cài Chromium riêng."
+        )
+    warn += f" (đường dẫn cần có: {expected or playwright_registry_dir()})"
+    return exe, warn
+
+
+# Các policy hay khiến Chrome/Edge "chính hãng" chặn automation.
+_BLOCKING_POLICIES = (
+    "BrowserSignin", "ForceBrowserSignin", "RestrictSigninToPattern",
+    "CloudManagementEnrollmentToken", "ExtensionInstallForcelist",
+    "URLBlocklist", "URLAllowlist", "IncognitoModeAvailability",
+    "ManagedAccountsSigninRestriction", "ProfileSeparationSettings",
+)
+
+
+def chrome_policy_hint() -> str:
+    """Cảnh báo nếu Chrome/Edge của máy đang bị group policy quản lý.
+
+    Đây là nguyên nhân hay gặp của "máy dev chạy được, máy khách treo ở màn hình
+    đăng nhập rồi lỗi": policy như ``BrowserSignin=2`` buộc đăng nhập Chrome trên
+    profile mới, automation không bấm qua được nên đứng luôn ở màn hình đó tới khi
+    timeout — không có bước điều hướng nào chạy. Chromium riêng của Playwright đọc
+    key ``Policies\\Chromium`` nên không bị các policy dành cho Chrome/Edge chi phối.
+    """
+    if sys.platform != "win32":
+        return ""
+    try:
+        import winreg
+    except Exception:
+        return ""
+
+    hits: list = []
+    total = 0
+    targets = (
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Google\Chrome", "Chrome/HKLM"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Policies\Google\Chrome", "Chrome/HKCU"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Edge", "Edge/HKLM"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Policies\Microsoft\Edge", "Edge/HKCU"),
+    )
+    for root, sub, tag in targets:
+        try:
+            with winreg.OpenKey(root, sub) as key:
+                n_sub, n_val, _ = winreg.QueryInfoKey(key)
+                total += n_sub + n_val
+                for i in range(n_val):
+                    name, value, _ = winreg.EnumValue(key, i)
+                    if name in _BLOCKING_POLICIES:
+                        hits.append(f"{tag}:{name}={value}")
+                for i in range(n_sub):
+                    name = winreg.EnumKey(key, i)
+                    if name in _BLOCKING_POLICIES:
+                        hits.append(f"{tag}:{name}(danh sách)")
+        except Exception:
+            continue
+
+    if not total:
+        return ""
+    msg = f"⚠️ Chrome/Edge của máy này đang bị group policy quản lý ({total} thiết lập)"
+    if hits:
+        msg += " — trong đó có policy dễ chặn automation: " + ", ".join(hits[:6])
+    msg += (
+        ". Policy kiểu bắt buộc đăng nhập Chrome sẽ giữ cửa sổ ở màn hình đăng nhập và "
+        "automation không đi tiếp được bước nào. Cài Chromium riêng "
+        "(`pyflow-backend.exe install-browser`) để không bị policy của máy can thiệp."
+    )
+    return msg
+
+
+# Windows/macOS: KHÔNG được truyền --no-sandbox. Playwright tự thêm cờ này khi
+# chromium_sandbox != True, và Chrome/Edge **chính hãng** sẽ hiện thanh vàng
+# "You are using an unsupported command-line flag: --no-sandbox" (đo được: infobar
+# +56px, đẩy layout xuống) — vừa xấu vừa là dấu hiệu automation cho site bot-detect.
+# Chromium bundled của Playwright không hiện thanh này nên trước đây không ai thấy.
+# Chỉ Linux (container/root) mới thực sự cần tắt sandbox.
+CHROMIUM_SANDBOX = sys.platform in ("win32", "darwin")
+SANDBOX_ARGS = [] if CHROMIUM_SANDBOX else ["--no-sandbox", "--disable-dev-shm-usage"]
+
+
+# Flag tắt hộp thoại "Lưu mật khẩu?" và các popup gây nhiễu automation.
+# Dùng chung cho cả lúc chạy workflow và lúc ghi thao tác (recorder).
+QUIET_BROWSER_ARGS = [
+    "--disable-save-password-bubble",       # tắt bong bóng "Lưu mật khẩu?"
+    "--password-store=basic",               # không gọi keyring/credential manager của OS
+    "--disable-notifications",
+    "--no-default-browser-check",
+    "--no-first-run",
+    "--disable-features=PasswordLeakDetection,AutofillServerCommunication",
+    "--test-type",                          # Ẩn cảnh báo "--no-sandbox"
+]
+
+
+def harden_profile_prefs(profile_dir: str):
+    """Ghi Preferences của profile để Chrome KHÔNG hỏi lưu mật khẩu.
+
+    Launch flag một mình không đủ trên Chrome mới — pref `credentials_enable_service`
+    mới là thứ quyết định. Hàm này MERGE vào Preferences sẵn có (không ghi đè) để giữ
+    nguyên các thiết lập/phiên đăng nhập đã lưu trong profile.
+    Gọi TRƯỚC khi launch persistent context.
+    """
+    try:
+        default_dir = os.path.join(profile_dir, "Default")
+        os.makedirs(default_dir, exist_ok=True)
+        pref_path = os.path.join(default_dir, "Preferences")
+
+        data = {}
+        if os.path.exists(pref_path):
+            try:
+                with open(pref_path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            except Exception:
+                data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        # Tắt password manager (khoá then chốt cho hộp thoại "Lưu mật khẩu?")
+        data["credentials_enable_service"] = False
+        data["credentials_enable_autosignin"] = False
+
+        profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
+        profile["password_manager_enabled"] = False
+        profile["password_manager_leak_detection"] = False
+        data["profile"] = profile
+
+        # Tắt luôn thanh gợi ý dịch trang (hay che mất nội dung khi automation)
+        translate = data.get("translate") if isinstance(data.get("translate"), dict) else {}
+        translate["enabled"] = False
+        data["translate"] = translate
+
+        with open(pref_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        # Không được để lỗi ghi pref làm chết cả lượt chạy
+        pass
+
+
 # Global registry for keeping browser sessions alive across blocks in the same run
 _active_browser_sessions = {}
+
+
+def force_kill_browser_by_marker(marker: str):
+    """Tắt CỨNG tiến trình Chrome/Edge có `marker` (thường là run_id) trong command line.
+
+    Dùng khi người dùng bấm Dừng nhưng khối Browser đang kẹt trong 1 lệnh Playwright
+    (VD retry click chờ timeout) — không thể ngắt từ thread khác. Kill tiến trình khiến
+    lệnh Playwright đang treo lập tức raise "browser closed" → vòng lặp thoát ngay.
+    An toàn: chỉ khớp tiến trình có đúng marker (run_id là uuid, duy nhất).
+    """
+    if not marker:
+        return
+    import sys
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            ps = (
+                "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe'\" | "
+                "Where-Object { $_.CommandLine -like '*" + marker + "*' } | "
+                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                capture_output=True, timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        else:
+            subprocess.run(["pkill", "-f", marker], capture_output=True, timeout=15)
+    except Exception:
+        pass
+
 
 def cleanup_browser(run_id: str):
     """Đóng dọn dẹp browser của một lượt chạy khi workflow kết thúc."""
@@ -364,37 +677,87 @@ def run_browser_block(
         if run_id not in _active_browser_sessions:
             log("info", "🚀 Khởi động trình duyệt mới cho lượt chạy này...")
             pw = sync_playwright().start()
-            
-            if browser_profile_dir:
-                os.makedirs(browser_profile_dir, exist_ok=True)
-                context = pw.chromium.launch_persistent_context(
-                    user_data_dir=browser_profile_dir,
-                    headless=headless,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
-                    viewport={"width": 1280, "height": 800},
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
+
+            # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
+            # mở PyFlow) để không tranh GPU gây "đen màn hình". Fallback Chrome hệ thống.
+            browser_exe, browser_warn = pick_browser(pw)
+            log("info", "🧭 Trình duyệt: " + ("Chromium riêng (Playwright)" if browser_exe is None else browser_exe))
+            if browser_warn:
+                log("warning", browser_warn)
+                # Chỉ soi policy khi buộc phải dùng Chrome/Edge hệ thống — Chromium
+                # riêng không đọc các policy đó nên không cần làm nhiễu log.
+                policy_warn = chrome_policy_hint()
+                if policy_warn:
+                    log("warning", policy_warn)
+
+            # Tắt GPU khi: (a) chạy ẩn; hoặc (b) buộc dùng Chrome/Edge hệ thống
+            # (browser_exe != None) — trường hợp dễ tranh GPU với tab PyFlow gây "đen màn hình".
+            launch_args = list(SANDBOX_ARGS)
+            # Luôn tắt GPU hardware để tránh lỗi đen màn hình do tranh chấp GPU với UI PyFlow (WebView2).
+            # BỎ CỜ --disable-software-rasterizer để WebGL có thể fallback về SwiftShader (CPU),
+            # giúp vượt qua các bài kiểm tra Bot Detection (như Cloudflare) khi đăng nhập.
+            launch_args += ["--disable-gpu"]
+
+            # Ẩn cờ Automation của Chromium để vượt qua các tường lửa (như Viettel WAF/Cloudflare)
+            launch_args += ["--disable-blink-features=AutomationControlled"]
+
+            # Không hỏi "Lưu mật khẩu?" / không hiện popup gây nhiễu automation
+            launch_args += QUIET_BROWSER_ARGS
+
+            log("info", f"🪟 Đang mở cửa sổ trình duyệt (headless={headless})...")
+
+            try:
+                if browser_profile_dir:
+                    os.makedirs(browser_profile_dir, exist_ok=True)
+                    harden_profile_prefs(browser_profile_dir)
+                    context = pw.chromium.launch_persistent_context(
+                        user_data_dir=browser_profile_dir,
+                        executable_path=browser_exe,
+                        headless=headless,
+                        args=launch_args,
+                        chromium_sandbox=CHROMIUM_SANDBOX,
+                        ignore_default_args=["--enable-automation"],
+                        viewport={"width": 1280, "height": 800}
                     )
-                )
-                page = context.pages[0] if context.pages else context.new_page()
-                browser = None
-            else:
-                browser = pw.chromium.launch(
-                    headless=headless,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"]
-                )
-                context = browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
+                    page = context.pages[0] if context.pages else context.new_page()
+                    browser = None
+                else:
+                    browser = pw.chromium.launch(
+                        executable_path=browser_exe,
+                        headless=headless,
+                        args=launch_args,
+                        chromium_sandbox=CHROMIUM_SANDBOX,
+                        ignore_default_args=["--enable-automation"]
                     )
-                )
-                page = context.new_page()
+                    context = browser.new_context(
+                        viewport={"width": 1280, "height": 800}
+                    )
+                    page = context.new_page()
+            except Exception as e:
+                # Đây là chỗ log hay dừng lại trên máy khách mà không rõ lý do —
+                # in đủ ngữ cảnh để chẩn đoán từ xa thay vì phải mò.
+                log("error", f"✗ Không mở được trình duyệt: {e}")
+                log("error", f"   • Trình duyệt: {browser_exe or 'Chromium riêng (Playwright)'}")
+                log("error", f"   • Thư mục profile: {browser_profile_dir or '(không dùng)'}")
+                log("error", "   • Hay gặp: phần mềm bảo mật/EDR của công ty chặn kênh điều khiển "
+                             "(--remote-debugging-pipe), đường dẫn profile quá dài (>260 ký tự), "
+                             "hoặc Chrome hệ thống bị group policy giữ lại. Cài Chromium riêng bằng "
+                             "`pyflow-backend.exe install-browser` rồi thử lại.")
+                raise
             
+            # Ẩn thuộc tính webdriver trong Javascript
+            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+
+            # Ghi phiên bản thật đang chạy — để so máy dev vs máy khách khi có sự cố
+            # (Chromium riêng và Chrome hệ thống cho ra UA khác nhau).
+            try:
+                ua = page.evaluate("() => navigator.userAgent")
+                ver = re.search(r"Chrome/([\d.]+)", ua or "")
+                log("info", f"✅ Trình duyệt đã sẵn sàng — Chrome/{ver.group(1) if ver else '?'}")
+            except Exception:
+                log("info", "✅ Trình duyệt đã sẵn sàng")
+
+
             _active_browser_sessions[run_id] = {
                 "pw": pw,
                 "browser": browser,

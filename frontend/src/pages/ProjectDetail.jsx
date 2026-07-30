@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History } from 'lucide-react'
-import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow } from '../api/client'
+import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject } from '../api/client'
+import AutoInstallModal from '../components/AutoInstallModal'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
@@ -41,6 +42,10 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   
   const [deletingWf, setDeletingWf] = useState(null)
   const [initingVenv, setInitingVenv] = useState(false)
+  // Venv đang được tạo NGẦM ở backend (từ lúc create/import project) — để nút hiện
+  // "đang tạo" thay vì trông idle khiến user bấm nhiều lần.
+  const [venvCreating, setVenvCreating] = useState(false)
+  const [showAutoInstall, setShowAutoInstall] = useState(false)
 
   // Modal states for Packages and History
   const [packagesModalOpen, setPackagesModalOpen] = useState(false)
@@ -202,7 +207,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }
 
   const handleExportWorkflow = (wf) => {
-    window.location.href = `http://localhost:7000/api/workflows/${wf.id}/export`
+    window.location.href = `${api.defaults.baseURL}/api/workflows/${wf.id}/export`
     toast.success(`Đang tải xuống workflow ${wf.name}...`)
   }
 
@@ -306,19 +311,48 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }
 
   const handleInitVenv = async () => {
+    if (initingVenv || venvCreating) return   // đang tạo rồi → chặn bấm trùng
     setInitingVenv(true)
     try {
-      await initVenv(proj.id)
-      toast.success('Khởi tạo Venv thành công!')
-      // Trigger parent to refresh project data
-      if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true })
-      await loadPackages()
+      const res = await initVenv(proj.id)
+      const st = res?.data?.status
+      if (st === 'creating') {
+        // Venv đang được tạo ngầm (từ import/create) — để poll tự cập nhật khi xong
+        setVenvCreating(true)
+        toast('Môi trường đang được tạo, vui lòng đợi…', { icon: '⏳' })
+      } else {
+        toast.success('Khởi tạo Venv thành công!')
+        if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true })
+        await loadPackages()
+      }
     } catch (e) {
       toast.error('Lỗi tạo venv: ' + e.message)
     } finally {
       setInitingVenv(false)
     }
   }
+
+  // Poll trạng thái venv khi CHƯA sẵn sàng: bắt được lúc backend tạo ngầm (create/import)
+  // xong, và phản ánh cờ "đang tạo" để nút hiện loading thay vì trông idle.
+  useEffect(() => {
+    if (proj?.venv_ready) { setVenvCreating(false); return }
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const res = await getProject(proj.id)
+        if (cancelled) return
+        const p = res.data
+        setVenvCreating(!!p.venv_creating)
+        if (p.venv_ready) {
+          if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true })
+          loadPackages()
+        }
+      } catch { /* mạng lỗi tạm — lần sau thử lại */ }
+    }
+    poll()
+    const t = setInterval(poll, 2500)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [proj?.id, proj?.venv_ready])
 
   const formatDate = (iso) => {
     if (!iso) return '-'
@@ -443,14 +477,17 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             Import
           </Button>
           <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
-          <Button
-            type="default"
-            icon={<Package size="0.875rem" />}
-            onClick={() => { loadPackages(); setPackagesModalOpen(true); }}
-            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-          >
-            Packages
-          </Button>
+          <Tooltip title={(initingVenv || venvCreating) ? 'Đang tạo môi trường, vui lòng đợi…' : ''}>
+            <Button
+              type="default"
+              icon={<Package size="0.875rem" />}
+              onClick={() => { loadPackages(); setPackagesModalOpen(true); }}
+              disabled={initingVenv || venvCreating}
+              style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+            >
+              Packages
+            </Button>
+          </Tooltip>
           <Button
             type="default"
             icon={<History size="0.875rem" />}
@@ -473,16 +510,24 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         </div>
         <Space>
           {!proj.venv_ready && (
-            <Button 
-              danger 
-              icon={<Terminal size="0.875rem" />} 
-              onClick={handleInitVenv} 
-              loading={initingVenv}
+            <Button
+              danger
+              icon={<Terminal size="0.875rem" />}
+              onClick={handleInitVenv}
+              loading={initingVenv || venvCreating}
+              disabled={initingVenv || venvCreating}
               style={{ fontWeight: 500 }}
             >
-              Khởi tạo Venv
+              {(initingVenv || venvCreating) ? 'Đang tạo môi trường…' : 'Khởi tạo Venv'}
             </Button>
           )}
+          <Button
+            icon={<Package size="0.875rem" />}
+            onClick={() => setShowAutoInstall(true)}
+            disabled={initingVenv || venvCreating}
+          >
+            Tự động cài thư viện
+          </Button>
         </Space>
       </div>
 
@@ -642,8 +687,8 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <Text type="secondary" style={{ display: 'block', marginBottom: '1.5rem' }}>
               Cần khởi tạo Virtual Environment trước khi quản lý packages.
             </Text>
-            <Button type="primary" danger icon={<Terminal size="0.875rem" />} onClick={handleInitVenv} loading={initingVenv}>
-              Khởi tạo Venv
+            <Button type="primary" danger icon={<Terminal size="0.875rem" />} onClick={handleInitVenv} loading={initingVenv || venvCreating} disabled={initingVenv || venvCreating}>
+              {(initingVenv || venvCreating) ? 'Đang tạo môi trường…' : 'Khởi tạo Venv'}
             </Button>
           </div>
         ) : (
@@ -815,6 +860,12 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         </div>
       </Modal>
 
+      <AutoInstallModal
+        projectId={proj.id}
+        open={showAutoInstall}
+        onClose={() => setShowAutoInstall(false)}
+        onDone={() => { if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true }); loadPackages(); }}
+      />
     </div>
   )
 }

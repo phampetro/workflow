@@ -1,166 +1,108 @@
-# LICENSING — Kích hoạt bản quyền PyFlow Studio (offline)
+# Hướng dẫn Quản lý & Cấp phép Bản quyền PyFlow Studio
 
-Tài liệu triển khai hệ thống license: từ tạo khóa → đóng gói bật khóa → cấp key
-cho khách → khách cài & kích hoạt → gia hạn → cập nhật.
+Tài liệu này được viết ngắn gọn theo từng bước để bạn dễ dàng nắm bắt quy trình thiết lập, đóng gói, cấp bản quyền cho khách hàng, gia hạn và cập nhật.
 
-## 1. Mô hình tổng quan
+---
 
-- **Không cần server.** License được **ký sẵn** bằng khóa riêng của bạn, khách dán
-  vào app, app **verify offline** bằng public key nhúng sẵn. Dùng tới khi hết hạn.
-- **Chữ ký số Ed25519** (bất đối xứng): bạn giữ **private key** để ký; app chỉ có
-  **public key** để verify → không có private key thì **không ai forge được license**.
-- **Ràng buộc máy**: mỗi key gắn với "vân tay máy" → copy sang máy khác không dùng được.
-- **Hết hạn → khách xin key mới** (gia hạn = cấp lại key hạn xa hơn cho cùng máy).
+## 1. Chuẩn bị hệ thống (Chỉ làm 1 lần trên máy của bạn)
 
-```
-[BẠN] keygen ký license ──(gửi key)──▶ [KHÁCH] dán vào app ──▶ app verify offline ──▶ dùng
-   ▲ giữ private key                                              (public key nhúng sẵn)
-```
+Trước khi bắt đầu cấp phép, bạn cần tạo khóa bảo mật để hệ thống nhận diện đây là phần mềm chính chủ.
 
-## 2. Vân tay máy (machine fingerprint) hoạt động thế nào
-
-File: [`backend/services/licensing.py`](backend/services/licensing.py) → `get_machine_fingerprint()`.
-
-Lấy một định danh **ổn định theo bản cài hệ điều hành** (không phụ thuộc RAM/ổ cứng
-lẻ nên khách nâng cấp phần cứng không bị khóa oan), rồi `SHA-256` → 32 ký tự hex:
-
-| OS | Nguồn định danh | Đổi khi |
-|---|---|---|
-| Windows | Registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` | Cài lại Windows |
-| macOS | `IOPlatformUUID` (`ioreg`) | Đổi bo mạch máy |
-| Linux | `/etc/machine-id` | Cài lại OS |
-| (dự phòng) | MAC address | — |
-
-Vân tay đã hash nên an toàn để hiển thị/gửi qua email. Lấy nhanh để hỗ trợ khách:
-
-```bash
-backend/.venv/Scripts/python.exe backend/services/licensing.py
-```
-
-## 3. Chuẩn bị MỘT LẦN (phía bạn)
-
-> Chạy các lệnh `keygen.py` bằng python của venv backend cho chắc có `cryptography`.
-
-### 3.1 Tạo cặp khóa
+**Bước 1: Tạo khóa bảo mật**
+Chạy lệnh sau trong terminal:
 ```bash
 backend/.venv/Scripts/python.exe tools/keygen.py init
 ```
-Sinh ra `secrets/license_private.txt` (BÍ MẬT) + `secrets/license_public.txt`, và in
-sẵn dòng `PUBLIC_KEY_B64="..."`.
+*Lưu ý: Lệnh này tạo ra "khóa bí mật" (lưu ở `secrets/license_private.txt`). Tuyệt đối giữ kín file này. Nếu mất, bạn phải tạo lại từ đầu và cấp lại key cho toàn bộ khách hàng.*
 
-> ⚠️ `secrets/` đã được `.gitignore`. **Sao lưu private key ra nơi an toàn** (USB/mật
-> khẩu manager). Mất private key = phải phát hành public key mới cho toàn bộ khách.
+**Bước 2: Gắn khóa vào phần mềm**
+- Copy chuỗi `PUBLIC_KEY_B64="..."` vừa hiện ra.
+- Mở file `backend/services/license_pubkey.py` và dán thay thế vào biến `PUBLIC_KEY_B64`.
 
-### 3.2 Nhúng public key vào app
-Mở [`backend/services/license_pubkey.py`](backend/services/license_pubkey.py), thay:
-```python
-PUBLIC_KEY_B64 = "PLACEHOLDER_REPLACE_ME"
+---
+
+## 2. Hướng dẫn Đóng gói Tự động (Release)
+
+Thay vì phải tự build và cấu hình thủ công, hệ thống đã có sẵn một công cụ đóng gói tự động. Công cụ này sẽ tự build Frontend, copy mã nguồn an toàn (bỏ qua các thư mục nhạy cảm như `secrets/`, `data/`, `.git/`), và **tự động bật khóa bản quyền** trong file khởi động dành cho khách hàng.
+
+**Bước 1: Chạy công cụ đóng gói**
+Mở terminal tại thư mục gốc của dự án và chạy:
+```bash
+python tools/build_release.py
 ```
-bằng public key thật từ bước 3.1. (Public key công khai được, an toàn khi ở trong code.)
 
-## 4. Đóng gói bản thương mại — BẬT khóa
+**Bước 2: Nén và gửi cho khách hàng**
+- Sau khi chạy lệnh trên thành công, bạn sẽ thấy một thư mục mới được tạo ra tại `Releases/pyflow-studio`.
+- Bên trong thư mục này đã có sẵn file `start.vbs` (cho máy Windows) và `start_mac.command` (cho máy Mac). Toàn bộ mã nguồn Python đã được đóng gói an toàn thành file thực thi (EXE). Frontend cũng đã được build và gộp thẳng vào Backend.
+- Bạn chỉ việc nén toàn bộ thư mục `pyflow-studio` thành một file `.zip` và gửi cho khách hàng. Mọi thứ đã sẵn sàng để chạy ngay không cần cài đặt (Portable).
 
-Mặc định khóa **TẮT** (biến môi trường `PYFLOW_LICENSE_ENFORCE` khác `1`) để bản dev
-không bị khóa. Khi đóng gói bán, **bật** bằng cách đặt biến môi trường trước khi chạy
-backend:
+---
 
-- **Windows** (trong script khởi động / installer):
-  ```bat
-  set PYFLOW_LICENSE_ENFORCE=1
-  ```
-- **macOS/Linux**:
+## 3. Triển khai cho khách hàng mới (Cài & Kích hoạt)
+
+Mỗi khi có một khách hàng mới, hãy làm theo quy trình sau:
+
+**Bước 1: Khách hàng tải và lấy Mã Máy**
+- Khách hàng tải bản zip về, giải nén và nhấp đúp vào file `start.vbs` (Windows) hoặc `start_mac.command` (macOS) để chạy phần mềm ngay lập tức (không cần cài đặt setup.bat như trước đây).
+- Lần đầu mở phần mềm, màn hình "Kích hoạt bản quyền" sẽ hiện ra cùng một **Mã Máy** (Ví dụ: `e8f4a2b1...`).
+- Khách hàng copy Mã Máy này và gửi cho bạn.
+
+**Bước 2: Bạn tạo Key kích hoạt**
+- Từ máy của bạn, chạy lệnh sau để tạo key cho Mã Máy đó (ví dụ cấp 365 ngày):
   ```bash
-  export PYFLOW_LICENSE_ENFORCE=1
+  backend/.venv/Scripts/python.exe tools/keygen.py issue --customer "Tên Khách Hàng" --machine <MÃ_MÁY_CỦA_KHÁCH> --days 365
   ```
+- Lệnh sẽ in ra một mã key (bắt đầu bằng `PF1...`). Gửi mã key này cho khách.
 
-Khi bật:
-- License không hợp lệ/hết hạn → mọi API bị chặn `403` (trừ `/api/license/*`,
-  `/api/system/*`, `/health`), FE hiện **màn Kích hoạt**.
-- ⚠️ Nếu quên nhúng public key thật (còn `PLACEHOLDER`), mọi license đều bị coi là
-  không hợp lệ (fail-safe an toàn).
+**Bước 3: Khách hàng kích hoạt**
+- Khách hàng dán mã key bạn gửi vào màn hình Kích hoạt, bấm **Kích hoạt**. Phần mềm sẽ mở khóa và dùng offline vĩnh viễn trong thời hạn được cấp.
 
-> **Khuyến nghị**: khi build, compile phần backend (Nuitka) để guard license không bị
-> xóa dễ. Xem README/tài liệu đóng gói.
+---
 
-## 5. Cấp key cho khách
+## 4. Gia hạn bản quyền
 
-1. Khách mở app (đã bật enforce) → màn Kích hoạt hiển thị **Mã máy** → khách gửi mã đó
-   cho bạn. (Hoặc chạy lệnh ở mục 2 để lấy.)
-2. Bạn ký license cho đúng mã máy đó:
-   ```bash
-   backend/.venv/Scripts/python.exe tools/keygen.py issue \
-       --customer "Cty ABC" --machine <mã_máy_của_khách> --days 365
-   ```
-   (hoặc `--expiry 2027-12-31` để đặt ngày hết hạn cụ thể).
-3. Gửi chuỗi key (`PF1.xxxx.yyyy`) cho khách.
+1. Khi phần mềm hết hạn, màn hình Kích hoạt tự động hiện lại để chặn sử dụng. **Không cần cài lại phần mềm.**
+2. Bạn lặp lại **Bước 2 (mục 3)**: Chạy lệnh tạo một mã key mới cho **cùng Mã Máy cũ**. 
+   - Nếu bạn dùng cờ `--days 365`, thời hạn sẽ được cộng 365 ngày **kể từ ngày hôm nay** (ngày bạn gõ lệnh).
+   - Nếu bạn muốn ấn định một ngày hết hạn cụ thể, hãy dùng cờ `--expiry` thay cho `--days`. Ví dụ:
+     ```bash
+     backend/.venv/Scripts/python.exe tools/keygen.py issue --customer "Tên Khách" --machine <MÃ_MÁY> --expiry 2027-12-31
+     ```
+3. Gửi key mới này cho khách. Khách dán vào và tiếp tục sử dụng bình thường.
 
-## 6. Khách cài & kích hoạt
+---
 
-1. Cài như bình thường (tải gói → setup → start) — **không đổi so với hiện tại**.
-2. Lần chạy đầu: màn Kích hoạt hiện ra → khách **dán key** → bấm **Kích hoạt**.
-3. App lưu license vào `backend/data/license.key` và mở khóa. Từ đó **chạy offline**
-   bình thường tới khi hết hạn.
+## 5. Cập nhật phiên bản mới (Auto-Update qua GitHub)
 
-## 7. Gia hạn
+Để khách hàng có thể tự động tải và cập nhật phiên bản mới ngay trong ứng dụng (tính năng **Tự động 100%**), bạn cần đẩy bản đóng gói mới lên mục **Releases** của GitHub `phampetro/workflow_re`. Dưới đây là các bước chuẩn xác:
 
-Khi hết hạn, app hiện lại màn Kích hoạt kèm thông báo hết hạn. Bạn chỉ cần **cấp key mới
-hạn xa hơn cho đúng mã máy đó** (lặp lại mục 5, đổi `--days`/`--expiry`), khách dán key
-mới → dùng tiếp. Không cần cài lại.
+**Phía Bạn (Nhà phát triển):**
+1. Khi có code mới, bạn chạy lại lệnh `python tools/build_release.py`.
+2. Lấy toàn bộ nội dung bên trong thư mục `Releases/pyflow-studio` mới sinh ra (gồm thư mục `backend`, `frontend` và file `start.vbs`), nén tất cả lại thành một file `.zip` (bạn có thể đặt tên là `update.zip`).
+   > *Lưu ý quan trọng: Phải nén **trực tiếp** các file/thư mục con bên trong, chứ không phải nén thư mục thư mục cha `pyflow-studio`. Nếu khách hàng mở file zip ra phải thấy ngay `start.vbs` thì mới đúng chuẩn.*
+3. Lên trang GitHub: `https://github.com/phampetro/workflow_re/releases`
+4. Bấm nút **"Draft a new release"**.
+5. Chọn hoặc tạo mới thẻ phiên bản ở mục **"Choose a tag"** (Ví dụ: `v1.1.0`, nhớ phải có chữ `v` và lớn hơn version cũ).
+6. Kéo thả file `update.zip` vừa tạo vào phần **"Attach binaries by dropping them here..."**.
+7. Bấm **"Publish release"**. Xong!
 
-## 8. Cập nhật bản mới (giữ như hiện tại, nhưng bỏ git-pull)
+**Phía Khách hàng (Người dùng):**
+1. Khách hàng đang dùng phần mềm sẽ thấy nút **"Cập nhật ngay"** trong mục Thông tin.
+2. Khách bấm nút, phần mềm sẽ tự động tải file `update.zip` từ GitHub về, tự hiện màn hình đen (CMD) giải nén, ghi đè mã nguồn mới và giữ nguyên vẹn toàn bộ dữ liệu (nằm trong thư mục `backend/data`).
+3. Phần mềm tự khởi động lại bản mới. Không cần khách hàng phải thao tác thủ công sao chép file gì cả!
 
-Không dùng `git pull` (lộ source). Thay bằng **GitHub Releases**:
-- Mỗi bản mới: đăng gói cài (đã ký) + `manifest.json` `{version, url, signature}` lên
-  GitHub Releases.
-- App bấm "Kiểm tra cập nhật" → tải manifest → nếu mới hơn, tải gói → **verify chữ ký**
-  (cùng public key) → cài → restart.
-- Vì gói được ký, host (GitHub) không cần tin cậy: không ai đẩy được bản giả.
-
-> Phần này cần chỉnh [`backend/routers/system.py`](backend/routers/system.py) (đang
-> `git pull`) sang tải release đã ký — làm sau khi chốt kênh phát hành.
-
-## 9. Bảo mật — nên/không nên
-
-- ✅ Sao lưu `secrets/license_private.txt` an toàn; **không bao giờ commit / đưa lên mạng**.
-- ✅ Ký license trên máy bạn (offline).
-- ✅ Compile guard khi đóng gói (Nuitka) để khó gỡ chốt kiểm tra.
-- ❌ Không nhét private key vào code, GitHub, hay server.
-- ❌ Không tin vào việc "giấu code Python" — bảo vệ nằm ở **chữ ký** (không có private
-  key thì không forge được license), không ở việc giấu.
-
-## 10. Lệnh tham khảo nhanh
+## 6. Lệnh tham khảo nhanh
 
 ```bash
-# Lấy vân tay máy (hỗ trợ khách)
-backend/.venv/Scripts/python.exe backend/services/licensing.py
-
-# Tạo cặp khóa (1 lần)
+# 1. Tạo cặp khóa (Chỉ làm 1 lần)
 backend/.venv/Scripts/python.exe tools/keygen.py init
 
-# Cấp / gia hạn license
-backend/.venv/Scripts/python.exe tools/keygen.py issue --customer "Cty ABC" --machine <fp> --days 365
+# 2. Cấp mới / Gia hạn
+backend/.venv/Scripts/python.exe tools/keygen.py issue --customer "Khách hàng A" --machine <MÃ_MÁY> --days 365
 
-# Tự kiểm tra 1 key
-backend/.venv/Scripts/python.exe tools/keygen.py verify --key PF1.xxxx.yyyy --machine <fp>
+# 3. Lấy nhanh Mã Máy (Dùng để hỗ trợ khách)
+backend/.venv/Scripts/python.exe backend/services/licensing.py
+
+# 4. Tự kiểm tra 1 key xem có khớp với Mã Máy không
+backend/.venv/Scripts/python.exe tools/keygen.py verify --key PF1.xxx --machine <MÃ_MÁY>
 ```
-
-## 11. Các file liên quan
-
-| File | Vai trò |
-|---|---|
-| [`tools/keygen.py`](tools/keygen.py) | CLI phía bạn: tạo khóa, ký/gia hạn license |
-| [`backend/services/licensing.py`](backend/services/licensing.py) | Vân tay máy, verify, cache, activate, chống tua giờ |
-| [`backend/services/license_pubkey.py`](backend/services/license_pubkey.py) | Nơi nhúng **public key** thật |
-| [`backend/routers/license.py`](backend/routers/license.py) | API `status` / `fingerprint` / `activate` |
-| [`backend/main.py`](backend/main.py) | Guard middleware (bật theo `PYFLOW_LICENSE_ENFORCE`) |
-| [`frontend/src/components/LicenseGate.jsx`](frontend/src/components/LicenseGate.jsx) | Màn khóa kích hoạt |
-| `secrets/` (gitignored) | Private key — GIỮ BÍ MẬT |
-| `backend/data/license.key` (gitignored) | License đã kích hoạt của khách |
-
-## 12. Cơ chế chống gian lận đã có
-
-- **Chữ ký Ed25519**: sửa 1 ký tự trong key → verify fail.
-- **Ràng buộc máy**: key máy A không chạy trên máy B (báo rõ + hiện vân tay máy hiện tại).
-- **Hết hạn**: theo ngày `exp` ký trong license.
-- **Chống tua ngược đồng hồ**: lưu mốc thời gian lần chạy gần nhất; đẩy lùi giờ hệ thống
-  quá `2` ngày → coi là gian lận (`CLOCK_TOLERANCE_DAYS` trong `licensing.py`).

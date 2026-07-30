@@ -1,9 +1,31 @@
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
+
+# ── Chromium riêng của Playwright: ưu tiên thư mục cạnh app (portable) ───────
+# Nếu có thư mục `ms-playwright` nằm cạnh pyflow-backend.exe thì dùng nó thay cho
+# %LOCALAPPDATA%\ms-playwright. Nhờ vậy máy khách bị mạng công ty chặn CDN
+# Playwright vẫn cài được: chỉ cần copy nguyên thư mục đó từ máy đã chạy sang.
+# PHẢI set trước khi Playwright khởi động driver → đặt ngay đầu module.
+def _setup_playwright_browsers_path() -> str:
+    base = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+            else os.path.dirname(os.path.abspath(__file__)))
+    portable = os.path.join(base, "ms-playwright")
+    if os.path.isdir(portable):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = portable
+        return portable
+    return os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
+
+
+PLAYWRIGHT_BROWSERS_DIR = _setup_playwright_browsers_path()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
+import os
 
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
@@ -163,12 +185,14 @@ _LICENSE_ALLOW = ("/health", "/api/license", "/api/system")
 async def _license_guard(request, call_next):
     if licensing.ENFORCE:
         path = request.url.path
-        if not any(path.startswith(p) for p in _LICENSE_ALLOW) and licensing.is_locked():
-            return JSONResponse(
-                status_code=403,
-                content={"error": "license_required",
-                         "detail": "Phần mềm chưa kích hoạt hoặc đã hết hạn."},
-            )
+        # Chỉ chặn nếu là gọi API (và không nằm trong danh sách cho phép)
+        if path.startswith("/api/") and not any(path.startswith(p) for p in _LICENSE_ALLOW):
+            if licensing.is_locked():
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "license_required",
+                             "detail": "Phần mềm chưa kích hoạt hoặc đã hết hạn."},
+                )
     return await call_next(request)
 
 # Thêm guard TRƯỚC CORS để CORS bọc ngoài (response 403 vẫn có header CORS).
@@ -197,5 +221,69 @@ app.include_router(license.router)
 def health_check():
     return {"status": "ok"}
 
+# ── Serve Frontend ───────────────────────────────────────────────────────────
+if getattr(sys, 'frozen', False):
+    # Dang chay tu file thuc thi (PyInstaller)
+    base_dir = os.path.dirname(sys.executable)
+else:
+    # Dang chay tu ma nguon Python
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+frontend_dist = os.path.join(base_dir, "..", "frontend", "dist")
+
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Nếu yêu cầu file cụ thể trong dist (ví dụ favicon.ico)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # Còn lại (các route của react-router) trả về index.html
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=7000, reload=False)
+    # ── Chế độ phụ: cài Chromium riêng cho Playwright ────────────────────────
+    # Được start.vbs gọi ("pyflow-backend.exe install-browser") khi máy khách chưa
+    # có Chromium riêng. Dùng driver Playwright đã bundle sẵn trong exe (không cần pip).
+    # Chromium riêng giúp automation tách khỏi Chrome đang mở giao diện PyFlow (tránh
+    # tranh GPU làm "đen" tab ứng dụng) và tách khỏi group policy/tiện ích của Chrome
+    # cá nhân — thứ gây lỗi "máy này chạy được, máy khách không đăng nhập được".
+    if len(sys.argv) > 1 and sys.argv[1] in ("install-browser", "install-chromium"):
+        print("=" * 60)
+        print(" PyFlow Studio - Cai dat trinh duyet Chromium (chi 1 lan)")
+        print(" Thu muc dich:", PLAYWRIGHT_BROWSERS_DIR or "%LOCALAPPDATA%\\ms-playwright")
+        print(" Dang tai (~150MB), vui long cho va giu ket noi Internet...")
+        print("=" * 60)
+        install_err = None
+        try:
+            from playwright.__main__ import main as _pw_main
+            sys.argv = ["playwright", "install", "chromium"]
+            _pw_main()
+        except SystemExit as e:
+            # _pw_main() luôn sys.exit(mã trả về của driver) → mã ≠ 0 là tải lỗi
+            if e.code:
+                install_err = f"playwright install tra ve ma loi {e.code}"
+        except Exception as e:
+            install_err = e
+
+        # Xác minh thật sự đã có chrome.exe — trước đây tải fail vẫn exit 0 nên
+        # máy khách âm thầm chạy bằng Chrome hệ thống mà không ai biết.
+        from services.browser_executor import find_installed_chromium
+        chromium_exe = find_installed_chromium()
+        if chromium_exe:
+            print("\n[OK] Da co Chromium rieng:", chromium_exe)
+            sys.exit(0)
+
+        print("\n[LOI] Khong cai duoc Chromium rieng." + (f" Chi tiet: {install_err}" if install_err else ""))
+        print(" PyFlow van chay duoc bang Chrome/Edge he thong, NHUNG khoi Browser co the")
+        print(" bi chan dang nhap (do policy/tien ich cua Chrome ca nhan) va hien thanh vang.")
+        print(" Cach cai offline: copy thu muc ms-playwright tu may da chay duoc vao:")
+        print("   ", os.path.join(base_dir, "ms-playwright"))
+        import time as _t
+        _t.sleep(12)
+        sys.exit(1)
+
+    port = 8000 if getattr(sys, 'frozen', False) else 7000
+    uvicorn.run(app, host="127.0.0.1", port=port)
