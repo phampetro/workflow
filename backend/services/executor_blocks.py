@@ -412,7 +412,11 @@ def get_workflow_dir(project_id: str, workflow_id: str) -> Path:
     return get_project_dir(project_id) / f"wf_{slugify(name)}"
 
 def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None):
-    """Chạy 1 block Python synchronously, có thể bị ngắt bởi stop_event"""
+    """Chạy 1 block Python synchronously, có thể bị ngắt bởi stop_event.
+
+    ``timeout`` <= 0 (hoặc None) = chờ vô hạn, dùng cho thủ tục SQL chạy vài tiếng.
+    Vẫn dừng được bằng nút Dừng vì ``stop_event`` được kiểm tra mỗi 0.5s.
+    """
     if not venv_exists(project_id):
         create_venv_sync(project_id)
 
@@ -502,7 +506,8 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
         t_err.start()
 
         # Chờ proc và check stop_event định kỳ
-        deadline = datetime.now().timestamp() + timeout
+        # deadline = None → không giới hạn thời gian (timeout <= 0)
+        deadline = None if not timeout or timeout <= 0 else datetime.now().timestamp() + timeout
         while True:
             # Chờ tối đa 0.5s mỗi lần
             try:
@@ -526,7 +531,7 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
                 return False, None, "stopped", duration
 
             # Kiểm tra timeout
-            if datetime.now().timestamp() > deadline:
+            if deadline is not None and datetime.now().timestamp() > deadline:
                 try:
                     proc.kill()
                 except Exception:
@@ -1981,8 +1986,23 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
 
                     ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
 
+                    # Thủ tục nặng có thể chạy vài tiếng → cho phép cấu hình.
+                    # 0 = chờ tới khi SQL trả kết quả (không giới hạn). Không set = 7200s như cũ.
+                    raw_timeout = bdata.get("sqlExecTimeout")
+                    if raw_timeout in (None, ""):
+                        sql_timeout = 7200
+                    else:
+                        try:
+                            sql_timeout = max(0, int(float(raw_timeout)))
+                        except (TypeError, ValueError):
+                            sql_timeout = 7200
+
                     if log_fn:
                         log_fn(bid, "info", "⚡ Đang chạy Hàm/Thủ tục SQL: " + label + "...")
+                        if sql_timeout == 0:
+                            log_fn(bid, "info", "   ⏳ Không giới hạn thời gian — chờ tới khi SQL trả kết quả (bấm Dừng để huỷ)")
+                        else:
+                            log_fn(bid, "info", f"   ⏳ Giới hạn thời gian: {sql_timeout}s")
 
                     code = f'''
 from sqlalchemy import create_engine, text
@@ -2018,7 +2038,10 @@ output_data = {{"result": rows, "row_count": row_count}}
                     )
                     if not success:
                         if log_fn:
-                            log_fn("system", "error", f"❌ Thực thi SQL thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
+                            # duration = thời gian của CHÍNH khối này. Trước đây dùng
+                            # (now - start) là thời gian cả workflow → đọc log tưởng
+                            # câu SQL chạy lâu hơn timeout.
+                            log_fn("system", "error", f"❌ Thực thi SQL thất bại sau {duration}ms")
                         if handle_workflow_error(error, bid, label):
                             return
                         else:

@@ -639,6 +639,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           inputTimeout: type === 'input_vars' ? 120 : undefined,
           sqlCommand: type === 'run_sql_exec' ? '' : undefined,
           sqlExecDbConfigKey: type === 'run_sql_exec' ? '' : undefined,
+          sqlExecTimeout: type === 'run_sql_exec' ? 7200 : undefined,
         },
       }
 
