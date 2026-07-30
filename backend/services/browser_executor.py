@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+import sys
 import traceback
 import time
 from typing import Optional, Callable
@@ -368,21 +369,51 @@ def _find_system_browser():
     return None
 
 
-def _get_run_browser_executable(pw):
-    """Chọn trình duyệt cho lúc CHẠY workflow.
+def pick_browser(pw):
+    """Chọn trình duyệt cho automation → trả về ``(executable_path, warning)``.
 
-    Ưu tiên **Chromium riêng của Playwright** (trả về None → Playwright tự dùng bản bundled)
-    để automation tách biệt hoàn toàn khỏi Chrome/Edge cá nhân của người dùng: không dùng
-    chung profile, không ảnh hưởng phiên đăng nhập/tab đang mở của họ.
-    Nếu máy chưa cài Chromium bundled thì fallback về Chrome/Edge hệ thống.
+    Ưu tiên **Chromium riêng của Playwright** (``executable_path=None`` → Playwright tự
+    dùng bản bundled) để automation tách biệt hoàn toàn khỏi Chrome/Edge cá nhân của
+    người dùng: không dùng chung profile, không ảnh hưởng phiên đăng nhập/tab đang mở,
+    và **không bị group policy / tiện ích của máy can thiệp**.
+
+    Nếu máy chưa tải Chromium bundled thì fallback về Chrome/Edge hệ thống, nhưng phải
+    cảnh báo: đây là nguồn gốc của kiểu bug "máy này chạy được, máy khách thì không"
+    (Chrome chính hãng bị policy công ty, tiện ích, phiên bản khác… chặn đăng nhập).
     """
+    expected = ""
     try:
-        p = pw.chromium.executable_path
-        if p and os.path.exists(p):
-            return None
+        expected = pw.chromium.executable_path or ""
+        if expected and os.path.exists(expected):
+            return None, ""
     except Exception:
         pass
-    return _find_system_browser()
+
+    exe = _find_system_browser()
+    if exe:
+        warn = (
+            f"⚠️ Chưa tải Chromium riêng của Playwright → đang tạm dùng trình duyệt hệ thống: {exe}. "
+            "Trình duyệt hệ thống chịu ảnh hưởng bởi group policy / tiện ích / phiên bản của máy "
+            "nên có thể bị chặn đăng nhập. Chạy `pyflow-backend.exe install-browser` để cài Chromium riêng."
+        )
+    else:
+        warn = (
+            "⚠️ Không tìm thấy Chromium riêng lẫn Chrome/Edge hệ thống. "
+            "Chạy `pyflow-backend.exe install-browser` để cài Chromium riêng."
+        )
+    if expected:
+        warn += f" (đường dẫn cần có: {expected})"
+    return exe, warn
+
+
+# Windows/macOS: KHÔNG được truyền --no-sandbox. Playwright tự thêm cờ này khi
+# chromium_sandbox != True, và Chrome/Edge **chính hãng** sẽ hiện thanh vàng
+# "You are using an unsupported command-line flag: --no-sandbox" (đo được: infobar
+# +56px, đẩy layout xuống) — vừa xấu vừa là dấu hiệu automation cho site bot-detect.
+# Chromium bundled của Playwright không hiện thanh này nên trước đây không ai thấy.
+# Chỉ Linux (container/root) mới thực sự cần tắt sandbox.
+CHROMIUM_SANDBOX = sys.platform in ("win32", "darwin")
+SANDBOX_ARGS = [] if CHROMIUM_SANDBOX else ["--no-sandbox", "--disable-dev-shm-usage"]
 
 
 # Flag tắt hộp thoại "Lưu mật khẩu?" và các popup gây nhiễu automation.
@@ -394,6 +425,7 @@ QUIET_BROWSER_ARGS = [
     "--no-default-browser-check",
     "--no-first-run",
     "--disable-features=PasswordLeakDetection,AutofillServerCommunication",
+    "--test-type",                          # Ẩn cảnh báo "--no-sandbox"
 ]
 
 
@@ -534,16 +566,21 @@ def run_browser_block(
 
             # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
             # mở PyFlow) để không tranh GPU gây "đen màn hình". Fallback Chrome hệ thống.
-            browser_exe = _get_run_browser_executable(pw)
+            browser_exe, browser_warn = pick_browser(pw)
             log("info", "🧭 Trình duyệt: " + ("Chromium riêng (Playwright)" if browser_exe is None else browser_exe))
+            if browser_warn:
+                log("warning", browser_warn)
 
             # Tắt GPU khi: (a) chạy ẩn; hoặc (b) buộc dùng Chrome/Edge hệ thống
             # (browser_exe != None) — trường hợp dễ tranh GPU với tab PyFlow gây "đen màn hình".
-            launch_args = ["--no-sandbox", "--disable-dev-shm-usage"]
+            launch_args = list(SANDBOX_ARGS)
             # Luôn tắt GPU hardware để tránh lỗi đen màn hình do tranh chấp GPU với UI PyFlow (WebView2).
             # BỎ CỜ --disable-software-rasterizer để WebGL có thể fallback về SwiftShader (CPU),
             # giúp vượt qua các bài kiểm tra Bot Detection (như Cloudflare) khi đăng nhập.
             launch_args += ["--disable-gpu"]
+
+            # Ẩn cờ Automation của Chromium để vượt qua các tường lửa (như Viettel WAF/Cloudflare)
+            launch_args += ["--disable-blink-features=AutomationControlled"]
 
             # Không hỏi "Lưu mật khẩu?" / không hiện popup gây nhiễu automation
             launch_args += QUIET_BROWSER_ARGS
@@ -556,6 +593,7 @@ def run_browser_block(
                     executable_path=browser_exe,
                     headless=headless,
                     args=launch_args,
+                    chromium_sandbox=CHROMIUM_SANDBOX,
                     ignore_default_args=["--enable-automation"],
                     viewport={"width": 1280, "height": 800}
                 )
@@ -566,12 +604,16 @@ def run_browser_block(
                     executable_path=browser_exe,
                     headless=headless,
                     args=launch_args,
+                    chromium_sandbox=CHROMIUM_SANDBOX,
                     ignore_default_args=["--enable-automation"]
                 )
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 800}
                 )
                 page = context.new_page()
+            
+            # Ẩn thuộc tính webdriver trong Javascript
+            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
             
             _active_browser_sessions[run_id] = {
                 "pw": pw,

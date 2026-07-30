@@ -400,11 +400,15 @@ def _run_session(session):
     try:
         from playwright.sync_api import sync_playwright
         from services.browser_executor import (
-            _find_system_browser, QUIET_BROWSER_ARGS, harden_profile_prefs,
+            pick_browser, QUIET_BROWSER_ARGS, harden_profile_prefs,
+            CHROMIUM_SANDBOX, SANDBOX_ARGS,
         )
 
         pw = sync_playwright().start()
-        browser_exe = _find_system_browser()
+        # Dùng ĐÚNG trình duyệt mà lúc chạy workflow sẽ dùng (ưu tiên Chromium riêng).
+        # Ghi bằng Chrome hệ thống rồi chạy bằng Chromium (hoặc ngược lại) là nguồn gốc
+        # của bug "ghi thì được, chạy thì không" do khác UA/policy/phiên bản.
+        browser_exe, _ = pick_browser(pw)
         os.makedirs(session["profile_dir"], exist_ok=True)
         # Không để Chrome hỏi "Lưu mật khẩu?" khi người dùng đăng nhập lúc ghi
         harden_profile_prefs(session["profile_dir"])
@@ -413,7 +417,8 @@ def _run_session(session):
             user_data_dir=session["profile_dir"],
             executable_path=browser_exe,
             headless=False,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--start-maximized"] + QUIET_BROWSER_ARGS,
+            args=SANDBOX_ARGS + ["--start-maximized"] + QUIET_BROWSER_ARGS,
+            chromium_sandbox=CHROMIUM_SANDBOX,
             ignore_default_args=["--enable-automation"],
             no_viewport=True,
         )

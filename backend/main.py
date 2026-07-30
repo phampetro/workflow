@@ -1,5 +1,38 @@
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
+
+# ── Chromium riêng của Playwright: ưu tiên thư mục cạnh app (portable) ───────
+# Nếu có thư mục `ms-playwright` nằm cạnh pyflow-backend.exe thì dùng nó thay cho
+# %LOCALAPPDATA%\ms-playwright. Nhờ vậy máy khách bị mạng công ty chặn CDN
+# Playwright vẫn cài được: chỉ cần copy nguyên thư mục đó từ máy đã chạy sang.
+# PHẢI set trước khi Playwright khởi động driver → đặt ngay đầu module.
+def _setup_playwright_browsers_path() -> str:
+    base = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+            else os.path.dirname(os.path.abspath(__file__)))
+    portable = os.path.join(base, "ms-playwright")
+    if os.path.isdir(portable):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = portable
+        return portable
+    return os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
+
+
+PLAYWRIGHT_BROWSERS_DIR = _setup_playwright_browsers_path()
+
+
+def find_installed_chromium() -> str:
+    """Đường dẫn Chromium riêng đã tải, hoặc "" nếu chưa có."""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            p = pw.chromium.executable_path
+            if p and os.path.exists(p):
+                return p
+    except Exception:
+        pass
+    return ""
+
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -203,7 +236,6 @@ def health_check():
     return {"status": "ok"}
 
 # ── Serve Frontend ───────────────────────────────────────────────────────────
-import sys
 if getattr(sys, 'frozen', False):
     # Dang chay tu file thuc thi (PyInstaller)
     base_dir = os.path.dirname(sys.executable)
@@ -229,13 +261,16 @@ if __name__ == "__main__":
     # ── Chế độ phụ: cài Chromium riêng cho Playwright ────────────────────────
     # Được start.vbs gọi ("pyflow-backend.exe install-browser") khi máy khách chưa
     # có Chromium riêng. Dùng driver Playwright đã bundle sẵn trong exe (không cần pip).
-    # Chromium riêng giúp automation tách khỏi Chrome đang mở giao diện PyFlow, tránh
-    # tranh GPU làm "đen" tab ứng dụng.
+    # Chromium riêng giúp automation tách khỏi Chrome đang mở giao diện PyFlow (tránh
+    # tranh GPU làm "đen" tab ứng dụng) và tách khỏi group policy/tiện ích của Chrome
+    # cá nhân — thứ gây lỗi "máy này chạy được, máy khách không đăng nhập được".
     if len(sys.argv) > 1 and sys.argv[1] in ("install-browser", "install-chromium"):
         print("=" * 60)
         print(" PyFlow Studio - Cai dat trinh duyet Chromium (chi 1 lan)")
+        print(" Thu muc dich:", PLAYWRIGHT_BROWSERS_DIR or "%LOCALAPPDATA%\\ms-playwright")
         print(" Dang tai (~150MB), vui long cho va giu ket noi Internet...")
         print("=" * 60)
+        install_err = None
         try:
             from playwright.__main__ import main as _pw_main
             sys.argv = ["playwright", "install", "chromium"]
@@ -243,11 +278,23 @@ if __name__ == "__main__":
         except SystemExit:
             pass
         except Exception as e:
-            print("\n[LOI] Khong cai duoc Chromium:", e)
-            print(" PyFlow van chay duoc bang Chrome he thong (nhung tab app co the bi den khi chay).")
-            import time as _t
-            _t.sleep(6)
-        sys.exit(0)
+            install_err = e
+
+        # Xác minh thật sự đã có chrome.exe — trước đây tải fail vẫn exit 0 nên
+        # máy khách âm thầm chạy bằng Chrome hệ thống mà không ai biết.
+        chromium_exe = find_installed_chromium()
+        if chromium_exe:
+            print("\n[OK] Da co Chromium rieng:", chromium_exe)
+            sys.exit(0)
+
+        print("\n[LOI] Khong cai duoc Chromium rieng." + (f" Chi tiet: {install_err}" if install_err else ""))
+        print(" PyFlow van chay duoc bang Chrome/Edge he thong, NHUNG khoi Browser co the")
+        print(" bi chan dang nhap (do policy/tien ich cua Chrome ca nhan) va hien thanh vang.")
+        print(" Cach cai offline: copy thu muc ms-playwright tu may da chay duoc vao:")
+        print("   ", os.path.join(base_dir, "ms-playwright"))
+        import time as _t
+        _t.sleep(12)
+        sys.exit(1)
 
     port = 8000 if getattr(sys, 'frozen', False) else 7000
     uvicorn.run(app, host="127.0.0.1", port=port)
