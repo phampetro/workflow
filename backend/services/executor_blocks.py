@@ -31,6 +31,11 @@ _active_runs = {}
 _active_procs = {}
 _workflow_run_ids = {}
 
+# Các run "thường trú" chỉ để giữ Telegram Listener sống (kẹt ở `while True` chờ nút
+# Dừng), không còn làm việc gì. Phải tách khỏi run đang làm việc thật: scheduler được
+# phép dừng loại này để chạy lịch, nhưng không được dừng run đang làm việc.
+_listener_holder_runs = set()
+
 _active_listeners = {}
 _active_browser_profiles = {}
 
@@ -1014,6 +1019,9 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     # người dùng bấm Dừng - workflow giữ trạng thái RUNNING trong
                     # lúc chờ, không tự đánh dấu "hoàn thành" khi chưa chạm khối End.
                     import time as _time_listener
+                    # Đánh dấu run này chỉ còn nhiệm vụ giữ listener sống -> scheduler
+                    # được phép dừng nó để chạy lịch (xem trigger_workflow_from_scheduler).
+                    _listener_holder_runs.add(run_id)
                     while True:
                         if stop_event and stop_event.is_set():
                             if log_fn:
@@ -2494,7 +2502,8 @@ def _finish_run(run_id, status, start, error=None):
         )
     _active_runs.pop(run_id, None)
     _active_procs.pop(run_id, None)
-    
+    _listener_holder_runs.discard(run_id)
+
     # Dọn dẹp profile duyệt web tạm thời của lượt chạy này
     profile_dir = _active_browser_profiles.pop(run_id, None)
     if profile_dir and profile_dir.parent.exists():

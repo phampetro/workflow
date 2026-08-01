@@ -222,23 +222,40 @@ async def start_telegram_listener(
     return True
 
 async def stop_telegram_listener(workflow_id: str) -> bool:
-    """Dừng listener đang chạy."""
+    """Dừng listener đang chạy và đợi tới khi nó thật sự chết.
+
+    Task listener sống trên event loop của thread riêng (khối telegram_listener tự tạo
+    loop), nên KHÔNG được `await` task đó từ loop này - await task của loop khác raise
+    RuntimeError, kéo theo bỏ luôn bước dọn _active_listeners và is_listener_running()
+    báo sai "đang chạy" cho một listener đã chết. Cancel qua call_soon_threadsafe rồi
+    poll tới khi thread tự dọn bảng theo dõi (xem finally của _run_listener_in_thread
+    trong services/executor_blocks.py).
+    """
     if workflow_id in _stop_events:
         _stop_events[workflow_id].set()
         del _stop_events[workflow_id]
 
     _active_configs.pop(workflow_id, None)
 
-    if workflow_id in _active_listeners:
-        task = _active_listeners[workflow_id]
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        del _active_listeners[workflow_id]
-        return True
-    return False
+    task = _active_listeners.get(workflow_id)
+    if task is None:
+        return False
+
+    try:
+        task.get_loop().call_soon_threadsafe(task.cancel)
+    except RuntimeError:
+        # Loop của task đã đóng - stop_event ở trên đủ để vòng long-polling tự thoát
+        pass
+
+    for _ in range(50):  # tối đa ~5s
+        if workflow_id not in _active_listeners:
+            break
+        await asyncio.sleep(0.1)
+    else:
+        # Không dọn được thì tự xoá, tránh is_listener_running() báo sai vĩnh viễn
+        _active_listeners.pop(workflow_id, None)
+
+    return True
 
 def is_listener_running(workflow_id: str) -> bool:
     return workflow_id in _active_listeners
