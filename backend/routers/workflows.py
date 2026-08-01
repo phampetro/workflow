@@ -336,25 +336,33 @@ async def _cascade_delete_workflow_children(session: AsyncSession, workflow_id: 
     )
 
 
+def _pending_run_ids(workflow_id: str) -> set:
+    """Tập run_id đang chạy của workflow, hợp của CẢ 2 bảng theo dõi.
+
+    Bảng ở services.executor_blocks chỉ được điền sau ~0.5s (thread executor còn đang
+    khởi động), còn bảng _workflow_run_ids ở router này có run_id ngay từ lúc tạo run.
+    Nếu chỉ xét 1 bảng sẽ bỏ sót run vừa mới bắt đầu.
+    """
+    from services.executor_blocks import _workflow_run_ids as _exec_run_ids
+    return set(_exec_run_ids.get(workflow_id, set())) | set(_workflow_run_ids.get(workflow_id, set()))
+
+
 async def _stop_and_wait_workflow_runs(workflow_id: str, timeout_sec: float = 5.0):
     """Kill mọi run đang chạy của workflow rồi đợi thread executor thoát trước khi
     xoá DB/rmtree folder - tránh race ghi vào folder đang bị xoá."""
-    from services.executor_blocks import stop_all_runs_for_workflow, _workflow_run_ids
+    from services.executor_blocks import stop_all_runs_for_workflow
     from services.telegram_listener import stop_telegram_listener
 
     # Bấm Dừng logic (giống endpoint /stop)
     stop_all_runs_for_workflow(workflow_id)
-    if workflow_id in _stop_flags:
-        # Fallback: các run trigger qua run_workflow_internal cũng có _stop_flags
-        pass
-    for run_id in list(_workflow_run_ids.get(workflow_id, set())):
+    for run_id in _pending_run_ids(workflow_id):
         if run_id in _stop_flags:
             _stop_flags[run_id].set()
 
     # Đợi các run rời khỏi bảng đang-chạy
     waited = 0.0
     step = 0.1
-    while waited < timeout_sec and _workflow_run_ids.get(workflow_id):
+    while waited < timeout_sec and _pending_run_ids(workflow_id):
         await asyncio.sleep(step)
         waited += step
 
@@ -554,19 +562,88 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
 
 # ── Scheduler trigger ────────────────────────────────────────
 
+async def _rearm_listener_if_needed(workflow_id: str, run_id: str = None):
+    """Bật lại Telegram Listener sau khi lịch đã dừng-và-chạy-lại workflow.
+
+    Chỉ cần khi run mới KHÔNG đi qua khối Listener (khối rời khỏi đường đi từ khối Bắt
+    đầu, nhánh điều kiện không được chọn, hoặc run lỗi trước khi tới đó) - nếu không,
+    listener sẽ tắt hẳn sau tick lịch đầu tiên thay vì chỉ hở một khoảng ngắn.
+
+    Không bật lại khi người dùng bấm Dừng (run kết thúc trạng thái stopped) - lúc đó
+    tắt listener là đúng ý người dùng.
+    """
+    from services.telegram_listener import is_listener_running
+    if is_listener_running(workflow_id):
+        return
+    if run_id:
+        async with AsyncSessionLocal() as session:
+            run = await session.get(WorkflowRun, run_id)
+            if run and run.status == RunStatus.STOPPED:
+                return
+    import logging
+    logging.getLogger("pyflow.scheduler").info(
+        f"🎧 Bật lại Telegram Listener cho workflow {workflow_id} (run theo lịch không đi qua khối Listener)"
+    )
+    schedule_run_on_main_loop(workflow_id, triggered_by="listener_autostart")
+
+
 async def trigger_workflow_from_scheduler(workflow_id: str, project_id: str = None, schedule_id: str = None):
-    # APScheduler max_instances=1 chỉ bảo vệ hàm job (trả về ngay lập tức) chứ không
-    # bảo vệ workflow thực sự. Nếu cron dày hơn thời gian workflow chạy sẽ có nhiều run
-    # song song, cùng ghi 1 folder và insert DB trùng - skip nếu còn run RUNNING.
-    from services.executor_blocks import _workflow_run_ids
-    if _workflow_run_ids.get(workflow_id):
-        import logging
-        logging.getLogger("pyflow.scheduler").warning(
+    """Lịch tới giờ → chạy workflow từ đầu.
+
+    APScheduler max_instances=1 chỉ bảo vệ hàm job (trả về ngay lập tức) chứ không
+    bảo vệ workflow thực sự. Nếu cron dày hơn thời gian workflow chạy sẽ có nhiều run
+    song song, cùng ghi 1 folder và insert DB trùng - nên vẫn skip nếu còn run ĐANG
+    LÀM VIỆC.
+
+    Ngoại lệ: run chỉ "thường trú" để giữ Telegram Listener (kẹt ở `while True` chờ nút
+    Dừng, xem executor_blocks._listener_holder_runs) KHÔNG tính là đang làm việc.
+    Trước đây nó bị tính là RUNNING nên mọi lịch của workflow bị bỏ qua vĩnh viễn suốt
+    thời gian listener bật. Nay: dừng run đó (kéo theo tắt listener) rồi chạy mới lại từ
+    đầu - run mới đi qua khối Listener sẽ tự bật lại listener.
+
+    Đánh đổi đã được chấp nhận có chủ đích: trong khoảng dừng-và-bật-lại (vài giây)
+    listener không lắng nghe, và tin nhắn Telegram tới trong khoảng đó bị MẤT vì listener
+    bỏ backlog khi khởi động lại (xem telegram_listener._telegram_listener_loop).
+    """
+    import logging
+    logger = logging.getLogger("pyflow.scheduler")
+
+    from services.executor_blocks import _listener_holder_runs
+
+    running = _pending_run_ids(workflow_id)
+    working = running - _listener_holder_runs
+    if working:
+        logger.warning(
             f"⏭  Bỏ qua trigger schedule cho workflow {workflow_id}: còn run RUNNING chưa xong"
         )
         return
+
+    listener_was_on = False
+    if running:
+        from services.telegram_listener import is_listener_running
+        listener_was_on = is_listener_running(workflow_id)
+        logger.info(
+            f"⏹  Lịch tới giờ: dừng run đang giữ Telegram Listener của workflow {workflow_id} để chạy lại từ đầu"
+        )
+        await _stop_and_wait_workflow_runs(workflow_id)
+
+        if _pending_run_ids(workflow_id):
+            logger.warning(
+                f"⏭  Bỏ qua trigger schedule cho workflow {workflow_id}: run cũ không dừng kịp sau 5s"
+            )
+            if listener_was_on:
+                await _rearm_listener_if_needed(workflow_id)
+            return
+
     run_id = str(uuid.uuid4())
-    asyncio.create_task(run_workflow_internal(workflow_id, triggered_by="schedule", run_id=run_id))
+    task = asyncio.create_task(run_workflow_internal(workflow_id, triggered_by="schedule", run_id=run_id))
+
+    if listener_was_on:
+        # Run mới kết thúc = nó KHÔNG dừng lại ở khối Listener (nếu có đi qua thì nó
+        # đã kẹt ở `while True` và task này không bao giờ done) -> phải tự bật lại.
+        task.add_done_callback(
+            lambda _t: asyncio.create_task(_rearm_listener_if_needed(workflow_id, run_id))
+        )
 
 # ── Log Streaming (SSE) ──────────────────────────────────────
 
