@@ -362,10 +362,17 @@ OUTPUT_DIR = {output_dir!r}
 INPUT_DIR = {input_dir!r}
 
 input_data = None
+workflow_env = {}
+
 try:
     _raw = sys.stdin.read().strip()
     if _raw:
-        input_data = json.loads(_raw)
+        _payload = json.loads(_raw)
+        if isinstance(_payload, dict) and "input_data" in _payload and "workflow_env" in _payload:
+            input_data = _payload["input_data"]
+            workflow_env = _payload["workflow_env"]
+        else:
+            input_data = _payload
 except Exception:
     pass
 
@@ -416,7 +423,7 @@ def get_workflow_dir(project_id: str, workflow_id: str) -> Path:
         name = row[0] if row else "unknown"
     return get_project_dir(project_id) / f"wf_{slugify(name)}"
 
-def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None):
+def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None, workflow_env=None):
     """Chạy 1 block Python synchronously, có thể bị ngắt bởi stop_event.
 
     ``timeout`` <= 0 (hoặc None) = chờ vô hạn, dùng cho thủ tục SQL chạy vài tiếng.
@@ -443,7 +450,11 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
     )
     block_path.write_text(wrapped, encoding="utf-8")
 
-    input_json = json.dumps(input_data, ensure_ascii=False, default=str)
+    payload = {
+        "input_data": input_data,
+        "workflow_env": workflow_env if workflow_env is not None else {}
+    }
+    input_json = json.dumps(payload, ensure_ascii=False, default=str)
 
     if log_fn:
         log_fn(block_id, "info", f"▶  Chạy block [{label or block_id}]")
@@ -1427,7 +1438,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
                         timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event
+                        stop_event=stop_event, workflow_env=workflow_env
                     )
                     if not success:
                         if error == "stopped":
