@@ -379,6 +379,16 @@ export default function Navbar({
         .stat-chip:hover {
           background: var(--bg-hover);
         }
+        .stat-chip svg {
+          display: block;
+          flex-shrink: 0;
+        }
+        .stat-chip span, .stat-val {
+          display: inline-block;
+          line-height: 1;
+          position: relative;
+          top: 1.5px;
+        }
 
         .stat-divider {
           width: 1px;
