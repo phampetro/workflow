@@ -475,6 +475,38 @@ def rename_output_keys(btype: str, bdata: dict, data):
     return out
 
 
+def describe_output_vars(btype: str, bdata: dict, data) -> str:
+    """Mô tả biến khối vừa trả về (TÊN THẬT + gợi ý giá trị) để in ra log.
+
+    Sai 1 chữ trong ô đặt tên biến thì khối Python phía sau đọc ra rỗng mà không
+    có dấu hiệu gì — nên tên thật phải hiện rõ trong log, khỏi phải chèn print
+    để debug.
+
+    Chỉ liệt kê biến do CHÍNH khối này sinh ra (theo ``BLOCK_OUTPUT_VARS``),
+    không liệt kê key có sẵn từ khối trước — tránh log rác. Trả về "" nếu khối
+    không có field đặt tên biến.
+    """
+    mapping = BLOCK_OUTPUT_VARS.get(btype)
+    if not mapping or not isinstance(data, dict):
+        return ""
+    parts = []
+    for orig_key, field in mapping:
+        name = str(bdata.get(field) or "").strip() or orig_key
+        if name not in data:
+            continue
+        val = data[name]
+        if isinstance(val, list):
+            parts.append(f"{name} ({len(val)} phần tử)")
+        elif isinstance(val, dict):
+            parts.append(f"{name} (object, {len(val)} khoá)")
+        elif val is None:
+            parts.append(f"{name} (rỗng)")
+        else:
+            s = str(val)
+            parts.append(f"{name} = {s[:40] + '…' if len(s) > 40 else s}")
+    return ", ".join(parts)
+
+
 def topological_sort(nodes: list, edges: list) -> list:
     adj = {n["id"]: [] for n in nodes}
     in_deg = {n["id"]: 0 for n in nodes}
@@ -2533,6 +2565,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                     # = NGUYÊN dict — làm {{file_name}}/{{sheets_data}} trả về cả
                     # object thay vì giá trị, và ghi đè mất giá trị phẳng đúng.
                     workflow_env.update(current_input)
+
+                    # Hiện TÊN THẬT của biến khối vừa tạo ra. Chỉ 1 chỗ duy nhất:
+                    # khối nào khai trong BLOCK_OUTPUT_VARS là tự có log này.
+                    if log_fn:
+                        _out_desc = describe_output_vars(btype, bdata, current_input)
+                        if _out_desc:
+                            log_fn(bid, "info", f"📦 [{label}] Biến trả về: {_out_desc}")
 
                 out_edges = edges_from.get(node_id, [])
                 for e in out_edges:
