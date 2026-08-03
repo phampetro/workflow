@@ -362,7 +362,7 @@ OUTPUT_DIR = {output_dir!r}
 INPUT_DIR = {input_dir!r}
 
 input_data = None
-workflow_env = {}
+workflow_env = {{}}
 
 try:
     _raw = sys.stdin.read().strip()
@@ -394,6 +394,85 @@ print("__OUTPUT__:" + _out)
 
 def indent_code(code: str, spaces: int = 4) -> str:
     return "\n".join(" " * spaces + line for line in code.splitlines())
+
+
+# Các field trong bdata chỉ chứa TÊN BIẾN (hoặc code), KHÔNG chứa giá trị →
+# không được nội suy {{var}}/tên trần. Nếu nội suy, tên biến bị thay bằng chính
+# giá trị của biến đó ngay khi tên đã tồn tại trong workflow_env (VD khối chạy
+# lần 2 trong vòng lặp): dữ liệu ghi vào 1 key rác, còn {{ten_bien}} đứng im ở
+# giá trị của vòng đầu → báo cáo sai số liệu mà không có log lỗi nào.
+NON_INTERPOLATED_KEYS = frozenset({
+    "code", "key_name", "condVariable",
+    # Tên biến output do người dùng đặt trên giao diện
+    "outputVarName", "rowCountVarName",
+    "excelToSqlRowsVarName", "excelToSqlTableVarName",
+    "sqlExecResultVarName", "sqlExecRowCountVarName",
+    "telegramSentMessageIdVarName", "telegramChatIdVarName",
+    "telegramListenerChatIdVarName", "telegramListenerMessageIdVarName",
+    "telegramListenerTextVarName", "telegramListenerSenderNameVarName",
+    # Tên biến của khối Loop và khối "Biến đầu vào" (inputFields[].name)
+    "loopArrayVar", "loopItemVar", "name",
+    # dict {tên cột gốc: tên biến custom} của khối đọc Excel/Google Sheets
+    "columnMappings",
+    # Payload Telegram do NGƯỜI NGOÀI gửi tới (text, sender_name...) — đây là dữ
+    # liệu, không phải ô cấu hình. Nội suy nó nghĩa là ai nhắn "{{password_web}}"
+    # cho bot sẽ khiến chuỗi đó bị thay bằng chính mật khẩu trong input.json.
+    "_initial_input",
+})
+
+
+# Khối nào trả về key gốc nào, và field nào trên UI đặt tên cho key đó.
+# Tên người dùng gõ trên giao diện là TÊN DUY NHẤT của biến: dùng cho cả
+# current_input (tức input_data của khối Python phía sau) lẫn workflow_env
+# ({{ten_bien}}). Không giữ song song tên gốc — "giao diện 1 tên, chạy 1 tên"
+# chính là thứ gây khó hiểu trước đây.
+BLOCK_OUTPUT_VARS = {
+    "telegram": [
+        ("sent_message_id", "telegramSentMessageIdVarName"),
+        ("chat_id", "telegramChatIdVarName"),
+    ],
+    "telegram_listener": [
+        ("chat_id", "telegramListenerChatIdVarName"),
+        ("message_id", "telegramListenerMessageIdVarName"),
+        ("text", "telegramListenerTextVarName"),
+        ("sender_name", "telegramListenerSenderNameVarName"),
+    ],
+    "excel_to_sql": [
+        ("rows_inserted", "excelToSqlRowsVarName"),
+        ("table", "excelToSqlTableVarName"),
+    ],
+    "run_sql_exec": [
+        ("result", "sqlExecResultVarName"),
+        ("row_count", "sqlExecRowCountVarName"),
+    ],
+    "sql_to_excel": [("file_name", "outputVarName")],
+    "merge_excel": [("file_name", "outputVarName")],
+    "pivot_excel": [("file_name", "outputVarName")],
+}
+
+
+def rename_output_keys(btype: str, bdata: dict, data):
+    """Đổi tên key output của khối theo tên biến người dùng đặt trên giao diện.
+
+    Key gốc bị BỎ khi người dùng đặt tên khác — tên trên UI là tên duy nhất.
+    Để trống hoặc gõ đúng tên gốc → giữ nguyên (mặc định của UI trùng tên gốc
+    nên workflow không đổi tên vẫn chạy y như cũ).
+
+    Các key không có field đặt tên (VD ``raw_message`` của Telegram Listener)
+    được giữ nguyên vẹn.
+    """
+    if not isinstance(data, dict):
+        return data
+    mapping = BLOCK_OUTPUT_VARS.get(btype)
+    if not mapping:
+        return data
+    out = dict(data)
+    for orig_key, field in mapping:
+        new_key = str(bdata.get(field) or "").strip()
+        if not new_key or new_key == orig_key or orig_key not in out:
+            continue
+        out[new_key] = out.pop(orig_key)
+    return out
 
 
 def topological_sort(nodes: list, edges: list) -> list:
@@ -768,10 +847,13 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
             def interpolate_deep(val, current_key=None):
                 # Nội suy đệ quy vào dict/list lồng nhau (conditions, attachments,
                 # danh sách lệnh telegram...) — không chỉ field string cấp cao nhất
+
+                # Bỏ qua nội suy cho field chứa "tên biến" và "code" python.
+                # Kiểm tra TRƯỚC khi rẽ theo kiểu dữ liệu để chặn được cả nhánh
+                # dict/list (VD columnMappings là dict {cột gốc: tên biến}).
+                if current_key in NON_INTERPOLATED_KEYS:
+                    return val
                 if isinstance(val, str):
-                    # Bỏ qua nội suy đối với các trường dùng để điền "tên biến" và "code" python
-                    if current_key in ("condVariable", "key_name", "code"):
-                        return val
                     return interpolate(val)
                 if isinstance(val, dict):
                     return {k: interpolate_deep(v, k) for k, v in val.items()}
@@ -912,17 +994,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 if "_initial_input" in bdata:
                     if log_fn:
                         log_fn(bid, "info", f"🎧 [Telegram Listener] {label} - Đã nhận tin nhắn và chạy workflow")
-                    current_input = bdata["_initial_input"]
-                    if isinstance(current_input, dict):
-                        for field_key, bdata_key in (
-                            ("chat_id", "telegramListenerChatIdVarName"),
-                            ("message_id", "telegramListenerMessageIdVarName"),
-                            ("text", "telegramListenerTextVarName"),
-                            ("sender_name", "telegramListenerSenderNameVarName"),
-                        ):
-                            var_name = bdata.get(bdata_key, "").strip()
-                            if var_name:
-                                workflow_env[var_name] = current_input.get(field_key)
+                    # Đổi tên key theo tên biến đặt trên UI (raw_message giữ nguyên
+                    # vì không có field đặt tên). workflow_env được cập nhật ở cuối
+                    # vòng lặp qua workflow_env.update(current_input).
+                    current_input = rename_output_keys(btype, bdata, bdata["_initial_input"])
                 else:
                     # Manual run (bấm nút Chạy/Start) → bật Listener, workflow giữ RUNNING chờ tin nhắn
                     if log_fn:
@@ -1233,19 +1308,18 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     else:
                         if log_fn:
                             log_fn(bid, "success", f"✅ [Telegram] {label} - Đã gửi thánh công! (message_id={last_message_id})")
+                        # Đổi tên key theo tên biến đặt trên UI. Nếu người dùng đổi
+                        # tên chat_id thành tên riêng thì chat_id cũ (của Listener /
+                        # tin nhắn người dùng) KHÔNG còn bị ghi đè nữa.
+                        tg_out = rename_output_keys(btype, bdata, {
+                            "sent_message_id": last_message_id,
+                            "chat_id": chat_id,
+                        })
                         if isinstance(current_input, dict):
                             # Giữ lại message_id cũ (tin nhắn người dùng), thêm sent_message_id (tin vừa gửi ra)
-                            current_input["sent_message_id"] = last_message_id
-                            current_input["chat_id"] = chat_id
+                            current_input.update(tg_out)
                         else:
-                            current_input = {"sent_message_id": last_message_id, "message_id": last_message_id, "chat_id": chat_id}
-
-                        sent_id_var = bdata.get("telegramSentMessageIdVarName", "").strip()
-                        if sent_id_var:
-                            workflow_env[sent_id_var] = current_input.get("sent_message_id")
-                        chat_id_var = bdata.get("telegramChatIdVarName", "").strip()
-                        if chat_id_var:
-                            workflow_env[chat_id_var] = current_input.get("chat_id")
+                            current_input = {"message_id": last_message_id, **tg_out}
                 except Exception as e:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Telegram] {label} - Gửi thất bại: {str(e)}")
@@ -1515,7 +1589,7 @@ output_data = {{"file_name": out_file}}
                             return
                         else:
                             continue
-                    current_input = output
+                    current_input = rename_output_keys(btype, bdata, output)
             elif btype == "merge_excel":
                 header_rows = int(bdata.get("headerRows", 3))
                 excel_filename = bdata.get("excelFileName", "merged_excel.xlsx").strip()
@@ -1632,7 +1706,7 @@ output_data = {{"file_name": out_file}}
                         return
                     else:
                         continue
-                current_input = output
+                current_input = rename_output_keys(btype, bdata, output)
             elif btype == "pivot_excel":
                 excel_filename = bdata.get("excelFileName", "pivot.xlsx").strip()
                 selected_files = bdata.get("pivotInputFiles", [])
@@ -1817,7 +1891,7 @@ output_data = {{"file_name": out_file}}
                         return
                     else:
                         continue
-                current_input = output
+                current_input = rename_output_keys(btype, bdata, output)
             elif btype == "excel_to_sql":
                 input_file = bdata.get("excelToSqlInputFile", "").strip()
                 saved_connection_id = bdata.get("excelToSqlSavedConnectionId", "").strip()
@@ -1970,14 +2044,7 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
                     else:
                         continue
                 else:
-                    current_input = output
-                    if isinstance(current_input, dict):
-                        rows_var = bdata.get("excelToSqlRowsVarName", "").strip()
-                        if rows_var:
-                            workflow_env[rows_var] = current_input.get("rows_inserted")
-                        table_var = bdata.get("excelToSqlTableVarName", "").strip()
-                        if table_var:
-                            workflow_env[table_var] = current_input.get("table")
+                    current_input = rename_output_keys(btype, bdata, output)
             elif btype == "run_sql_exec":
                 sql_command = bdata.get("sqlCommand", "").strip()
                 saved_connection_id = bdata.get("sqlExecSavedConnectionId", "").strip()
@@ -2071,14 +2138,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                         else:
                             continue
                     else:
-                        current_input = output
-                        if isinstance(current_input, dict):
-                            result_var = bdata.get("sqlExecResultVarName", "").strip()
-                            if result_var:
-                                workflow_env[result_var] = current_input.get("result")
-                            row_count_var = bdata.get("sqlExecRowCountVarName", "").strip()
-                            if row_count_var:
-                                workflow_env[row_count_var] = current_input.get("row_count")
+                        current_input = rename_output_keys(btype, bdata, output)
             elif btype == "google_sheets_read":
                 url = interpolate(bdata.get("googleSheetsUrl", "")).strip()
                 sheet_name = interpolate(bdata.get("googleSheetsSheetName", "")).strip()
@@ -2150,13 +2210,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                 if not isinstance(current_input, dict):
                     current_input = {}
 
+                # Chỉ ghi theo đúng tên biến đặt trên UI — không ghi thêm key cố
+                # định "row_count" nữa (trước đây 1 giá trị 2 tên, gây khó hiểu).
                 current_input[output_var] = records
                 current_input[row_count_var] = len(records)
-                current_input["row_count"] = len(records)
 
                 workflow_env[output_var] = records
                 workflow_env[row_count_var] = len(records)
-                workflow_env["row_count"] = len(records)
 
                 if log_fn:
                     log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}' (Số dòng: '{row_count_var}')")
@@ -2213,13 +2273,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                 if not isinstance(current_input, dict):
                     current_input = {}
 
+                # Chỉ ghi theo đúng tên biến đặt trên UI — không ghi thêm key cố
+                # định "row_count" nữa (trước đây 1 giá trị 2 tên, gây khó hiểu).
                 current_input[output_var] = records
                 current_input[row_count_var] = len(records)
-                current_input["row_count"] = len(records)
 
                 workflow_env[output_var] = records
                 workflow_env[row_count_var] = len(records)
-                workflow_env["row_count"] = len(records)
 
                 if log_fn:
                     log_fn(bid, "success", f"🟢 [Đọc Excel] Đọc thành công {len(records)} dòng từ '{file_name}' vào biến '{output_var}' (Số dòng: '{row_count_var}')")
@@ -2467,13 +2527,12 @@ output_data = {{"result": rows, "row_count": row_count}}
                             break
 
                 if isinstance(current_input, dict):
+                    # current_input đã được đổi sang đúng tên biến người dùng đặt
+                    # (rename_output_keys) nên chỉ cần gộp phẳng là {{ten_bien}}
+                    # đọc được. Trước đây còn ghi thêm workflow_env[outputVarName]
+                    # = NGUYÊN dict — làm {{file_name}}/{{sheets_data}} trả về cả
+                    # object thay vì giá trị, và ghi đè mất giá trị phẳng đúng.
                     workflow_env.update(current_input)
-                    # Nếu khối có đặt tên biến riêng (outputVarName), lưu thêm nguyên object
-                    # kết quả dưới key đó - tránh bị các khối khác đè mất khi dùng chung
-                    # tên key phẳng (status/result/table...) như cơ chế update() ở trên.
-                    output_var_name = bdata.get("outputVarName", "").strip()
-                    if output_var_name:
-                        workflow_env[output_var_name] = current_input
 
                 out_edges = edges_from.get(node_id, [])
                 for e in out_edges:
