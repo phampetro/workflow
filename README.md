@@ -390,6 +390,11 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 | `google_sheets_read`, `excel_read` | Tên biến mảng / Lưu số dòng | `sheets_data` / `sheets_rows` |
 
 - Khai báo tập trung ở **`BLOCK_OUTPUT_VARS`** + hàm `rename_output_keys()` trong [executor_blocks.py](backend/services/executor_blocks.py) — thêm khối mới thì khai vào bảng này, không rải logic từng chỗ.
+- Sau mỗi khối như vậy, log in ra **tên thật** của biến vừa tạo (`describe_output_vars()`):
+  ```
+  📦 [Chạy Hàm SQL (EXEC)] Biến trả về: sql_results (1570 phần tử), row_count = 1570
+  ```
+  Có dòng này vì sai 1 chữ trong ô đặt tên (VD gõ `resullt`) sẽ làm khối Python sau đọc ra rỗng mà **không có lỗi nào** — nhìn log là thấy ngay tên thật, khỏi chèn `print` để debug. Chỉ liệt kê biến do chính khối đó sinh ra, không liệt kê key thừa hưởng từ khối trước.
 - Mặc định điền sẵn **trùng tên biến trả về thật** — nên workflow không đổi tên chạy y như trước. Nếu dùng nhiều khối cùng loại thì tên mặc định vẫn đè nhau; muốn tránh — đổi thành tên riêng (`table_don_hang`, `table_khach_hang`…).
 - Tên biến chỉ nhận `[A-Za-z_][A-Za-z0-9_]*` (FE validate): `{{...}}` khớp theo regex `\w+` nên khoảng trắng/dấu câu sẽ không nội suy được.
 - Ô đặt tên biến **không bị nội suy** — xem `NON_INTERPOLATED_KEYS`. Đây là gotcha đã trả giá bằng bug thật: trước đây `interpolate()` có nhánh "gõ tên trần không cần `{{}}`" (`if val in ctx: return str(ctx[val])`) nên từ vòng lặp thứ 2, ô "tên biến" bị thay bằng chính **giá trị** của biến đó → dữ liệu ghi vào 1 key rác, còn `{{ten_bien}}` đứng im ở giá trị của vòng đầu. **Đừng bỏ field nào ra khỏi set này.**
