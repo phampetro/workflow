@@ -76,6 +76,24 @@ Nếu buộc phải dùng màu ngoài palette (VD màu log level, syntax highlig
 - Update endpoint nhận `expected_updated_at` → so với DB, trả 409 nếu lệch (ETag pattern).
 - Telegram Listener persist qua cột `workflow.listener_on` — set True khi bật, False khi dừng; startup [`main.py`](backend/main.py) `reload_telegram_listeners` tự bật lại cho user active.
 
+## Quy ước biến output của khối (BẮT BUỘC khi thêm/sửa khối)
+
+**Nguyên tắc gốc: tên biến người dùng gõ trên giao diện là TÊN DUY NHẤT của biến.** Nó là key thật trong `current_input` (tức `input_data` của khối Python sau) *và* trong `workflow_env` (tức `{{ten_bien}}`). Không bao giờ để "giao diện 1 tên, chạy 1 tên" — đây là bug đã trả giá thật (khối EXEC đặt tên riêng nhưng code vẫn trả `result`, người dùng đọc `input_data['result']` ra rỗng mà không có log nào báo).
+
+Khi thêm khối mới có trả dữ liệu ra, hoặc thêm giá trị trả về cho khối cũ:
+
+1. **Khai vào `BLOCK_OUTPUT_VARS`** trong [`services/executor_blocks.py`](backend/services/executor_blocks.py) theo dạng `btype: [(ten_key_goc, tenFieldTrenUI), ...]`, rồi gọi `rename_output_keys(btype, bdata, output)` **ngay tại chỗ gán `current_input`**. Không tự viết `workflow_env[ten_custom] = ...` rải rác — cơ chế bí danh cũ đã bỏ.
+2. **Thêm tên field vào `NON_INTERPOLATED_KEYS`** cùng file. Ô tên biến **không được nội suy**: `interpolate()` có nhánh "gõ tên trần không cần `{{}}`" (`if val in ctx: return str(ctx[val])`), nên nếu không loại trừ thì từ vòng lặp thứ 2 ô tên biến bị thay bằng chính **giá trị** của biến đó → dữ liệu ghi vào key rác, `{{ten_bien}}` đứng im ở giá trị vòng đầu.
+3. **FE dùng `renderVarNameField()`** trong [`BlockEditorModal.jsx`](frontend/src/components/BlockEditorModal.jsx) — đã kèm `VAR_NAME_RULE` (validate `[A-Za-z_][A-Za-z0-9_]*`) và `VAR_NAME_HINT`. Không tự viết `Form.Item` + `Input` trần cho ô tên biến.
+4. **Giá trị mặc định trên UI phải trùng tên key gốc.** Nhờ vậy `rename_output_keys` thành no-op và workflow cũ chạy y như trước — đây là lý do việc đổi sang "tên UI là tên thật" không phá workflow nào.
+5. **1 giá trị = 1 tên.** Không ghi thêm key cố định song song bên cạnh tên custom (kiểu `row_count` cũ của khối đọc Excel/Sheets — đã bỏ).
+6. **Không lưu nguyên object dưới tên biến.** `{{...}}` không truy cập field con (`{{ten.field}}` không hoạt động) nên mỗi giá trị phải có 1 field đặt tên riêng. Từng có `workflow_env[outputVarName] = current_input` làm `{{file_name}}` trả về cả dict — đã bỏ, đừng thêm lại.
+7. **Payload từ bên ngoài không được nội suy.** `_initial_input` (tin nhắn Telegram) nằm trong `NON_INTERPOLATED_KEYS` vì người ngoài nhắn `{{password_web}}` sẽ khiến chuỗi đó bị thay bằng chính secret trong `input.json`. Dữ liệu nhận từ ngoài đi vào set này, không phải ô cấu hình.
+8. **Trước khi đổi/bỏ một key**, quét `graph_json` trong `backend/data/pyflow.db` xem workflow thật đang tham chiếu tên đó qua đâu — `{{...}}` trong cấu hình, `condVariable` của Condition, `loopArrayVar` của Loop, và string literal trong `code` của khối Python. Đừng đoán.
+9. **Khối tiêu thụ biến:** Condition đọc `current_input` (không đọc `workflow_env`) — cố ý, vì thêm fallback sẽ đổi kết quả rẽ nhánh của các workflow đang chạy. Loop đọc `loopArrayVar` (chấp cả `{{ten}}` và tên trần). Khối Python đọc được **cả hai** kênh.
+
+Chi tiết đầy đủ + bảng field theo từng khối: README §"Biến toàn cục (`{{var}}` & `workflow_env`)" mục 3.
+
 ## Multi-user
 
 Hệ thống có nhiều user, chỉ **1 user `is_active=True`** tại 1 thời điểm. **Chỉ schedule/listener của user active mới chạy** — đây là design intentional, đừng "fix". Xem README §Multi-user để biết cách activate + reload.
@@ -106,3 +124,5 @@ Type: `fix`/`feat`/`refactor`/`chore`/`docs`/`perf`.
 - Không thêm multi-worker uvicorn (state in-memory sẽ vỡ).
 - Không add auth token/session giả trong FE — hệ thống local-only, `X-User-Id` là đủ.
 - Không revert các fix ETag/rename/SSE reconnect/BroadcastChannel/ThreadPoolExecutor riêng — đều có lý do đã ghi.
+- Không quay lại cơ chế "bí danh": trả key tên gốc trong `current_input` rồi chỉ ghi tên custom vào `workflow_env`. Xem §Quy ước biến output của khối.
+- Không bỏ field nào ra khỏi `NON_INTERPOLATED_KEYS`, và không thêm field "tên biến" mới mà quên khai vào đó.
