@@ -98,6 +98,21 @@ const DEFAULT_SQL_QUERY = `-- Nhập câu lệnh SQL của bạn tại đây
 SELECT * FROM my_table;
 `
 
+// Tên biến phải khớp cú pháp {{ten_bien}} của backend (regex \w+) và dùng được
+// làm key trong code Python (input_data['ten_bien']) → không cho khoảng trắng,
+// dấu câu, chữ có dấu, và không bắt đầu bằng số.
+const VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+const VAR_NAME_RULE = {
+  validator: (_, value) => {
+    if (!value) return Promise.resolve()
+    if (VAR_NAME_PATTERN.test(String(value))) return Promise.resolve()
+    return Promise.reject(new Error('Chỉ dùng chữ không dấu, số và _ — không khoảng trắng/dấu, không bắt đầu bằng số'))
+  },
+}
+
+// Câu giải thích dùng chung cho mọi ô đặt tên biến output
+const VAR_NAME_HINT = 'Tên bạn gõ ở đây là tên DUY NHẤT của biến: dùng cho cả {{ten_bien}} ở khối sau và input_data[\'ten_bien\'] trong code Python. Để trống hoặc giữ mặc định thì dùng tên gốc.'
+
 // ─── Action definitions ──────────────────────────────────────────────────────
 
 const BROWSER_ACTIONS = [
@@ -1107,10 +1122,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const renderVarNameField = (fieldName, label, tooltip, placeholder, style) => (
     <Form.Item
       name={fieldName}
+      rules={[VAR_NAME_RULE]}
       label={
         <Space size={4}>
           {label}
-          <Tooltip title={tooltip}>
+          <Tooltip title={`${tooltip} ${VAR_NAME_HINT}`}>
             <Info size={14} style={{ cursor: 'help', color: 'var(--text-muted)' }} />
           </Tooltip>
         </Space>
@@ -1838,10 +1854,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Dòng tiêu đề (Header Row)" name="googleSheetsHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
               </Form.Item>
-              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data)">
+              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }, VAR_NAME_RULE]} tooltip={`Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data). ${VAR_NAME_HINT} Đổi tên ở đây thì phải sửa luôn ô "Tên biến Mảng cần lặp" của khối Vòng Lặp cho khớp.`}>
                 <Input placeholder="sheets_data" />
               </Form.Item>
-              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" tooltip="Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows)">
+              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" rules={[VAR_NAME_RULE]} tooltip={`Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows). ${VAR_NAME_HINT}`}>
                 <Input placeholder="sheets_rows" />
               </Form.Item>
 
@@ -1903,10 +1919,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Form.Item label="Dòng tiêu đề (Header Row)" name="excelReadHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
               </Form.Item>
-              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data)">
+              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }, VAR_NAME_RULE]} tooltip={`Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data). ${VAR_NAME_HINT} Đổi tên ở đây thì phải sửa luôn ô "Tên biến Mảng cần lặp" của khối Vòng Lặp cho khớp.`}>
                 <Input placeholder="sheets_data" />
               </Form.Item>
-              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" tooltip="Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows)">
+              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" rules={[VAR_NAME_RULE]} tooltip={`Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows). ${VAR_NAME_HINT}`}>
                 <Input placeholder="sheets_rows" />
               </Form.Item>
 
@@ -2033,10 +2049,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <Divider style={{ margin: '24px 0' }} />
             <Form.Item
               name="outputVarName"
+              rules={[VAR_NAME_RULE]}
               label={
                 <Space size={4}>
                   Lưu tên file kết quả vào biến
-                  <Tooltip title="Mặc định trùng tên biến trả về ({{file_name}}). Nếu workflow có nhiều khối cùng loại và muốn tránh bị ghi đè, đổi thành tên riêng.">
+                  <Tooltip title={`Mặc định trùng tên biến trả về ({{file_name}}). Nếu workflow có nhiều khối cùng loại và muốn tránh bị ghi đè, đổi thành tên riêng. ${VAR_NAME_HINT}`}>
                     <Info size={14} style={{ cursor: 'help', color: 'var(--text-muted)' }} />
                   </Tooltip>
                 </Space>

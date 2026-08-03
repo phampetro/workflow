@@ -249,7 +249,9 @@ Không có key `command` — tên lệnh khớp (`/xxx`) chỉ dùng nội bộ 
 
 Khi chạy thủ công (bấm nút Chạy, không phải do tin nhắn): chỉ bật listener nền, workflow treo ở trạng thái RUNNING chờ tin nhắn (poll `stop_event` mỗi 0.5s). Khi user Dừng → set cờ `workflow.listener_on = False` trong DB, stop listener, thoát vòng.
 
-Có **4 field đặt tên biến riêng** cho 4 giá trị chính (`raw_message` là blob JSON nên không có field): mặc định điền sẵn **trùng tên biến trả về**. Nếu workflow có nhiều listener và cần tránh trùng, tự đổi tên.
+Có **4 field đặt tên biến riêng** cho 4 giá trị chính (`raw_message` là blob JSON nên không có field): mặc định điền sẵn **trùng tên biến trả về**. Nếu workflow có nhiều listener và cần tránh trùng, tự đổi tên — key trong bảng trên sẽ **đổi thành tên bạn đặt** (xem §Biến toàn cục mục 3).
+
+Payload này **không bị nội suy `{{var}}`** (`_initial_input` nằm trong `NON_INTERPOLATED_KEYS`): đây là dữ liệu người ngoài gửi tới, nếu nội suy thì ai nhắn cho bot chuỗi `{{password_web}}` sẽ khiến chuỗi đó bị thay bằng chính giá trị trong `input.json`.
 
 ### 5. `telegram` — Gửi/Sửa/Trả lời tin nhắn Telegram
 Sau khi gửi thành công, **chỉ 2 key được thêm/ghi đè**, mọi key khác trong `current_input` cũ được giữ nguyên:
@@ -261,7 +263,7 @@ Nếu `current_input` trước đó **không phải object** (null hoặc chuỗ
 { "sent_message_id": "...", "message_id": "... (giống sent_message_id)", "chat_id": "..." }
 ```
 
-Có **2 field đặt tên biến riêng**: mặc định trùng `sent_message_id` / `chat_id`.
+Có **2 field đặt tên biến riêng**: mặc định trùng `sent_message_id` / `chat_id`. Nếu **đổi tên** `chat_id` thành tên riêng thì key `chat_id` cũ (của Listener / tin nhắn người dùng) **không còn bị ghi đè** — chỉ key tên mới được thêm vào.
 
 ### 6. `email` — Gửi Email SMTP
 Chỉ gửi mail, log kết quả. **`current_input` không đổi**, dù thành công hay thất bại.
@@ -293,7 +295,7 @@ Code chạy trong `.venv` của project (subprocess `python -c` từ `backend/da
 ```json
 { "file_name": "sqltoexcel.xlsx" }
 ```
-File luôn lưu vào thư mục Output. Field "Lưu tên file kết quả vào biến" mặc định trùng `file_name`.
+File luôn lưu vào thư mục Output. Field "Lưu tên file kết quả vào biến" mặc định trùng `file_name` — đổi tên thì key `file_name` **đổi thành tên đó** (không còn `file_name`).
 
 ### 11. `merge_excel` — Ghép nhiều Excel
 ```json
@@ -310,7 +312,7 @@ File luôn lưu vào Output. Mặc định biến `file_name`.
 ```json
 { "rows_inserted": 123, "table": "ten_bang_sql" }
 ```
-Có **2 field đặt tên biến riêng**: "Lưu số dòng đã import" (mặc định `rows_inserted`), "Lưu tên bảng đích" (mặc định `table`). Để trống thì chỉ bỏ qua việc lưu biến toàn cục, `current_input` vẫn luôn có đủ.
+Có **2 field đặt tên biến riêng**: "Lưu số dòng đã import" (mặc định `rows_inserted`), "Lưu tên bảng đích" (mặc định `table`). Đổi tên → key trong `current_input` đổi theo. Để trống → giữ tên gốc.
 
 ### 14. `run_sql_exec` — Chạy Hàm SQL (EXEC / stored procedure)
 ```json
@@ -319,7 +321,15 @@ Có **2 field đặt tên biến riêng**: "Lưu số dòng đã import" (mặc 
   "row_count": 5
 }
 ```
-Có **2 field đặt tên biến riêng**: mặc định `result` / `row_count`.
+Có **2 field đặt tên biến riêng**: mặc định `result` / `row_count`. Đổi tên → key trong `current_input` đổi theo, nên khối Python phía sau đọc `input_data['ten_moi']`.
+
+### 14b. `google_sheets_read` / `excel_read` — Đọc Google Sheet / Excel thành mảng dòng
+```json
+{ "<tên biến mảng>": [ {"cot_a": "...", "cot_b": "..."} ], "<tên biến số dòng>": 123 }
+```
+Khác với các khối trên, 2 khối này **không có tên gốc cố định** — key chính là tên bạn gõ ở "Tên biến mảng dữ liệu" (mặc định `sheets_data`) và "Lưu số dòng vào biến" (mặc định `sheets_rows`). Tên cột trong mỗi dòng lấy từ bảng mapping "Cột tiêu đề & Biến tùy chỉnh" (để trống = dùng nguyên tên cột gốc).
+
+Đổi tên biến mảng thì phải sửa luôn ô **"Tên biến Mảng cần lặp"** của khối `loop` cho khớp.
 
 ### 15. `condition` — Rẽ nhánh điều kiện
 **`current_input` hoàn toàn không bị đụng** — khối chỉ ĐỌC các key trong `current_input` hiện có để so sánh (theo `condVariable` bạn khai), rồi chọn cạnh ra `true`/`false`. Dữ liệu truyền tiếp y hệt lúc vào.
@@ -359,9 +369,12 @@ Có **2 cơ chế truyền dữ liệu khác nhau** giữa các khối trong cù
 
 ### 2. `current_input` — chỉ truyền theo cạnh nối (KHÔNG toàn cục)
 - Biến `input_data` trong 1 khối Python chỉ là **output của khối nối trực tiếp phía trước** (theo cạnh trong sơ đồ).
-- Không liên quan `workflow_env` — nếu khối không nối trực tiếp sau khối cần dữ liệu, `input_data` sẽ không có gì.
+- Key trong `current_input` mang **đúng tên bạn đặt trên giao diện** (mục 3) — không còn chuyện "UI 1 tên, chạy 1 tên".
+- Nếu khối không nối trực tiếp sau khối cần dữ liệu, `input_data` sẽ không có key đó — nhưng khối Python vẫn đọc được qua `workflow_env['ten_bien']`.
 
-### 3. Đặt tên biến riêng để tránh bị ghi đè
+### 3. Đặt tên biến riêng — tên trên giao diện là TÊN DUY NHẤT
+
+**Nguyên tắc:** tên bạn gõ trong ô đặt tên biến được dùng **ở mọi nơi** — cả `{{ten_bien}}` lẫn `input_data['ten_bien']` trong code Python của khối phía sau. Khi đổi tên, **key gốc bị bỏ**, không tồn tại song song 2 tên cho cùng 1 giá trị.
 
 Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bien.field}}` — nên các khối có nhiều giá trị đều có nhiều field đặt tên (1 field / 1 giá trị) thay vì 1 field bọc nguyên object:
 
@@ -374,11 +387,16 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 | `run_sql_exec` | Lưu kết quả / Lưu số dòng | `result` / `row_count` |
 | `telegram` | Lưu sent_message_id / chat_id | `sent_message_id` / `chat_id` |
 | `telegram_listener` | Lưu chat_id / message_id / text / sender_name | `chat_id` / `message_id` / `text` / `sender_name` |
+| `google_sheets_read`, `excel_read` | Tên biến mảng / Lưu số dòng | `sheets_data` / `sheets_rows` |
 
-- Mặc định điền sẵn **trùng tên biến trả về thật** — dễ nhớ, khớp tài liệu; nhưng nếu dùng nhiều khối cùng loại thì vẫn đè nhau. Muốn tránh — tự đổi thành tên riêng (`table_don_hang`, `table_khach_hang`…).
+- Khai báo tập trung ở **`BLOCK_OUTPUT_VARS`** + hàm `rename_output_keys()` trong [executor_blocks.py](backend/services/executor_blocks.py) — thêm khối mới thì khai vào bảng này, không rải logic từng chỗ.
+- Mặc định điền sẵn **trùng tên biến trả về thật** — nên workflow không đổi tên chạy y như trước. Nếu dùng nhiều khối cùng loại thì tên mặc định vẫn đè nhau; muốn tránh — đổi thành tên riêng (`table_don_hang`, `table_khach_hang`…).
+- Tên biến chỉ nhận `[A-Za-z_][A-Za-z0-9_]*` (FE validate): `{{...}}` khớp theo regex `\w+` nên khoảng trắng/dấu câu sẽ không nội suy được.
+- Ô đặt tên biến **không bị nội suy** — xem `NON_INTERPOLATED_KEYS`. Đây là gotcha đã trả giá bằng bug thật: trước đây `interpolate()` có nhánh "gõ tên trần không cần `{{}}`" (`if val in ctx: return str(ctx[val])`) nên từ vòng lặp thứ 2, ô "tên biến" bị thay bằng chính **giá trị** của biến đó → dữ liệu ghi vào 1 key rác, còn `{{ten_bien}}` đứng im ở giá trị của vòng đầu. **Đừng bỏ field nào ra khỏi set này.**
 - Trong UI, các field đặt tên luôn **ở cuối cấu hình** để không lẫn với field chính.
 - Khối `browser` **không có field này** — mỗi step đã có `key_name` (cấp độ từng bước thay vì cấp độ khối).
-- Khối `condition` và `python` **không có** — Condition chỉ đọc theo `current_input`; Python chỉ nhận `input_data` từ khối liền trước, không đọc được biến đặt tên qua `workflow_env`.
+- Khối `condition` **không có** — nó chỉ ĐỌC key trong `current_input`, và vì `current_input` đã mang đúng tên bạn đặt nên khai `condVariable` theo tên đó là đúng.
+- Khối `python` **không có** — `output_data` do bạn tự quyết cấu trúc. Nhưng code Python **đọc được cả 2 kênh**: `input_data` (khối liền trước) và `workflow_env` (biến toàn cục, gồm mọi tên bạn đã đặt).
 
 ---
 
