@@ -208,6 +208,12 @@ def get_status() -> dict:
     token = load_license()
     base = {
         "enforced": ENFORCE,
+        # Bản đóng gói (PyInstaller) hay chạy từ source. FE cần biết để KHÔNG bao
+        # giờ hiện "Bản phát triển" trên bản đã đóng gói giao cho khách — cờ
+        # ENFORCE nằm ở launcher (start.vbs) nên nếu app được bật không qua
+        # launcher thì enforced=False, và trước đây bảng bản quyền hiện
+        # "Bản phát triển (Mở khóa)" màu xanh khiến khách hiểu nhầm.
+        "packaged": bool(getattr(sys, "frozen", False)),
         "activated": bool(token),
         "machine": fp,
         "customer": None,

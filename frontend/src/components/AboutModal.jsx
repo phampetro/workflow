@@ -126,16 +126,26 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
             <div style={{ color: 'var(--text-muted)', display: 'flex' }}><ShieldCheck size={14} /></div>
             <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Bản quyền</Text>
-            {!licenseStatus.enforced ? (
-              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>Bản phát triển (Mở khóa)</Text>
-            ) : licenseStatus.activated && licenseStatus.valid ? (
+            {/* Thứ tự điều kiện có chủ ý — đừng đảo:
+                1. Có key hợp lệ  → "Đã kích hoạt" (đúng cho cả bản đóng gói lẫn source).
+                2. packaged HOẶC enforced → "Chưa kích hoạt hoặc hết hạn".
+                   - `packaged`: bản đã đóng gói TUYỆT ĐỐI không được hiện "Bản phát
+                     triển" — cờ ENFORCE nằm ở launcher (start.vbs), nếu app bật
+                     không qua launcher thì enforced=False và khách sẽ đọc thành
+                     "Bản phát triển (Mở khóa)" màu xanh rồi hiểu nhầm.
+                   - `enforced`: chạy từ source mà bật cờ để test thì app ĐANG bị
+                     khóa thật, hiện "Bản phát triển" cũng là sai.
+                3. Còn lại (source + không enforce) → đúng là bản phát triển. */}
+            {licenseStatus.activated && licenseStatus.valid ? (
               <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>
                 Đã kích hoạt {licenseStatus.expiry ? `(Hết hạn: ${dayjs(licenseStatus.expiry).format('DD/MM/YYYY')})` : '(Vĩnh viễn)'}
               </Text>
-            ) : (
+            ) : (licenseStatus.packaged || licenseStatus.enforced) ? (
               <Text style={{ fontWeight: 500, color: 'var(--accent-danger)' }}>
                 Chưa kích hoạt hoặc hết hạn
               </Text>
+            ) : (
+              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>Bản phát triển (Mở khóa)</Text>
             )}
           </div>
         )}
