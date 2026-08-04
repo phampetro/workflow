@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Modal, Space, Typography, Button, Spin, Alert, message } from 'antd'
 import { ShieldCheck, Info, Zap, Mail, Send, Tag, Clock, DownloadCloud, CheckCircle } from 'lucide-react'
 import { APP_INFO } from '../config/appInfo'
-import { systemApi, checkHealth } from '../api/client'
+import { systemApi, checkHealth, getLicenseStatus } from '../api/client'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -24,13 +24,44 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
   const [updateStatus, setUpdateStatus] = useState(null) // null, 'available', 'latest', 'updating'
   const [updateMsg, setUpdateMsg] = useState('')
 
+  // licenseStatus từ prop chỉ được App fetch MỘT LẦN lúc bootstrap. Sau khi cập
+  // nhật, backend restart (process mới, có thể khác cờ enforce) nhưng trang không
+  // tải lại nên prop đứng im → bảng hiện sai tới khi người dùng F5. Vì vậy modal
+  // tự fetch lại mỗi lần mở.
+  const [lic, setLic] = useState(licenseStatus)
+  const [licLoading, setLicLoading] = useState(false)
+  const [licUnknown, setLicUnknown] = useState(false)
+
+  useEffect(() => { setLic(licenseStatus) }, [licenseStatus])
+
   useEffect(() => {
     if (open) {
       loadSystemInfo()
+      refreshLicense()
       setUpdateStatus(null)
       setUpdateMsg('')
     }
   }, [open])
+
+  const refreshLicense = async () => {
+    setLicLoading(true)
+    try {
+      const res = await getLicenseStatus()
+      if (res?.data) {
+        setLic(res.data)
+        setLicUnknown(false)
+      } else {
+        setLicUnknown(true)
+      }
+    } catch {
+      // Backend chưa sống lại (VD vừa cập nhật xong). KHÔNG được coi là bản phát
+      // triển: App.jsx lúc bootstrap lỗi mạng cũng rơi về {enforced:false} nên
+      // trạng thái này không phân biệt được với bản dev thật.
+      setLicUnknown(true)
+    } finally {
+      setLicLoading(false)
+    }
+  }
 
   const loadSystemInfo = async () => {
     setLoading(true)
@@ -72,15 +103,28 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
     try {
       await systemApi.update()
       
-      // Ping liên tục để chờ Backend sống lại
+      // Chờ backend CŨ chết trước, RỒI mới chờ backend MỚI sống lại.
+      // Trước đây chỉ chờ health OK rồi reload ngay — nhưng lúc đó backend cũ
+      // thường vẫn còn sống (updater.bat đợi ~2s mới giải nén, start.vbs kill
+      // port 8000 sau đó nữa) → trang tải lại quá sớm và đọc trạng thái của
+      // process sắp bị kill, nên bảng Bản quyền/Version hiện số cũ tới khi F5.
+      let sawDown = false
+      let waited = 0
+      const MAX_WAIT_MS = 120000
       const pingInterval = setInterval(async () => {
+        waited += 2000
         try {
           await checkHealth()
-          clearInterval(pingInterval)
-          message.success("Cập nhật thành công!")
-          window.location.reload() // Tự tải lại trang khi sống lại
+          // Hết thời gian chờ mà backend chưa hề chết → có thể cập nhật thất bại
+          // (VD giải nén không ghi đè được exe đang chạy). Vẫn reload để người
+          // dùng không bị kẹt ở màn "đang cập nhật".
+          if (sawDown || waited >= MAX_WAIT_MS) {
+            clearInterval(pingInterval)
+            message.success("Cập nhật thành công!")
+            window.location.reload()
+          }
         } catch (e) {
-          // Backend chưa sống, tiếp tục ping
+          sawDown = true // backend cũ đã tắt, giờ chờ backend mới
         }
       }, 2000)
     } catch (err) {
@@ -122,7 +166,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
         <InfoRow icon={<Mail size={14} />} label="Liên hệ" value={APP_INFO.email} />
         <InfoRow icon={<Send size={14} />} label="Telegram" value={APP_INFO.telegram} />
         
-        {licenseStatus && (
+        {lic && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
             <div style={{ color: 'var(--text-muted)', display: 'flex' }}><ShieldCheck size={14} /></div>
             <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Bản quyền</Text>
@@ -136,11 +180,19 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
                    - `enforced`: chạy từ source mà bật cờ để test thì app ĐANG bị
                      khóa thật, hiện "Bản phát triển" cũng là sai.
                 3. Còn lại (source + không enforce) → đúng là bản phát triển. */}
-            {licenseStatus.activated && licenseStatus.valid ? (
-              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>
-                Đã kích hoạt {licenseStatus.expiry ? `(Hết hạn: ${dayjs(licenseStatus.expiry).format('DD/MM/YYYY')})` : '(Vĩnh viễn)'}
+            {licLoading ? (
+              <Spin size="small" />
+            ) : licUnknown ? (
+              // Không gọi được API → KHÔNG suy ra là bản phát triển. Hay gặp ngay
+              // sau khi cập nhật: backend cũ vừa bị kill, backend mới chưa serve.
+              <Text style={{ fontWeight: 500, color: 'var(--text-muted)' }}>
+                Chưa xác định được (backend chưa phản hồi)
               </Text>
-            ) : (licenseStatus.packaged || licenseStatus.enforced) ? (
+            ) : lic.activated && lic.valid ? (
+              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>
+                Đã kích hoạt {lic.expiry ? `(Hết hạn: ${dayjs(lic.expiry).format('DD/MM/YYYY')})` : '(Vĩnh viễn)'}
+              </Text>
+            ) : (lic.packaged || lic.enforced) ? (
               <Text style={{ fontWeight: 500, color: 'var(--accent-danger)' }}>
                 Chưa kích hoạt hoặc hết hạn
               </Text>
