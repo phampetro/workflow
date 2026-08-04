@@ -23,6 +23,31 @@ const LEVEL_CONFIG = {
 // trắng/đen cả app). Dùng 1 hằng số rỗng dùng chung để giữ reference bất biến.
 const EMPTY_LOGS = []
 
+// Giờ không xác định được — hiện dấu gạch thay vì BỊA một giờ.
+export const LOG_TIME_UNKNOWN = '--:--:--'
+
+/**
+ * Định dạng giờ của 1 dòng log từ field `time` (ISO kèm timezone) do backend gửi.
+ *
+ * TUYỆT ĐỐI không fallback về `new Date()`: đó chính là bug cũ. Backend từng chỉ
+ * gửi `timestamp` (đồng hồ monotonic) nên `data.time` luôn undefined và mọi dòng
+ * lấy giờ của trình duyệt lúc NHẬN. Khi mở log 1 run đã xong, SSE replay cả lịch
+ * sử trong vài chục ms → mọi dòng mang cùng 1 giờ = lúc mở view.
+ *
+ * Log của các run CŨ không có field `time` (không thể khôi phục giờ thật) →
+ * trả về LOG_TIME_UNKNOWN.
+ */
+export function formatLogTime(raw) {
+  if (!raw) return LOG_TIME_UNKNOWN
+  // Chỉ nhận CHUỖI ISO. Nếu lỡ nhận số (VD ai đó truyền `timestamp` monotonic
+  // vào đây), `new Date(46512.34)` sẽ hiểu là epoch-ms và cho ra "08:00:46" —
+  // một giờ bịa hoàn toàn. Thà hiện gạch còn hơn hiện số sai.
+  if (typeof raw !== 'string') return LOG_TIME_UNKNOWN
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return LOG_TIME_UNKNOWN
+  return d.toLocaleTimeString()
+}
+
 function LogRow({ log }) {
   const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info
   return (
@@ -66,7 +91,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
       runId,
       (data) => {
         const entry = {
-          time: data.time || new Date().toLocaleTimeString(),
+          time: formatLogTime(data.time),
           level: data.level || 'info',
           msg: data.message || ''
         }

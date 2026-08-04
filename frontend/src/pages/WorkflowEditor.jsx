@@ -8,7 +8,7 @@ import '@xyflow/react/dist/style.css'
 import BlockNode, { BLOCK_TYPES, NodeActionsContext } from '../components/BlockNode'
 import DeleteEdge from '../components/DeleteEdge'
 import BlockEditorModal from '../components/BlockEditorModal'
-import LogViewer from '../components/LogViewer'
+import LogViewer, { formatLogTime } from '../components/LogViewer'
 import SchedulerPanel from '../components/SchedulerPanel'
 import WorkflowHistoryPanel from '../components/WorkflowHistoryPanel'
 import InputJsonModal from '../components/InputJsonModal'
@@ -211,7 +211,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       (data) => {
         // 1. Lưu log vào store
         const entry = {
-          time: data.time || new Date().toLocaleTimeString(),
+          time: formatLogTime(data.time),
           level: data.level || 'info',
           msg: data.message || ''
         }
