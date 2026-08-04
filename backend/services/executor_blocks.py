@@ -791,7 +791,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         def handle_workflow_error(error_msg, failed_bid=None, failed_label=None):
             nonlocal in_error_mode, queue
             if in_error_mode:
-                _finish_run(run_id, "error", start, error=error_msg)
+                _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn)
                 return True
             
             if error_trigger_nodes:
@@ -810,7 +810,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     queue.append((et_node["id"], error_payload))
                 return False
             else:
-                _finish_run(run_id, "error", start, error=error_msg)
+                _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn)
                 return True
         queue.append((start_nodes[0]["id"], initial_input))
 
@@ -2586,7 +2586,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                         queue.append((target_id, current_input))
 
         total_ms = int((datetime.now() - start).total_seconds() * 1000)
-        _finish_run(run_id, final_status, start)
+        _finish_run(run_id, final_status, start, log_fn=log_fn)
         if log_fn:
             if final_status == "success":
                 log_fn("system", "success", f"✅ Workflow hoàn thành trong {total_ms}ms")
@@ -2595,13 +2595,13 @@ output_data = {{"result": rows, "row_count": row_count}}
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
-        _finish_run(run_id, "error", start, error=str(e))
+        _finish_run(run_id, "error", start, error=str(e), log_fn=log_fn)
         if log_fn:
             log_fn("system", "error", f"❌ Lỗi hệ thống khi chạy workflow: {str(e)}")
         print(f"CRITICAL ERROR IN WORKFLOW THREAD: {err_msg}")
 
 
-def _finish_run(run_id, status, start, error=None):
+def _finish_run(run_id, status, start, error=None, log_fn=None):
     finished = datetime.now()
     duration = int((finished - start).total_seconds() * 1000)
     with sqlite3.connect(str(WORKFLOW_DB)) as conn:
@@ -2621,7 +2621,9 @@ def _finish_run(run_id, status, start, error=None):
         
     try:
         from services.browser_executor import cleanup_browser
-        cleanup_browser(run_id)
+        # cleanup_browser nhận log(level, msg) 2 tham số, log_fn ở đây là 3 tham số
+        _blog = (lambda lv, msg: log_fn("system", lv, msg)) if log_fn else None
+        cleanup_browser(run_id, _blog)
     except Exception:
         pass
     # Xóa run_id khỏi workflow mapping

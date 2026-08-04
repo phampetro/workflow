@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import threading
 import traceback
 import time
 from typing import Optional, Callable
@@ -621,23 +622,86 @@ def force_kill_browser_by_marker(marker: str):
         pass
 
 
-def cleanup_browser(run_id: str):
-    """Đóng dọn dẹp browser của một lượt chạy khi workflow kết thúc."""
-    if run_id in _active_browser_sessions:
-        session = _active_browser_sessions.pop(run_id)
-        try:
-            session["context"].close()
-        except Exception:
-            pass
-        try:
-            if session.get("browser"):
-                session["browser"].close()
-        except Exception:
-            pass
-        try:
-            session["pw"].stop()
-        except Exception:
-            pass
+# Thread (ident) còn sót session Playwright không đóng nổi → KHÔNG được mở
+# Playwright mới trên đó nữa. Xem giải thích ở mark_thread_poisoned().
+_poisoned_threads = set()
+
+
+def mark_thread_poisoned(log: Optional[Callable] = None) -> bool:
+    """Phát hiện & ghi nhận thread hiện tại còn sót event loop của Playwright.
+
+    Gọi sau mỗi lần dọn Playwright. **Không cứu được thread** — chỉ đánh dấu.
+
+    Lý do (đã trả giá bằng bug thật — chạy workflow, bấm Dừng, chạy lại là lỗi
+    "It looks like you are using Playwright Sync API inside the asyncio loop"):
+
+    - Playwright sync chạy event loop BÊN TRONG 1 greenlet
+      (``greenlet_main: self._loop.run_until_complete(...)``). Trong lúc code ta
+      chạy, greenlet đó treo giữa ``run_until_complete`` nên với thread này
+      ``asyncio.get_running_loop()`` vẫn trả về loop và ``is_running()`` là True.
+    - ``PlaywrightContextManager.__enter__`` chỉ chịu chạy khi thread KHÔNG có
+      loop đang chạy, và loop chỉ được đóng ở CUỐI ``__exit__`` (``pw.stop()``).
+      Nếu ``stop()`` nổ giữa đường (browser bị ``Stop-Process`` từ nút Dừng →
+      greenlet dispatcher chết → ``switch()`` lỗi) thì ``loop.close()`` không bao
+      giờ chạy. ``__exit__`` còn set ``_exit_was_called = True`` ngay đầu hàm nên
+      gọi lại ``stop()`` cũng vô ích.
+    - Thread này thuộc ``_WORKFLOW_EXECUTOR`` và được TÁI SỬ DỤNG. Sau khi 1 run
+      bị Dừng, nó là thread rảnh duy nhất nên run kế tiếp chắc chắn nhận đúng nó
+      → lỗi tái hiện 100%.
+
+    ĐÃ THỬ VÀ THẤT BẠI — đừng làm lại: xoá cờ bằng
+    ``asyncio.events._set_running_loop(None)`` rồi ``loop.close()`` KHÔNG cứu được.
+    ``close()`` báo "Cannot close a running event loop" (``_thread_id`` của loop vẫn
+    được set vì greenlet treo giữa ``run_forever``), greenlet cũ vẫn sống, nên
+    ``sync_playwright().start()`` lần 2 đụng task của session cũ và **treo hẳn** —
+    còn tệ hơn lỗi ban đầu vì không có thông báo gì.
+
+    Trả về True nếu thread đang bị nhiễm.
+    """
+    import asyncio
+
+    try:
+        running = asyncio._get_running_loop()
+    except Exception:
+        running = None
+
+    if running is None:
+        return False
+
+    _poisoned_threads.add(threading.get_ident())
+    if log:
+        log("warning",
+            "⚠ Thread này còn sót session Playwright không đóng được — đã đánh dấu, "
+            "sẽ không mở trình duyệt mới trên nó nữa.")
+    return True
+
+
+def cleanup_browser(run_id: str, log: Optional[Callable] = None):
+    """Đóng dọn dẹp browser của một lượt chạy khi workflow kết thúc.
+
+    3 lệnh đóng đều có thể nổ khi browser đã bị force-kill từ thread khác (nút
+    Dừng gọi ``force_kill_browser_by_marker``). Trước đây cả 3 bị ``except: pass``
+    im lặng nên không ai biết, mà hậu quả lại hiện ra ở lượt chạy SAU dưới dạng
+    lỗi "Sync API inside the asyncio loop" — nên giờ log lại.
+    """
+    if run_id not in _active_browser_sessions:
+        return
+    session = _active_browser_sessions.pop(run_id)
+    try:
+        for what, fn in (
+            ("context", lambda: session["context"].close()),
+            ("browser", lambda: session["browser"].close() if session.get("browser") else None),
+            ("playwright", lambda: session["pw"].stop()),
+        ):
+            try:
+                fn()
+            except Exception as e:
+                if log:
+                    log("warning", f"⚠ Không đóng gọn được {what}: {type(e).__name__}: {e}")
+    finally:
+        # Kiểm tra DÙ pw.stop() thành công hay thất bại: nếu thread còn sót loop
+        # thì đánh dấu để không mở Playwright trên nó nữa (không cứu được).
+        mark_thread_poisoned(log)
 
 def run_browser_block(
     block_id: str,
@@ -676,6 +740,18 @@ def run_browser_block(
 
         if run_id not in _active_browser_sessions:
             log("info", "🚀 Khởi động trình duyệt mới cho lượt chạy này...")
+            # KHÔNG cố "dọn rồi start lại" trên thread đã nhiễm: đã thử và thất
+            # bại. loop cũ không đóng được (Cannot close a running event loop vì
+            # greenlet dispatcher treo giữa run_forever), greenlet cũ vẫn sống nên
+            # start() lần 2 đụng task của session cũ và TREO HẲN — tệ hơn lỗi
+            # "Sync API inside the asyncio loop". Thread nhiễm là không cứu được;
+            # cách đúng là đừng để thread pool bị nhiễm (xem _poisoned_threads).
+            if threading.get_ident() in _poisoned_threads:
+                raise RuntimeError(
+                    "Thread này còn sót session Playwright của lượt chạy trước (bị Dừng giữa lúc "
+                    "trình duyệt đang mở). Không thể mở trình duyệt mới trên cùng thread — "
+                    "hãy khởi động lại backend, hoặc chạy lại để nhận thread khác."
+                )
             pw = sync_playwright().start()
 
             # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
