@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Set
 
@@ -34,6 +35,14 @@ async def broadcast_log(run_id: str, block_id: str, level: str, message: str):
         "block_id": block_id,
         "level": level,
         "message": message,
+        # "time" = GIỜ THỰC lúc sinh ra dòng log, ISO kèm timezone. Bắt buộc phải
+        # có: FE hiển thị theo field này. Trước đây chỉ gửi "timestamp" (đồng hồ
+        # monotonic) nên FE không tìm thấy "time" và rơi vào nhánh dự phòng
+        # `new Date()` — mở log của run đã xong thì SSE replay cả lịch sử trong
+        # vài chục ms nên MỌI dòng bị đóng dấu bằng giờ lúc mở view.
+        "time": datetime.now().astimezone().isoformat(),
+        # Đồng hồ monotonic, chỉ để đo khoảng cách giữa 2 dòng. KHÔNG phải giờ
+        # thực, đừng dùng để hiển thị.
         "timestamp": asyncio.get_event_loop().time(),
     })
     
