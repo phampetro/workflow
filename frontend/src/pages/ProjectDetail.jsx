@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History } from 'lucide-react'
-import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject } from '../api/client'
+import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject, API_BASE } from '../api/client'
 import AutoInstallModal from '../components/AutoInstallModal'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
@@ -207,7 +207,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }
 
   const handleExportWorkflow = (wf) => {
-    window.location.href = `${api.defaults.baseURL}/api/workflows/${wf.id}/export`
+    window.location.href = `${API_BASE}/api/workflows/${wf.id}/export`
     toast.success(`Đang tải xuống workflow ${wf.name}...`)
   }
 

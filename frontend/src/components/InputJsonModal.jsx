@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Card, Modal, Form, Input, Select, App } from 'antd'
 import Editor from '@monaco-editor/react'
-import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables } from '../api/client'
+import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, API_BASE } from '../api/client'
 import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen, Database, Plug, Pencil } from 'lucide-react'
 import useStore from '../store/useStore'
 
@@ -218,7 +218,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   const handleDownload = (filename, isOutput) => {
     const a = document.createElement('a')
-    a.href = `${api.defaults.baseURL}/api/workflows/${workflowId}/${isOutput ? 'output-files' : 'files'}/${encodeURIComponent(filename)}/download?download=1`
+    a.href = `${API_BASE}/api/workflows/${workflowId}/${isOutput ? 'output-files' : 'files'}/${encodeURIComponent(filename)}/download?download=1`
     a.download = filename
     document.body.appendChild(a)
     a.click()

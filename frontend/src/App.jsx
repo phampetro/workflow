@@ -13,7 +13,7 @@ import viVN from 'antd/locale/vi_VN'
 import 'dayjs/locale/vi'
 import dayjs from 'dayjs'
 import useStore from './store/useStore'
-import { checkHealth, getUsers, getDashboardStats, importProject, getLicenseStatus } from './api/client'
+import { checkHealth, getUsers, getDashboardStats, importProject, getLicenseStatus, getProject } from './api/client'
 import toast from 'react-hot-toast'
 
 dayjs.locale('vi')
@@ -179,11 +179,12 @@ export default function App() {
   const openProject = async (project) => {
     // Fetch lại project để lấy workflows_count mới nhất
     try {
-      const res = await fetch(`${api.defaults.baseURL}/api/projects/${project.id}`, {
-        headers: { 'X-User-Id': currentUser?.id }
-      })
-      const updatedProject = await res.json()
-      setSelectedProject(updatedProject)
+      // Dùng getProject() thay vì fetch thẳng: axios đã tự gắn X-User-Id qua
+      // interceptor, khỏi lặp header. Trước đây chỗ này tham chiếu `api` (biến
+      // nội bộ của client.js, không export) nên luôn ReferenceError — bị try/catch
+      // che nên chỉ âm thầm mất số workflow mới nhất.
+      const res = await getProject(project.id)
+      setSelectedProject(res.data)
     } catch {
       setSelectedProject(project)
     }
