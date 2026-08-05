@@ -196,6 +196,10 @@ def get_python_path(project_id: str) -> str:
 def get_pip_path(project_id: str) -> str:
     return venv_manager.get_pip_path(project_id)
 
+def get_pip_cmd(project_id: str) -> list:
+    """Xem venv_manager.get_pip_cmd — luôn gọi pip qua `python -m pip`."""
+    return venv_manager.get_pip_cmd(project_id)
+
 def venv_exists(project_id: str) -> bool:
     return venv_manager.venv_exists(project_id)
 
@@ -250,16 +254,16 @@ def create_venv_sync(project_id: str) -> dict:
 def install_pkg_sync(project_id: str, package: str) -> dict:
     if not venv_exists(project_id):
         create_venv_sync(project_id)
-    pip = get_pip_path(project_id)
-    result = subprocess.run([pip, "install", package, "--quiet"], capture_output=True, text=True, timeout=300)
+    pip = get_pip_cmd(project_id)
+    result = subprocess.run(pip + ["install", package, "--quiet"], capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         raise RuntimeError(f"Cài thất bại: {result.stderr[:500]}")
     return {"package": package, "status": "installed"}
 
 
 def uninstall_pkg_sync(project_id: str, package: str) -> dict:
-    pip = get_pip_path(project_id)
-    subprocess.run([pip, "uninstall", package, "-y"], capture_output=True, text=True, timeout=60)
+    pip = get_pip_cmd(project_id)
+    subprocess.run(pip + ["uninstall", package, "-y"], capture_output=True, text=True, timeout=60)
     return {"package": package, "status": "uninstalled"}
 
 def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, label="", stop_event=None):
@@ -267,8 +271,8 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
     if not venv_exists(project_id):
         create_venv_sync(project_id)
     
-    pip = get_pip_path(project_id)
-    result = subprocess.run([pip, "freeze"], capture_output=True, text=True, timeout=30)
+    pip = get_pip_cmd(project_id)
+    result = subprocess.run(pip + ["freeze"], capture_output=True, text=True, timeout=30)
     installed = result.stdout.lower()
     
     missing = []
@@ -283,7 +287,7 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
         
         import time
         res = subprocess.Popen(
-            [pip, "install"] + missing,
+            pip + ["install"] + missing,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=1,
@@ -332,8 +336,8 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
 def list_pkgs_sync(project_id: str) -> list:
     if not venv_exists(project_id):
         return []
-    pip = get_pip_path(project_id)
-    result = subprocess.run([pip, "list", "--format=json"], capture_output=True, text=True, timeout=30)
+    pip = get_pip_cmd(project_id)
+    result = subprocess.run(pip + ["list", "--format=json"], capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         return []
     try:
