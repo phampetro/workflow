@@ -819,6 +819,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
         import collections
         final_status = "success"
+        # Lý do lỗi cho nhánh thoát bằng `break` (không đi qua handle_workflow_error).
+        # Thiếu biến này là lý do 11/28 run trong lịch sử có status=error mà
+        # error_message rỗng → mở Lịch sử chỉ thấy "Lỗi" trần, không biết vì sao.
+        final_error = None
         run_counts = collections.Counter()
         loop_states = {}
 
@@ -833,6 +837,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 if log_fn:
                     log_fn("system", "error", f"❌ Phát hiện lặp vô hạn ở Node {node_id} (>2000 lần). Dừng luồng.")
                 final_status = "error"
+                final_error = f"Phát hiện lặp vô hạn ở Node {node_id} (>2000 lần)"
                 break
             run_counts[node_id] += 1
 
@@ -1162,8 +1167,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 if not bot_token or not chat_id:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Telegram] {label} - Thiếu Bot Token hoặc Chat ID")
-                    final_status = "error"
-                    break
+                    if handle_workflow_error("Thiếu Bot Token hoặc Chat ID cho khối Telegram", bid, label):
+                        return
+                    else:
+                        continue
 
                 # --- Resolve attachment file paths ---
                 resolved_files = []
@@ -1256,25 +1263,31 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     log_fn(bid, "info", f"✉️ [Telegram] {label} - Đang gửi tin nhắn tới {chat_id}...")
                 
                 try:
-                    telegram_error = False
+                    # Chuỗi rỗng = không lỗi; khi lỗi thì mang luôn mô tả để đẩy
+                    # sang khối Bắt Lỗi (error_detail) chứ không chỉ là cờ bool.
+                    telegram_error = ""
                     last_message_id = None
                     
                     if telegram_action == "edit":
                         if not msg_id:
                             if log_fn:
                                 log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Chế độ 'Sửa tin nhắn' yêu cầu Message ID hợp lệ.")
-                            final_status = "error"
-                            break
+                            if handle_workflow_error("Chế độ 'Sửa tin nhắn' yêu cầu Message ID hợp lệ", bid, label):
+                                return
+                            else:
+                                continue
                         try:
                             msg_id_int = int(msg_id)
                         except ValueError:
                             if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Message ID phải là số (hiện tại là '{msg_id}'). Hãy kiểm tra lại biến.")
-                            final_status = "error"
-                            break
+                            if handle_workflow_error(f"Message ID phải là số (hiện tại là '{msg_id}')", bid, label):
+                                return
+                            else:
+                                continue
                         res = _tg_edit_message_text(bot_token, chat_id, text, msg_id_int, parse_mode)
                         if not res.get("ok"):
                             if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi sửa tin nhắn: {res.get('description')}")
-                            telegram_error = True
+                            telegram_error = f"Lỗi sửa tin nhắn Telegram: {res.get('description')}"
                         else:
                             last_message_id = res.get("result", {}).get("message_id")
                     else:
@@ -1284,8 +1297,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 reply_to_id = int(msg_id)
                             except ValueError:
                                 if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Message ID phải là số (hiện tại là '{msg_id}').")
-                                final_status = "error"
-                                break
+                                if handle_workflow_error(f"Message ID phải là số (hiện tại là '{msg_id}')", bid, label):
+                                    return
+                                else:
+                                    continue
                         
                         if not resolved_files:
                             # Không có file đính kèm
@@ -1293,7 +1308,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             if not res.get("ok"):
                                 if log_fn:
                                     log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi API: {res.get('description')}")
-                                telegram_error = True
+                                telegram_error = f"Lỗi API Telegram: {res.get('description')}"
                             else:
                                 last_message_id = res.get("result", {}).get("message_id")
                         elif len(resolved_files) == 1:
@@ -1305,7 +1320,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             if not res.get("ok"):
                                 if log_fn:
                                     log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi gửi file {fname}: {res.get('description')}")
-                                telegram_error = True
+                                telegram_error = f"Lỗi gửi file '{fname}' qua Telegram: {res.get('description')}"
                             else:
                                 last_message_id = res.get("result", {}).get("message_id")
                         else:
@@ -1315,7 +1330,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 if not res.get("ok"):
                                     if log_fn:
                                         log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi gửi tin nhắn: {res.get('description')}")
-                                    telegram_error = True
+                                    telegram_error = f"Lỗi gửi tin nhắn Telegram: {res.get('description')}"
                                 else:
                                     last_message_id = res.get("result", {}).get("message_id")
                             
@@ -1329,14 +1344,16 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                     if not res.get("ok"):
                                         if log_fn:
                                             log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi gửi file {fname}: {res.get('description')}")
-                                        telegram_error = True
+                                        telegram_error = f"Lỗi gửi file '{fname}' qua Telegram: {res.get('description')}"
                                         break
                                     if not last_message_id:
                                         last_message_id = res.get("result", {}).get("message_id")
                     
                     if telegram_error:
-                        final_status = "error"
-                        break
+                        if handle_workflow_error(telegram_error, bid, label):
+                            return
+                        else:
+                            continue
                     else:
                         if log_fn:
                             log_fn(bid, "success", f"✅ [Telegram] {label} - Đã gửi thánh công! (message_id={last_message_id})")
@@ -1355,8 +1372,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 except Exception as e:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Telegram] {label} - Gửi thất bại: {str(e)}")
-                    final_status = "error"
-                    break
+                    if handle_workflow_error(f"Telegram gửi thất bại: {e}", bid, label):
+                        return
+                    else:
+                        continue
             elif btype == "email":
                 mail_host = bdata.get("mailHost", "").strip()
                 mail_port = int(bdata.get("mailPort", 465) or 465)
@@ -1427,8 +1446,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 except Exception as e:
                     if log_fn:
                         log_fn(bid, "error", f"❌ [Email] {label} - Lỗi gửi thư: {str(e)}")
-                    final_status = "error"
-                    break
+                    if handle_workflow_error(f"Gửi email thất bại: {e}", bid, label):
+                        return
+                    else:
+                        continue
             elif btype == "delete_files":
                 import shutil
                 delete_input = bdata.get("delete_input", False)
@@ -2172,149 +2193,171 @@ output_data = {{"result": rows, "row_count": row_count}}
                     else:
                         current_input = rename_output_keys(btype, bdata, output)
             elif btype == "google_sheets_read":
-                url = interpolate(bdata.get("googleSheetsUrl", "")).strip()
-                sheet_name = interpolate(bdata.get("googleSheetsSheetName", "")).strip()
-                header_row = int(bdata.get("googleSheetsHeaderRow") or 1)
-                output_var = bdata.get("outputVarName") or "sheets_data"
-                custom_mappings = bdata.get("columnMappings") or {}
-
-                if not url:
-                    raise Exception("Chưa cấu hình Link Google Sheet")
-
-                if "/spreadsheets/d/e/" in url:
-                    csv_url = url.replace("/pubhtml", "/pub?output=csv").replace("/edit", "/pub?output=csv")
-                    if "output=csv" not in csv_url:
-                        csv_url += ("&" if "?" in csv_url else "?") + "output=csv"
-                else:
-                    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
-                    if not match:
-                        raise Exception("Link Google Sheet không hợp lệ")
-                    sheet_id = match.group(1)
-
-                    if sheet_name:
-                        encoded_name = urllib.parse.quote(sheet_name)
-                        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
-                    else:
-                        gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
-                        if gid_match:
-                            gid = gid_match.group(1)
-                            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-                        else:
-                            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                }
-                req = urllib.request.Request(csv_url, headers=headers)
                 try:
-                    with urllib.request.urlopen(req, timeout=20) as resp:
-                        content_bytes = resp.read()
-                        text = content_bytes.decode('utf-8', errors='ignore')
+                    url = interpolate(bdata.get("googleSheetsUrl", "")).strip()
+                    sheet_name = interpolate(bdata.get("googleSheetsSheetName", "")).strip()
+                    header_row = int(bdata.get("googleSheetsHeaderRow") or 1)
+                    output_var = bdata.get("outputVarName") or "sheets_data"
+                    custom_mappings = bdata.get("columnMappings") or {}
+
+                    if not url:
+                        raise Exception("Chưa cấu hình Link Google Sheet")
+
+                    if "/spreadsheets/d/e/" in url:
+                        csv_url = url.replace("/pubhtml", "/pub?output=csv").replace("/edit", "/pub?output=csv")
+                        if "output=csv" not in csv_url:
+                            csv_url += ("&" if "?" in csv_url else "?") + "output=csv"
+                    else:
+                        match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+                        if not match:
+                            raise Exception("Link Google Sheet không hợp lệ")
+                        sheet_id = match.group(1)
+
+                        if sheet_name:
+                            encoded_name = urllib.parse.quote(sheet_name)
+                            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+                        else:
+                            gid_match = re.search(r'[#&?]gid=([0-9]+)', url)
+                            if gid_match:
+                                gid = gid_match.group(1)
+                                csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+                            else:
+                                csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    req = urllib.request.Request(csv_url, headers=headers)
+                    try:
+                        with urllib.request.urlopen(req, timeout=20) as resp:
+                            content_bytes = resp.read()
+                            text = content_bytes.decode('utf-8', errors='ignore')
+                    except Exception as e:
+                        raise Exception(f"Không thể tải Google Sheet ({e}). Hãy kiểm tra link và đảm bảo file ở chế độ Public View.")
+
+                    header_idx = max(0, header_row - 1)
+                    df = pd.read_csv(io.StringIO(text), header=header_idx)
+                    df = df.fillna('')
+
+                    clean_cols = []
+                    for c in df.columns:
+                        c_str = str(c).strip()
+                        if c_str.startswith("Unnamed:"):
+                            clean_cols.append("")
+                        else:
+                            clean_cols.append(c_str)
+                    df.columns = clean_cols
+
+                    records = []
+                    for _, row in df.iterrows():
+                        item_dict = {}
+                        for orig_col in df.columns:
+                            if not orig_col:
+                                continue
+                            val = str(row[orig_col])
+                            var_key = custom_mappings.get(orig_col) or orig_col
+                            item_dict[var_key] = val
+                        records.append(item_dict)
+
+                    row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
+
+                    if not isinstance(current_input, dict):
+                        current_input = {}
+
+                    # Chỉ ghi theo đúng tên biến đặt trên UI — không ghi thêm key cố
+                    # định "row_count" nữa (trước đây 1 giá trị 2 tên, gây khó hiểu).
+                    current_input[output_var] = records
+                    current_input[row_count_var] = len(records)
+
+                    workflow_env[output_var] = records
+                    workflow_env[row_count_var] = len(records)
+
+                    if log_fn:
+                        log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}' (Số dòng: '{row_count_var}')")
                 except Exception as e:
-                    raise Exception(f"Không thể tải Google Sheet ({e}). Hãy kiểm tra link và đảm bảo file ở chế độ Public View.")
-
-                header_idx = max(0, header_row - 1)
-                df = pd.read_csv(io.StringIO(text), header=header_idx)
-                df = df.fillna('')
-
-                clean_cols = []
-                for c in df.columns:
-                    c_str = str(c).strip()
-                    if c_str.startswith("Unnamed:"):
-                        clean_cols.append("")
+                    # Trước đây khối này `raise` trần → ngoại lệ bay lên except
+                    # ngoài cùng, chỉ log "Lỗi hệ thống" và KHÔNG bao giờ chạy khối
+                    # Bắt Lỗi dù đã nối. Nay đi cùng đường với các khối khác.
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ [Google Sheets] {label} - {e}")
+                    if handle_workflow_error(str(e), bid, label):
+                        return
                     else:
-                        clean_cols.append(c_str)
-                df.columns = clean_cols
-
-                records = []
-                for _, row in df.iterrows():
-                    item_dict = {}
-                    for orig_col in df.columns:
-                        if not orig_col:
-                            continue
-                        val = str(row[orig_col])
-                        var_key = custom_mappings.get(orig_col) or orig_col
-                        item_dict[var_key] = val
-                    records.append(item_dict)
-
-                row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
-
-                if not isinstance(current_input, dict):
-                    current_input = {}
-
-                # Chỉ ghi theo đúng tên biến đặt trên UI — không ghi thêm key cố
-                # định "row_count" nữa (trước đây 1 giá trị 2 tên, gây khó hiểu).
-                current_input[output_var] = records
-                current_input[row_count_var] = len(records)
-
-                workflow_env[output_var] = records
-                workflow_env[row_count_var] = len(records)
-
-                if log_fn:
-                    log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}' (Số dòng: '{row_count_var}')")
+                        continue
             elif btype == "excel_read":
-                # Đọc file Excel/CSV trong input (fallback output) → trả mảng dòng + số dòng.
-                # Cùng hợp đồng output với google_sheets_read nên cắm thẳng vào khối Loop.
-                file_name = interpolate(bdata.get("excelReadFile", "")).strip()
-                sheet_name = interpolate(bdata.get("excelReadSheetName", "")).strip()
-                header_row = int(bdata.get("excelReadHeaderRow") or 1)
-                output_var = bdata.get("outputVarName") or "sheets_data"
-                row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
-                custom_mappings = bdata.get("columnMappings") or {}
+                try:
+                    # Đọc file Excel/CSV trong input (fallback output) → trả mảng dòng + số dòng.
+                    # Cùng hợp đồng output với google_sheets_read nên cắm thẳng vào khối Loop.
+                    file_name = interpolate(bdata.get("excelReadFile", "")).strip()
+                    sheet_name = interpolate(bdata.get("excelReadSheetName", "")).strip()
+                    header_row = int(bdata.get("excelReadHeaderRow") or 1)
+                    output_var = bdata.get("outputVarName") or "sheets_data"
+                    row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
+                    custom_mappings = bdata.get("columnMappings") or {}
 
-                if not file_name:
-                    raise Exception("Chưa chọn/nhập tên file Excel")
+                    if not file_name:
+                        raise Exception("Chưa chọn/nhập tên file Excel")
 
-                # Cho phép nhập tên biến {{...}} → sau interpolate ra tên file thật; tìm input trước, rồi output
-                file_path = input_dir / file_name
-                if not file_path.exists():
-                    file_path = wf_dir / "output" / file_name
-                if not file_path.exists():
-                    raise Exception(f"Không tìm thấy file '{file_name}' trong thư mục input/output")
+                    # Cho phép nhập tên biến {{...}} → sau interpolate ra tên file thật; tìm input trước, rồi output
+                    file_path = input_dir / file_name
+                    if not file_path.exists():
+                        file_path = wf_dir / "output" / file_name
+                    if not file_path.exists():
+                        raise Exception(f"Không tìm thấy file '{file_name}' trong thư mục input/output")
 
-                header_idx = max(0, header_row - 1)
-                if str(file_path).lower().endswith(".csv"):
-                    df = pd.read_csv(file_path, header=header_idx)
-                else:
-                    if sheet_name:
-                        df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_idx)
+                    header_idx = max(0, header_row - 1)
+                    if str(file_path).lower().endswith(".csv"):
+                        df = pd.read_csv(file_path, header=header_idx)
                     else:
-                        df = pd.read_excel(file_path, header=header_idx)
-                df = df.fillna('')
+                        if sheet_name:
+                            df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_idx)
+                        else:
+                            df = pd.read_excel(file_path, header=header_idx)
+                    df = df.fillna('')
 
-                clean_cols = []
-                for c in df.columns:
-                    c_str = str(c).strip()
-                    if c_str.startswith("Unnamed:"):
-                        clean_cols.append("")
+                    clean_cols = []
+                    for c in df.columns:
+                        c_str = str(c).strip()
+                        if c_str.startswith("Unnamed:"):
+                            clean_cols.append("")
+                        else:
+                            clean_cols.append(c_str)
+                    df.columns = clean_cols
+
+                    records = []
+                    for _, row in df.iterrows():
+                        item_dict = {}
+                        for orig_col in df.columns:
+                            if not orig_col:
+                                continue
+                            val = str(row[orig_col])
+                            var_key = custom_mappings.get(orig_col) or orig_col
+                            item_dict[var_key] = val
+                        records.append(item_dict)
+
+                    if not isinstance(current_input, dict):
+                        current_input = {}
+
+                    # Chỉ ghi theo đúng tên biến đặt trên UI — không ghi thêm key cố
+                    # định "row_count" nữa (trước đây 1 giá trị 2 tên, gây khó hiểu).
+                    current_input[output_var] = records
+                    current_input[row_count_var] = len(records)
+
+                    workflow_env[output_var] = records
+                    workflow_env[row_count_var] = len(records)
+
+                    if log_fn:
+                        log_fn(bid, "success", f"🟢 [Đọc Excel] Đọc thành công {len(records)} dòng từ '{file_name}' vào biến '{output_var}' (Số dòng: '{row_count_var}')")
+                except Exception as e:
+                    # Trước đây khối này `raise` trần → ngoại lệ bay lên except
+                    # ngoài cùng, chỉ log "Lỗi hệ thống" và KHÔNG bao giờ chạy khối
+                    # Bắt Lỗi dù đã nối. Nay đi cùng đường với các khối khác.
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ [Đọc Excel] {label} - {e}")
+                    if handle_workflow_error(str(e), bid, label):
+                        return
                     else:
-                        clean_cols.append(c_str)
-                df.columns = clean_cols
-
-                records = []
-                for _, row in df.iterrows():
-                    item_dict = {}
-                    for orig_col in df.columns:
-                        if not orig_col:
-                            continue
-                        val = str(row[orig_col])
-                        var_key = custom_mappings.get(orig_col) or orig_col
-                        item_dict[var_key] = val
-                    records.append(item_dict)
-
-                if not isinstance(current_input, dict):
-                    current_input = {}
-
-                # Chỉ ghi theo đúng tên biến đặt trên UI — không ghi thêm key cố
-                # định "row_count" nữa (trước đây 1 giá trị 2 tên, gây khó hiểu).
-                current_input[output_var] = records
-                current_input[row_count_var] = len(records)
-
-                workflow_env[output_var] = records
-                workflow_env[row_count_var] = len(records)
-
-                if log_fn:
-                    log_fn(bid, "success", f"🟢 [Đọc Excel] Đọc thành công {len(records)} dòng từ '{file_name}' vào biến '{output_var}' (Số dòng: '{row_count_var}')")
+                        continue
             elif btype == "condition":
                 logical_op = bdata.get("logicalOperator", "AND").upper()
                 conditions = bdata.get("conditions")
@@ -2379,8 +2422,10 @@ output_data = {{"result": rows, "row_count": row_count}}
                 except Exception as e:
                     if log_fn:
                         log_fn(bid, "error", f"❌ Lỗi so sánh: {e}")
-                    final_status = "error"
-                    break
+                    if handle_workflow_error(f"Lỗi so sánh điều kiện: {e}", bid, label):
+                        return
+                    else:
+                        continue
             elif btype == "loop":
                 mode = bdata.get("loopMode", "count")
                 delay = float(bdata.get("loopDelay") or 0)
@@ -2533,8 +2578,10 @@ output_data = {{"result": rows, "row_count": row_count}}
                     except Exception as e:
                         if log_fn:
                             log_fn(bid, "error", f"❌ Lỗi so sánh vòng lặp: {e}")
-                        final_status = "error"
-                        break
+                        if handle_workflow_error(f"Lỗi so sánh vòng lặp: {e}", bid, label):
+                            return
+                        else:
+                            continue
 
             if continue_branch and final_status != "error":
                 if btype == "loop" and cond_branch_taken == "loop":
@@ -2586,12 +2633,16 @@ output_data = {{"result": rows, "row_count": row_count}}
                         queue.append((target_id, current_input))
 
         total_ms = int((datetime.now() - start).total_seconds() * 1000)
-        _finish_run(run_id, final_status, start, log_fn=log_fn)
+        _finish_run(run_id, final_status, start, error=final_error, log_fn=log_fn)
         if log_fn:
             if final_status == "success":
                 log_fn("system", "success", f"✅ Workflow hoàn thành trong {total_ms}ms")
             elif final_status == "stopped":
                 log_fn("system", "warning", f"⏹ Đã dừng sau {total_ms}ms")
+            else:
+                # Trước đây không log gì cho trạng thái error ở nhánh này → log
+                # kết thúc lửng, người dùng không biết workflow đã dừng hẳn chưa.
+                log_fn("system", "error", f"❌ Workflow thất bại sau {total_ms}ms")
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
