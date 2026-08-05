@@ -7,6 +7,16 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Base URL cho các trường hợp PHẢI để trình duyệt tự tải (export ZIP, download
+// file) — không đi qua axios nên cần URL tuyệt đối.
+//
+// `api` là biến nội bộ của module này và KHÔNG được export. Trước đây 4 chỗ
+// (ProjectDetail, Dashboard, InputJsonModal, App) viết thẳng `api.defaults.baseURL`
+// mà không import gì: Rollup coi đó là biến toàn cục nên build vẫn qua, rồi nổ
+// "ReferenceError: api is not defined" ngay khi bấm Export. Cần base URL thì
+// import API_BASE, đừng dùng lại `api`.
+export const API_BASE = api.defaults.baseURL
+
 // Interceptor: tự động đính kèm X-User-Id từ store
 api.interceptors.request.use((config) => {
   const user = useStore.getState().currentUser
@@ -67,6 +77,7 @@ export const deleteProject     = (id)         => api.delete(`/api/projects/${id}
 export const reorderProjects   = (items)      => api.put('/api/projects/reorder/items', items)
 export const importProject     = (formData)   => api.post('/api/projects/import', formData, { headers: { 'Content-Type': 'multipart/form-data' }})
 // Note: exportProject and exportWorkflow will be handled directly via browser URL download
+// → dùng API_BASE ở dưới để dựng URL tuyệt đối.
 
 // ── Packages ──────────────────────────────────────────────
 export const getPackages       = (projectId)  => api.get(`/api/projects/${projectId}/packages`)

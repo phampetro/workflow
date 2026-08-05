@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, FolderOpen, Clock, Trash2, Settings, ChevronRight, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Download, GripVertical } from 'lucide-react'
-import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects } from '../api/client'
+import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects, API_BASE } from '../api/client'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
@@ -170,7 +170,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   }
 
   const handleExport = (project) => {
-    window.location.href = `${api.defaults.baseURL}/api/projects/${project.id}/export`
+    window.location.href = `${API_BASE}/api/projects/${project.id}/export`
     toast.success(`Đang tải xuống project ${project.name}...`)
   }
 
