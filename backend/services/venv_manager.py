@@ -54,10 +54,33 @@ def get_python_path(project_id: str) -> str:
 
 
 def get_pip_path(project_id: str) -> str:
+    """⚠️ ĐỪNG DÙNG để chạy pip — dùng ``get_pip_cmd()``. Xem lý do ở đó.
+
+    Giữ lại chỉ để kiểm tra sự tồn tại của file.
+    """
     venv = get_venv_path(project_id)
     if sys.platform == "win32":
         return str(venv / "Scripts" / "pip.exe")
     return str(venv / "bin" / "pip")
+
+
+def get_pip_cmd(project_id: str) -> list:
+    """Lệnh gọi pip của venv project — LUÔN qua ``python -m pip``.
+
+    KHÔNG dùng ``Scripts/pip.exe``: đó là wrapper nhúng **đường dẫn tuyệt đối**
+    tới ``python.exe`` của venv. Thư mục project đặt tên theo slug **tên project**
+    (``data/pj_{slug}``), nên đổi tên project → ``rename_project_dir`` di chuyển
+    cả venv → ``pip.exe`` trỏ vào đường dẫn cũ không còn tồn tại.
+
+    Đã kiểm bằng thực nghiệm: sau khi đổi tên thư mục, ``pip.exe list`` trả về
+    **exit code 1 với stdout VÀ stderr đều rỗng** — thất bại hoàn toàn im lặng.
+    ``list_pkgs_sync()`` thấy ``returncode != 0`` nên trả ``[]`` → bảng Tự động
+    cài báo thiếu SẠCH thư viện dù đã cài đủ.
+
+    ``python -m pip`` xác định venv theo vị trí của chính ``python.exe`` nên
+    không bị ảnh hưởng bởi việc di chuyển thư mục.
+    """
+    return [get_python_path(project_id), "-m", "pip"]
 
 
 def venv_exists(project_id: str) -> bool:
@@ -110,10 +133,10 @@ async def install_package(project_id: str, package: str) -> dict:
     if not venv_exists(project_id):
         await create_venv(project_id)
 
-    pip = get_pip_path(project_id)
+    pip = get_pip_cmd(project_id)
     result = await asyncio.to_thread(
         subprocess.run,
-        [pip, "install", package, "--quiet"],
+        pip + ["install", package, "--quiet"],
         capture_output=True,
         text=True,
         timeout=300
@@ -127,10 +150,10 @@ async def install_package(project_id: str, package: str) -> dict:
 
 async def uninstall_package(project_id: str, package: str) -> dict:
     """Gỡ cài đặt package"""
-    pip = get_pip_path(project_id)
+    pip = get_pip_cmd(project_id)
     result = await asyncio.to_thread(
         subprocess.run,
-        [pip, "uninstall", package, "-y"],
+        pip + ["uninstall", package, "-y"],
         capture_output=True,
         text=True,
         timeout=60
@@ -147,12 +170,12 @@ async def list_packages(project_id: str) -> list[dict]:
         logger.warning(f"Venv không tồn tại cho project {project_id}")
         return []
 
-    pip = get_pip_path(project_id)
-    logger.info(f"pip path: {pip}")
+    pip = get_pip_cmd(project_id)
+    logger.info(f"pip cmd: {pip}")
 
     result = await asyncio.to_thread(
         subprocess.run,
-        [pip, "list", "--format=json"],
+        pip + ["list", "--format=json"],
         capture_output=True,
         text=True,
         timeout=30
@@ -281,7 +304,7 @@ def delete_project_dir(project_id: str, pj_name: str = None):
 
 # Export for use by other modules
 __all__ = [
-    'get_venv_path', 'get_python_path', 'get_pip_path', 'venv_exists',
+    'get_venv_path', 'get_python_path', 'get_pip_path', 'get_pip_cmd', 'venv_exists',
     'create_venv', 'install_package', 'uninstall_package', 'list_packages',
     'delete_venv', 'delete_workflow_dir', 'delete_project_dir',
     'rename_project_dir', 'rename_workflow_dir',

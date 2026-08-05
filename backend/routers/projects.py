@@ -304,7 +304,7 @@ _pkg_jobs = {}  # project_id -> {status, log, current, total, done, error}
 def _install_worker(project_id: str, packages: list):
     import subprocess, sqlite3, time
     from services.executor_blocks import create_venv_sync
-    from services.venv_manager import venv_exists, get_pip_path, DATA_DIR
+    from services.venv_manager import venv_exists, get_pip_cmd, DATA_DIR
     j = _pkg_jobs[project_id]
     try:
         # Nếu venv đang được tạo ngầm (create/import) → đợi xong, tránh tạo trùng gây hỏng
@@ -324,12 +324,12 @@ def _install_worker(project_id: str, packages: list):
                     conn.commit()
             except Exception:
                 pass
-        pip = get_pip_path(project_id)
+        pip = get_pip_cmd(project_id)
         for i, pkg in enumerate(packages):
             j["current"] = pkg
             j["log"].append(f"📦 Đang cài {pkg}...")
             proc = subprocess.Popen(
-                [pip, "install", pkg],
+                pip + ["install", pkg],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
             )
