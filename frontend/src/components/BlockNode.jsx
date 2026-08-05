@@ -164,11 +164,23 @@ const STATUS_STYLES = {
   error:   { border: '#ef4444', glow: '0 0 16px rgba(239,68,68,0.4)' },
 }
 
+// React Flow neo đường vẽ vào RÌA NGOÀI của hộp handle, không phải tâm
+// (getHandlePosition: Position.Right → x + width, Position.Left → x, ...).
+//
+// CSS gốc của React Flow đặt handle sát biên (left/right/top/bottom: 0) rồi dịch
+// ±50% để chấm nằm giữa biên. Đẹp, nhưng khi đó rìa ngoài hộp nằm cách tâm chấm
+// nửa chiều rộng → đường vẽ lệch khỏi tâm chấm. Dự án phóng chấm từ 6px (mặc
+// định) lên 10px nên độ lệch tăng 3px → 5px, đủ để thấy rõ trên canvas.
+//
+// Ở đây BỎ dịch chuyển theo trục vuông góc với biên: rìa ngoài hộp trùng đúng
+// biên node → điểm neo đường vẽ nằm chính xác trên biên, chấm 10px lùi hẳn vào
+// trong node. Vẫn giữ dịch chuyển theo trục còn lại để chấm căn giữa cạnh.
+// Giữ nguyên hộp 10px → vùng bấm kéo tạo đường nối không bị teo.
 const HANDLE_TRANSLATES = {
-  left: 'translate(-50%, -50%)',
-  top: 'translate(-50%, -50%)',
-  right: 'translate(50%, -50%)',
-  bottom: 'translate(-50%, 50%)',
+  left: 'translate(0, -50%)',
+  right: 'translate(0, -50%)',
+  top: 'translate(-50%, 0)',
+  bottom: 'translate(-50%, 0)',
 }
 
 const BlockNode = memo(({ id, data, selected }) => {
@@ -231,7 +243,7 @@ const BlockNode = memo(({ id, data, selected }) => {
           className="block-handle block-handle-target"
           style={{ 
             background: type.color, 
-            '--handle-translate': HANDLE_TRANSLATES[inPos] || 'translate(-50%, -50%)' 
+            '--handle-translate': HANDLE_TRANSLATES[inPos] || HANDLE_TRANSLATES.left
           }}
           title="Cổng vào (IN)"
         />
@@ -383,7 +395,7 @@ const BlockNode = memo(({ id, data, selected }) => {
               className="block-handle block-handle-source"
               style={{
                 ...(isVertical ? { left: `${h.offset}%` } : { top: `${h.offset}%` }),
-                '--handle-translate': HANDLE_TRANSLATES[h.pos] || 'translate(-50%, -50%)',
+                '--handle-translate': HANDLE_TRANSLATES[h.pos] || HANDLE_TRANSLATES.left,
                 background: h.color
               }}
               title={h.title}
@@ -577,14 +589,14 @@ const BlockNode = memo(({ id, data, selected }) => {
           height: 10px !important;
           border: 2px solid var(--bg-surface) !important;
           border-radius: 50% !important;
-          transform: var(--handle-translate, translate(-50%, -50%)) !important;
+          transform: var(--handle-translate, translate(0, -50%)) !important;
           transition: transform var(--transition-fast) !important;
           z-index: 10 !important;
           box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
         }
 
         .block-handle:hover {
-          transform: var(--handle-translate, translate(-50%, -50%)) scale(1.4) !important;
+          transform: var(--handle-translate, translate(0, -50%)) scale(1.4) !important;
         }
 
         .spinning {
