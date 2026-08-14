@@ -25,9 +25,18 @@ async def execute_workflow(
 ) -> dict:
     loop = asyncio.get_running_loop()
 
-    # Bridge để chuyển log từ thread đồng bộ sang coroutine bất đồng bộ
+    # Bridge để chuyển log từ thread đồng bộ sang coroutine bất đồng bộ.
+    # Giữ future của dòng log CUỐI CÙNG: run_coroutine_threadsafe chỉ *xếp lịch* cho
+    # loop chính, nên khi thread workflow kết thúc vẫn còn vài dòng chưa được ghi vào
+    # _run_history. Caller (run_workflow_internal) đọc history ngay sau await này để
+    # lưu logs_json → không chờ thì mất luôn các dòng cuối ("✅ Workflow hoàn thành",
+    # "❌ Lỗi hệ thống..."). Chỉ cần future cuối vì loop chạy các callback theo đúng
+    # thứ tự đã xếp và broadcast_log không chờ ở đâu (Queue không giới hạn).
+    _last_log_future = None
+
     def sync_log_cb(block_id, level, msg):
-        asyncio.run_coroutine_threadsafe(
+        nonlocal _last_log_future
+        _last_log_future = asyncio.run_coroutine_threadsafe(
             log_callback(block_id, level, msg),
             loop
         )
@@ -56,3 +65,9 @@ async def execute_workflow(
     except Exception as e:
         logger.error(f"Error in execute_workflow: {e}")
         return {"status": "error", "error": str(e)}
+    finally:
+        if _last_log_future is not None:
+            try:
+                await asyncio.wrap_future(_last_log_future)
+            except Exception:
+                pass

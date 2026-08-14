@@ -143,6 +143,8 @@ async def list_workflows(project_id: str, session: AsyncSession = Depends(get_se
         )).all()
         last_status_map = {r[0]: r[1] for r in rows}
 
+    from services.executor_blocks import _listener_holder_runs
+
     out = []
     for w in workflows:
         d = w.to_dict()
@@ -150,8 +152,14 @@ async def list_workflows(project_id: str, session: AsyncSession = Depends(get_se
         # Đánh dấu wf đang chạy
         if w.id in _workflow_run_ids and _workflow_run_ids[w.id]:
             d["is_running"] = True
-            # Lấy run_id từ set (chỉ lấy 1 vì giao diện chỉ hiện 1)
-            d["running_run_id"] = next(iter(_workflow_run_ids[w.id]))
+            # Chỉ trả 1 run_id vì giao diện chỉ bám 1. Ưu tiên run ĐANG LÀM VIỆC:
+            # workflow bật khối "Lệnh Telegram" luôn có 1 run thường trú chỉ để giữ
+            # Listener sống (kẹt ở while True), còn mỗi lệnh Telegram sinh 1 run
+            # riêng. next(iter(set)) trước đây hay trúng run giữ Listener → FE bám
+            # nhầm, mở log của lệnh vừa chạy thì trống trơn.
+            run_ids = _workflow_run_ids[w.id]
+            working = [r for r in run_ids if r not in _listener_holder_runs]
+            d["running_run_id"] = working[0] if working else next(iter(run_ids))
         else:
             d["is_running"] = False
             d["running_run_id"] = None
