@@ -549,7 +549,23 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     const check = async () => {
       try {
         const res = await getRunHistory(wfData.id, 5)
-        const run = (res.data || []).find(r => r.id === currentRunId)
+        const runs = res.data || []
+        const run = runs.find(r => r.id === currentRunId)
+
+        // Workflow có khối "Lệnh Telegram" chạy NHIỀU run song song: 1 run thường trú
+        // giữ Listener (chạy tới khi bấm Dừng) + mỗi lệnh (runall/runscript...) sinh
+        // thêm 1 run riêng. Nếu cứ bám run giữ Listener thì màn hình không hiện log
+        // của run vừa được lệnh Telegram kích hoạt. Backend trả runs theo started_at
+        // giảm dần → run nằm TRƯỚC run hiện tại trong mảng là run mới hơn.
+        const curIdx = runs.findIndex(r => r.id === currentRunId)
+        const newerRunning = curIdx > 0
+          ? runs.slice(0, curIdx).find(r => r.status === 'running')
+          : null
+        if (!cancelled && newerRunning) {
+          useStore.getState().setActiveRun(wfData.id, newerRunning.id)
+          return
+        }
+
         if (!cancelled && run && run.status !== 'running') {
           useStore.getState().clearActiveRun(wfData.id)
           // Dự phòng cho khi lỡ mất dòng log kết thúc (SSE reconnect, đóng panel log...):
@@ -839,7 +855,11 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         {showLogs && (
           <LogViewer
             runId={viewingRunId}
-            isRunning={isRunning}
+            isRunning={isRunning && viewingRunId === currentRunId}
+            // Run mà màn hình này đang tự mở SSE (effect [currentRunId] bên trên).
+            // LogViewer chỉ được bỏ qua mở stream cho ĐÚNG run đó — mọi run khác
+            // (run cũ, hoặc run song song do lệnh Telegram sinh ra) phải tự stream.
+            streamedRunId={currentRunId}
             onClose={() => setShowLogs(false)}
             onFinished={handleRunFinished}
           />

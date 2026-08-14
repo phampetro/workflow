@@ -73,19 +73,26 @@ function LogRow({ log }) {
   )
 }
 
-export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
+export default function LogViewer({ runId, isRunning, streamedRunId, onClose, onFinished }) {
   const logs = useStore(state => state.runLogs[runId] || EMPTY_LOGS)
   const [autoScroll, setAutoScroll] = useState(true)
   const virtuosoRef = useRef(null)
 
   useEffect(() => {
     if (!runId) return
-    
-    // Nếu luồng đang chạy, WorkflowEditor đã tự mở stream và ghi vào useStore.
-    // Component này chỉ việc re-render nhờ hook useStore(state => state.runLogs[runId]).
-    if (isRunning) return
 
-    // Đối với các luồng cũ, component này sẽ tự mở stream (cũng để lấy lại lịch sử log).
+    // WorkflowEditor chỉ mở stream cho ĐÚNG run nó đang bám (streamedRunId) và ghi
+    // vào useStore — component này chỉ cần re-render nhờ useStore(runLogs[runId]).
+    // Điều kiện cũ là `if (isRunning) return`: chỉ cần workflow có run nào đó đang
+    // chạy là bỏ luôn việc mở stream, kể cả khi đang xem một run KHÁC. Workflow có
+    // khối "Lệnh Telegram" chạy nhiều run song song (1 run thường trú giữ Listener +
+    // mỗi lệnh runall/runscript/ngayupdate là 1 run riêng), nên mở log của run do
+    // Telegram kích hoạt luôn ra "Chưa có log nào..." dù DB có đủ log.
+    if (runId === streamedRunId) return
+
+    // Mọi run khác (run cũ trong Lịch sử, hoặc run song song do Telegram kích hoạt)
+    // tự mở stream riêng: backend trả toàn bộ lịch sử theo offset rồi stream tiếp,
+    // nên vừa xem lại được log đã lưu vừa theo dõi realtime nếu run còn chạy.
     const cached = useStore.getState().runLogs[runId] || []
     const cleanup = createLogStream(
       runId,
@@ -102,7 +109,7 @@ export default function LogViewer({ runId, isRunning, onClose, onFinished }) {
     )
 
     return () => cleanup()
-  }, [runId, isRunning])
+  }, [runId, streamedRunId])
 
   const jumpToBottom = () => {
     setAutoScroll(true)
