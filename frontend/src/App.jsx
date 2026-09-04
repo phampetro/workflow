@@ -236,27 +236,34 @@ export default function App() {
           colorTextSecondary: theme === 'dark' ? '#d4d4d8' : '#475569',
           colorTextTertiary: theme === 'dark' ? '#a1a1aa' : '#94a3b8',
         },
+        // ⚠ MỖI component CHỈ ĐƯỢC khai MỘT key. Object literal của JS lấy key
+        // sau cùng, nên trước đây 4 khối Button/Input/Select/Table ở trên bị 4
+        // dòng {controlHeight:30} bên dưới xoá sạch — nghĩa là toàn bộ cấu hình
+        // này là code chết. Nặng nhất: activeShadow (vòng focus teal) của Select
+        // không bao giờ được áp, người dùng Tab qua các Select trong cấu hình khối
+        // không thấy mình đang ở đâu; errorActiveShadow (viền đỏ khi validate lỗi)
+        // cũng mất. Input may mắn được index.css cứu bằng !important, Select thì không.
         components: {
           Button: {
             fontWeight: 500,
             defaultShadow: 'none',
             primaryShadow: 'none',
             dangerShadow: 'none',
+            controlHeight: 30,
           },
           Input: {
             activeShadow: '0 0 0 2px rgba(13, 148, 136, 0.25)',
             errorActiveShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)',
+            controlHeight: 30,
           },
           Select: {
             activeShadow: '0 0 0 2px rgba(13, 148, 136, 0.25)',
+            controlHeight: 30,
           },
           Table: {
             headerBorderRadius: 8,
+            cellHeight: 40,
           },
-          Select: { controlHeight: 30 },
-          Input: { controlHeight: 30 },
-          Button: { controlHeight: 30 },
-          Table: { cellHeight: 40 },
           Pagination: { itemSize: 28 },
           Menu: {
             itemHeight: 36,

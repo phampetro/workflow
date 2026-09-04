@@ -12,6 +12,29 @@ import traceback
 import time
 from typing import Optional, Callable
 
+_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
+
+
+def _interpolate_once(text: str, ctx: dict) -> str:
+    """Thay {{ten_bien}} bằng giá trị, QUÉT ĐÚNG MỘT LƯỢT.
+
+    Bản cũ lặp `for k, v in ctx.items(): text.replace(...)` nên giá trị vừa thay
+    xong lại bị các vòng sau quét tiếp (chain-replace). Kịch bản thật đã trả giá:
+    bước `fill` có value = "{{text}}"; người lạ nhắn cho bot đúng chuỗi
+    "{{password_web}}" → tới lượt key password_web, mật khẩu trong input.json bị
+    gõ thẳng vào ô input của trang web bên ngoài.
+
+    executor_blocks.interpolate() đã chuyển sang re.sub một lượt từ trước; chỗ này
+    bị bỏ sót nên vẫn giữ nguyên lỗ hổng.
+    """
+    if not text or "{{" not in text:
+        return text
+    return _VAR_PATTERN.sub(
+        lambda m: str(ctx[m.group(1)]) if m.group(1) in ctx else m.group(0),
+        text,
+    )
+
+
 # ─── Cấu hình action types ──────────────────────────────────────────────────
 
 ACTION_LABELS = {
@@ -754,9 +777,34 @@ def run_browser_block(
                 )
             pw = sync_playwright().start()
 
-            # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
-            # mở PyFlow) để không tranh GPU gây "đen màn hình". Fallback Chrome hệ thống.
-            browser_exe, browser_warn = pick_browser(pw)
+            def _abort_playwright_startup():
+                """Dọn khi mở trình duyệt THẤT BẠI, trước lúc session kịp được đăng ký.
+
+                Bắt buộc phải có: cho tới khi `_active_browser_sessions[run_id]` được
+                gán ở cuối khối này, cleanup_browser() sẽ return ngay ở nhánh
+                `run_id not in _active_browser_sessions` và KHÔNG dọn gì cả. Hệ quả
+                trước đây, mỗi lần launch lỗi (EDR chặn --remote-debugging-pipe,
+                đường dẫn profile > 260 ký tự, group policy giữ Chrome):
+                  1. tiến trình node.exe của driver Playwright sống tới khi tắt
+                     backend — chạy lại lần nữa là thêm một tiến trình nữa;
+                  2. thread vẫn còn event loop treo nhưng KHÔNG bị đánh dấu, nên run
+                     kế tiếp trúng đúng thread đó và chết với "Sync API inside the
+                     asyncio loop" — đúng lỗi mà cả docstring của
+                     mark_thread_poisoned() nói là đã xử lý.
+                """
+                try:
+                    pw.stop()
+                except Exception:
+                    pass
+                mark_thread_poisoned(log)
+
+            try:
+                # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
+                # mở PyFlow) để không tranh GPU gây "đen màn hình". Fallback Chrome hệ thống.
+                browser_exe, browser_warn = pick_browser(pw)
+            except Exception:
+                _abort_playwright_startup()
+                raise
             log("info", "🧭 Trình duyệt: " + ("Chromium riêng (Playwright)" if browser_exe is None else browser_exe))
             if browser_warn:
                 log("warning", browser_warn)
@@ -819,6 +867,8 @@ def run_browser_block(
                              "(--remote-debugging-pipe), đường dẫn profile quá dài (>260 ký tự), "
                              "hoặc Chrome hệ thống bị group policy giữ lại. Cài Chromium riêng bằng "
                              "`pyflow-backend.exe install-browser` rồi thử lại.")
+                # Session chưa được đăng ký nên cleanup_browser() sẽ không dọn hộ.
+                _abort_playwright_startup()
                 raise
             
             # Ẩn thuộc tính webdriver trong Javascript
@@ -873,10 +923,12 @@ def run_browser_block(
             
             if current_vars:
                 for step_key, step_val in new_step.items():
+                    # key_name là TÊN biến người dùng đặt, không phải chuỗi template
+                    # → không nội suy (đồng bộ với NON_INTERPOLATED_KEYS của executor).
+                    if step_key == "key_name":
+                        continue
                     if isinstance(step_val, str) and "{{" in step_val:
-                        for k, v in current_vars.items():
-                            step_val = step_val.replace(f"{{{{{k}}}}}", str(v))
-                        new_step[step_key] = step_val
+                        new_step[step_key] = _interpolate_once(step_val, current_vars)
             step = new_step
 
             result = execute_step(page, step, collected_data, log_callback, block_id, output_dir, stop_event=stop_event)

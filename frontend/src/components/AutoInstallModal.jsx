@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Modal, Button, Input, Tag, Progress, Spin, Empty, Tooltip, Alert } from 'antd'
-import { PackagePlus, Plus, X, Play } from 'lucide-react'
+import { PackagePlus, Plus, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { scanPackages, autoInstallPackages, getInstallStatus } from '../api/client'
 
@@ -111,7 +111,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
 
             {selected.length === 0 ? (
               installedItems.length > 0
-                ? <Alert type="success" showIcon message="Tất cả thư viện cần thiết đã được cài đủ." style={{ marginBottom: 12 }} />
+                ? <Alert type="success" showIcon title="Tất cả thư viện cần thiết đã được cài đủ." style={{ marginBottom: 12 }} />
                 : <Empty description="Không phát hiện thư viện nào cần cài" />
             ) : (
               <>

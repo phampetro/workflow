@@ -120,7 +120,11 @@ def execute_update():
                 
                 req = urllib.request.Request(download_url)
                 req.add_header("User-Agent", "PyFlow-Studio-Updater")
-                with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+                # timeout BẮT BUỘC: không có thì mạng chập chờn làm thread Timer treo
+                # vĩnh viễn, trong khi API đã trả "Đang cập nhật và khởi động lại…"
+                # từ lâu — UI quay spinner mãi, không có gì xảy ra, không có log.
+                # (check_update ở trên đã có timeout=10, chỗ này bị bỏ sót.)
+                with urllib.request.urlopen(req, timeout=120) as response, open(zip_path, 'wb') as out_file:
                     shutil.copyfileobj(response, out_file)
                 
                 if platform.system() == "Windows":

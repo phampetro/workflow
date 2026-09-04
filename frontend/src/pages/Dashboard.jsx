@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, FolderOpen, Clock, Trash2, Settings, ChevronRight, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Download, GripVertical } from 'lucide-react'
+import { Check, Plus, FolderOpen, Clock, Trash2, Settings, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Download } from 'lucide-react'
 import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects, API_BASE } from '../api/client'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Button, Modal, Form, Input, Card, Dropdown, Spin, Empty, Tag, Space, Alert, Tooltip } from 'antd'
+import { Button, Modal, Form, Input, Dropdown, Spin, Tag, Space, Alert, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
 
 const COLORS = ['#6c63ff','#00d4aa','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
@@ -15,6 +15,12 @@ const ICONS = {
 }
 
 export default function Dashboard({ onOpenProject, refreshTick, openCreateModal, onCloseCreateModal, onStatsChange, currentUser }) {
+  // Modal.confirm TĨNH không đọc được context của ConfigProvider: dialog xác nhận
+  // hiện ra với style antd mặc định (xanh dương, bo góc khác, cao khác) lệch hẳn
+  // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
+  // "Static function can not consume context like dynamic theme" ra console.
+  const { modal } = App.useApp()
+
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -150,7 +156,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   }
 
   const handleDelete = (id) => {
-    Modal.confirm({
+    modal.confirm({
       title: 'Xóa Project',
       content: 'Bạn có chắc muốn xóa project này? Tất cả workflows, lịch chạy và virtual environment sẽ bị xóa vĩnh viễn.',
       okText: 'Xóa vĩnh viễn',
@@ -300,8 +306,14 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
                 const IconComponent = ICONS[iconName]
                 const isSelected = selectedIcon === iconName
                 return (
-                  <div
+                  // <button> chứ không <div>: bản cũ không có role/tabIndex/onKeyDown
+                  // nên người dùng bàn phím KHÔNG chọn được biểu tượng, tức không tạo
+                  // nổi project; screen reader thì đọc ra một <div> rỗng.
+                  <button
                     key={iconName}
+                    type="button"
+                    aria-pressed={isSelected}
+                    aria-label={`Biểu tượng ${iconName}`}
                     onClick={() => setSelectedIcon(iconName)}
                     style={{
                       width: 36, height: 36, borderRadius: 8,
@@ -309,11 +321,11 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
                       cursor: 'pointer', background: isSelected ? `${selectedColor}22` : 'var(--bg-base)',
                       border: isSelected ? `2px solid ${selectedColor}` : '2px solid transparent',
                       color: isSelected ? selectedColor : 'var(--text-secondary)',
-                      transition: 'all 0.2s',
+                      transition: 'all 0.2s', padding: 0,
                     }}
                   >
                     <IconComponent size="1.125rem" />
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -321,17 +333,26 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           <Form.Item label="Màu sắc">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {COLORS.map((c) => (
-                <div
+                // Trạng thái "đang chọn" trước đây chỉ báo bằng MÀU + scale + opacity —
+                // người mù màu không phân biệt được ô nào đang chọn (Priority 1:
+                // không dùng màu làm tín hiệu duy nhất). Thêm dấu ✓ và aria-pressed.
+                <button
                   key={c}
+                  type="button"
+                  aria-pressed={selectedColor === c}
+                  aria-label={`Màu ${c}`}
                   onClick={() => setSelectedColor(c)}
                   style={{
                     width: 30, height: 30, borderRadius: '50%', background: c,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
                     cursor: 'pointer', border: selectedColor === c ? '3px solid var(--bg-surface)' : '2px solid transparent',
                     boxShadow: selectedColor === c ? `0 0 0 2px ${c}, 0 4px 12px ${c}88` : 'none',
                     transform: selectedColor === c ? 'scale(1.1)' : 'scale(1)',
                     transition: 'all 0.2s', opacity: selectedColor === c ? 1 : 0.5
                   }}
-                />
+                >
+                  {selectedColor === c && <Check size="1rem" color="#fff" strokeWidth={3} aria-hidden="true" />}
+                </button>
               ))}
             </div>
           </Form.Item>
@@ -343,10 +364,6 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           </div>
         </Form>
       </Modal>
-
-      <style>{`
-        .spinning { animation: spin 1.2s linear infinite; }
-      `}</style>
     </div>
   )
 }
@@ -416,6 +433,15 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
       {...attributes}
       {...listeners}
       onClick={onOpen}
+      // Thẻ project là <div> nên bàn phím không mở được project nào — với người
+      // chỉ dùng bàn phím thì app coi như không dùng được. role/tabIndex/onKeyDown
+      // biến nó thành điểm dừng Tab hợp lệ và nhận Enter/Space như một nút.
+      role="button"
+      tabIndex={0}
+      aria-label={`Mở project ${project.name}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
+      }}
     >
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem', paddingLeft: '1.25rem' }}>

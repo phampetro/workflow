@@ -10,8 +10,23 @@ from sqlalchemy import select, delete
 from database import get_session
 from models import Project, Workflow, WorkflowRun
 from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir, rename_project_dir, slugify
+from routers.ownership import ensure_project_owner
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+# Giữ tham chiếu mạnh tới task nền. Event loop chỉ giữ WEAK reference tới task
+# (tài liệu Python cảnh báo rõ), nên `asyncio.create_task(...)` mà không ai giữ
+# lại có thể bị GC thu hồi GIỮA CHỪNG: workflow biến mất im lặng và WorkflowRun
+# kẹt RUNNING tới lần restart, hoặc venv im lặng không được tạo.
+_background_tasks = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
 
 
 # ── Projects CRUD ──────────────────────────────────────────
@@ -103,7 +118,7 @@ async def create_project(request: Request, body: dict, session: AsyncSession = D
     await session.refresh(project)
 
     # Tạo venv trong background
-    asyncio.create_task(_init_venv_bg(project.id))
+    _spawn(_init_venv_bg(project.id))
 
     return project.to_dict()
 
@@ -111,6 +126,10 @@ async def create_project(request: Request, body: dict, session: AsyncSession = D
 # Các project đang tạo venv (kể cả tạo ngầm lúc create/import) — để FE hiện trạng
 # thái "đang tạo" và chặn tạo trùng khi user bấm nút nhiều lần.
 _venv_creating = set()
+
+# Trần thời gian cho MỘT lệnh `pip install`. Gói nặng (pandas, playwright) tải
+# vài phút là bình thường, nên để rộng; mục tiêu là chặn treo vĩnh viễn.
+PIP_INSTALL_TIMEOUT_SEC = 600
 
 
 async def _init_venv_bg(project_id: str):
@@ -153,7 +172,8 @@ async def get_project(project_id: str, session: AsyncSession = Depends(get_sessi
 
 
 @router.put("/{project_id}")
-async def update_project(project_id: str, body: dict, session: AsyncSession = Depends(get_session)):
+async def update_project(project_id: str, body: dict, request: Request, session: AsyncSession = Depends(get_session)):
+    await ensure_project_owner(request, session, project_id)
     proj = await session.get(Project, project_id)
     if not proj:
         raise HTTPException(404, "Project không tồn tại")
@@ -218,7 +238,8 @@ async def reorder_projects(request: Request, session: AsyncSession = Depends(get
 
 
 @router.delete("/{project_id}", status_code=204)
-async def delete_project(project_id: str, session: AsyncSession = Depends(get_session)):
+async def delete_project(project_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    await ensure_project_owner(request, session, project_id)
     proj = await session.get(Project, project_id)
     if not proj:
         raise HTTPException(404, "Project không tồn tại")
@@ -231,9 +252,20 @@ async def delete_project(project_id: str, session: AsyncSession = Depends(get_se
         select(Workflow).where(Workflow.project_id == project_id)
     )).scalars().all()
 
-    # Dừng mọi run + listener của các workflow con trước khi xoá DB/folder
+    # Dừng mọi run + listener của các workflow con trước khi xoá DB/folder.
+    # Nếu có workflow không dừng kịp thì DỪNG HẲN việc xoá: thread executor còn
+    # sống sẽ ghi file vào thư mục vừa rmtree, để lại thư mục mồ côi vài trăm MB
+    # mà giao diện không hiện và không có cách nào dọn.
+    still_running = []
     for wf in workflows:
-        await _stop_and_wait_workflow_runs(wf.id)
+        if not await _stop_and_wait_workflow_runs(wf.id):
+            still_running.append(wf.name)
+    if still_running:
+        raise HTTPException(
+            409,
+            "Không xoá được: workflow vẫn đang chạy (" + ", ".join(still_running[:3])
+            + "). Hãy bấm Dừng, đợi dứt hẳn rồi xoá lại."
+        )
 
     for wf in workflows:
         await _cascade_delete_workflow_children(session, wf.id)
@@ -305,6 +337,7 @@ def _install_worker(project_id: str, packages: list):
     import subprocess, sqlite3, time
     from services.executor_blocks import create_venv_sync
     from services.venv_manager import venv_exists, get_pip_cmd, DATA_DIR
+    from database import connect_sqlite
     j = _pkg_jobs[project_id]
     try:
         # Nếu venv đang được tạo ngầm (create/import) → đợi xong, tránh tạo trùng gây hỏng
@@ -319,7 +352,7 @@ def _install_worker(project_id: str, packages: list):
             create_venv_sync(project_id)
             # đánh dấu venv_ready để UI khác đồng bộ
             try:
-                with sqlite3.connect(str(DATA_DIR / "pyflow.db"), timeout=5) as conn:
+                with connect_sqlite() as conn:
                     conn.execute("UPDATE project SET venv_ready=1 WHERE id=?", (project_id,))
                     conn.commit()
             except Exception:
@@ -333,12 +366,44 @@ def _install_worker(project_id: str, packages: list):
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
             )
-            for line in proc.stdout:
-                line = line.rstrip()
-                if line:
-                    j["log"].append("   " + line)
-            proc.wait()
-            if proc.returncode != 0:
+
+            # Watchdog: pip KHÔNG có timeout thì mạng công ty chặn PyPI giữa chừng
+            # (stall ở "Downloading…" mà không đóng stdout) sẽ treo thread này vĩnh
+            # viễn, j["status"] mãi là "running" → auto_install_packages thấy
+            # "running" nên KHÔNG BAO GIỜ cho cài lại cho tới khi restart backend,
+            # còn người dùng thì nhìn tiến độ đứng im không có thông báo lỗi nào.
+            # ensure_packages() và venv_manager.install_package() đều đã có timeout,
+            # chỉ đường này bị bỏ sót.
+            import threading as _th_pip
+            _killed = {"v": False}
+
+            def _kill_if_stuck():
+                _killed["v"] = True
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+            _watchdog = _th_pip.Timer(PIP_INSTALL_TIMEOUT_SEC, _kill_if_stuck)
+            _watchdog.daemon = True
+            _watchdog.start()
+            try:
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line:
+                        j["log"].append("   " + line)
+                proc.wait()
+            finally:
+                _watchdog.cancel()
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+
+            if _killed["v"]:
+                j["log"].append(f"❌ Quá {PIP_INSTALL_TIMEOUT_SEC}s chưa cài xong {pkg} — đã huỷ (kiểm tra mạng/proxy tới PyPI)")
+                j["error"] = f"Cài {pkg} quá thời gian cho phép"
+            elif proc.returncode != 0:
                 j["log"].append(f"❌ Lỗi cài {pkg}")
                 j["error"] = f"Một số gói cài lỗi (vd: {pkg})"
             else:
@@ -441,7 +506,7 @@ async def import_project(request: Request, session: AsyncSession = Depends(get_s
     try:
         new_proj = await import_project_from_zip(zip_data, user_id, session)
         # Tạo venv trong nền, giống hệt lúc tạo project mới thủ công
-        asyncio.create_task(_init_venv_bg(new_proj["id"]))
+        _spawn(_init_venv_bg(new_proj["id"]))
         return new_proj
     except Exception as e:
         raise HTTPException(400, f"Lỗi import: {str(e)}")

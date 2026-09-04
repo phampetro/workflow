@@ -49,7 +49,13 @@ LICENSE_FILE = DATA_DIR / "license.key"
 STATE_FILE = DATA_DIR / ".license_state"
 CLOCK_TOLERANCE_DAYS = 2  # cho phép lệch giờ nhỏ trước khi coi là chỉnh ngược
 
-ENFORCE = os.getenv("PYFLOW_LICENSE_ENFORCE", "0") == "1"
+# Bản ĐÓNG GÓI luôn bắt buộc license, không phụ thuộc biến môi trường.
+# Trước đây chỉ đọc PYFLOW_LICENSE_ENFORCE, mà cờ đó chỉ được đặt trong start.vbs
+# (tools/build_release.py) — khách chỉ cần bấm thẳng pyflow-backend.exe thay vì
+# start.vbs là _license_guard thoát ngay ở dòng đầu và mở khoá toàn bộ ứng dụng.
+# Không cần sửa file, không cần patch binary.
+# Bản chạy từ mã nguồn (dev) vẫn mặc định TẮT để không tự khoá mình.
+ENFORCE = getattr(sys, "frozen", False) or os.getenv("PYFLOW_LICENSE_ENFORCE", "0") == "1"
 
 
 # ── base64url không padding ──────────────────────────────────────────────────

@@ -6,7 +6,6 @@ import os
 import sys
 import subprocess
 import json
-import sqlite3
 import unicodedata
 import re
 import asyncio
@@ -29,10 +28,11 @@ def slugify(text: str) -> str:
 
 def get_project_dir(project_id: str) -> Path:
     """Lấy thư mục của project"""
+    from database import connect_sqlite
     db_path = DATA_DIR / "pyflow.db"
     if not db_path.exists():
         raise RuntimeError(f"Database not found: {db_path}")
-    with sqlite3.connect(str(db_path), timeout=5) as conn:
+    with connect_sqlite() as conn:
         row = conn.execute("SELECT name FROM project WHERE id=?", (project_id,)).fetchone()
         if not row:
             raise RuntimeError(f"Project not found: {project_id}")
@@ -226,9 +226,9 @@ def delete_workflow_dir(workflow_id: str, wf_name: str = None, pj_name: str = No
             t.join(timeout=10)
             return
     # Fallback: query DB (chỉ khi chưa xóa)
-    import sqlite3
+    from database import connect_sqlite
     db_path = DATA_DIR / "pyflow.db"
-    conn = sqlite3.connect(str(db_path), timeout=5)
+    conn = connect_sqlite()
     try:
         row = conn.execute(
             "SELECT w.name, p.name FROM workflow w JOIN project p ON w.project_id = p.id WHERE w.id=?",

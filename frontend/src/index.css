@@ -56,6 +56,11 @@
   --border-default: rgba(255, 255, 255, 0.08);
   --border-subtle: rgba(255, 255, 255, 0.04);
   --border-accent: rgba(13, 148, 136, 0.6);
+  /* Được dùng trong BlockEditorModal nhưng chưa từng được khai → declaration
+     invalid, khung "Cấu hình Sắp xếp (Nâng cao)" của Pivot mất hẳn viền và icon
+     empty-state của Excel→SQL rơi về currentColor. */
+  --border-color: var(--border-default);
+  --border-strong: rgba(255, 255, 255, 0.22);
 
   /* Canvas (React Flow) — lưới nền + lớp phủ minimap, khai đủ cả 2 theme */
   --canvas-dot: rgba(255, 255, 255, 0.12);
@@ -138,10 +143,32 @@
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  /* #94a3b8 chỉ đạt 2.56:1 trên nền trắng — dưới ngưỡng 4.5:1. Token này được
+     dùng làm MÀU CHỮ ở hàng chục chỗ (mô tả phụ, timestamp, placeholder). */
+  --text-muted: #64748b;          /* 4.76:1 */
 
   --border-default: #e2e8f0;
   --border-subtle: #f1f5f9;
+  --border-strong: #94a3b8;
+
+  /* --- Accent cho LIGHT THEME ---------------------------------------------
+     Bộ --accent-* ở :root được chọn cho nền TỐI. Trước đây khối light không hề
+     override chúng nên khi bật Giao diện Sáng, mọi nhãn trạng thái/cảnh báo đều
+     dưới chuẩn contrast trên nền trắng:
+        --accent-warning 2.15:1 · --accent-success 2.54:1
+        --accent-primary 3.74:1 · --accent-secondary 3.68:1 · --accent-danger 3.67:1
+     (ngưỡng WCAG AA cho chữ thường là 4.5:1)
+     Các bản đậm hơn dưới đây giữ nguyên tone nhận diện, đều đã đo ≥ 5:1 trên
+     #ffffff — đúng cách bộ --log-* bên dưới đã làm từ trước. */
+  --accent-primary: #0f766e;        /* 5.47:1 */
+  --accent-primary-hover: #115e59;
+  --accent-primary-glow: rgba(15, 118, 110, 0.35);
+  --accent-secondary: #1d4ed8;      /* 6.70:1 */
+  --accent-warning: #b45309;        /* 5.02:1 */
+  --accent-danger: #be123c;         /* 6.29:1 */
+  --accent-success: #15803d;        /* 5.02:1 */
+  --accent-cta: #c2410c;
+  --accent-cta-hover: #9a3412;
 
   /* Canvas — dots tối trên nền sáng để nhìn thấy được; mask minimap nhạt hơn */
   --canvas-dot: rgba(15, 23, 42, 0.18);
@@ -178,7 +205,11 @@ small { font-size: var(--text-sm); }
 /* --- Base --- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { font-family: var(--font-sans); font-size: 14px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+/* 87.5% thay vì 14px cứng: vẫn ra 14px với mặc định 16px của trình duyệt,
+   nhưng SCALE THEO thiết lập cỡ chữ của người dùng. Đặt cứng 14px khiến
+   người chỉnh cỡ chữ Chrome lên 20px để đọc được vẫn thấy app bé y như cũ
+   (WCAG 1.4.4 Resize text). Toàn bộ --text-* tính theo rem nên tự theo. */
+html { font-family: var(--font-sans); font-size: 87.5%; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 body {
   background-color: var(--bg-base);
   color: var(--text-primary);
@@ -199,6 +230,36 @@ body {
 .text-xl   { font-size: var(--text-xl) !important; }
 .text-2xl  { font-size: var(--text-2xl) !important; }
 .text-3xl  { font-size: var(--text-3xl) !important; }
+
+/* --- Class được dùng trong JSX nhưng TRƯỚC ĐÂY CHƯA HỀ ĐƯỢC KHAI BÁO ---
+   .text-sm và .font-semibold có sẵn (một từ đây, một từ Tailwind) nên nhìn lướt
+   rất dễ tưởng cả cụm đều hợp lệ. Hệ quả thật: màn hình "Chưa có dự án nào"
+   (Dashboard) không có layout nào cả — icon render ở cỡ mặc định, không căn giữa,
+   không khoảng cách; còn tên project trên toolbar đọc như text chính vì không
+   nhận được màu phụ. */
+.text-secondary { color: var(--text-secondary); }
+.text-muted     { color: var(--text-muted); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-4);
+  text-align: center;
+  color: var(--text-secondary);
+}
+.empty-state-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Nút "..." trên thẻ project/workflow */
+.project-menu-btn { color: var(--text-muted); }
+.project-menu-btn:hover { color: var(--text-primary); background: var(--bg-hover) !important; }
 
 .fw-normal  { font-weight: 400; }
 .fw-medium  { font-weight: 500; }
@@ -250,6 +311,25 @@ body {
 @media (prefers-reduced-motion: no-preference) {
   @keyframes pyflowRecBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   .pyflow-rec-dot { animation: pyflowRecBlink 1.1s ease-in-out infinite; }
+}
+
+/* --- Animation dùng chung: khai Ở ĐÂY, không nhúng <style> trong component ---
+   `.spinning` từng được khai lại trong 4 file (Navbar/BlockNode/WorkflowEditor/
+   Dashboard) với 4 duration khác nhau, NHƯNG @keyframes spin thì không tồn tại ở
+   đâu cả (Tailwind v4 chỉ emit nó khi có utility `animate-spin`, mà dự án không
+   dùng). Hệ quả: mọi spinner "Đang chạy"/"Đang lưu"/nút Làm mới đều đứng im như
+   icon tĩnh — người dùng không phân biệt được đang chạy với bị treo. */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pyflowPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes pyflowBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+.spinning { transform-origin: 50% 50%; }
+@media (prefers-reduced-motion: no-preference) {
+  .spinning { animation: spin 1s linear infinite; }
+  /* Chấm "Đang lắng nghe" của khối Telegram Listener */
+  .pyflow-pulse { animation: pyflowPulse 2s ease-in-out infinite; }
+  /* Con trỏ gõ chữ khi AI đang sinh code */
+  .pyflow-caret { animation: pyflowBlink 1s step-end infinite; }
 }
 .pulse-dot {
   display: inline-block;
@@ -359,11 +439,16 @@ body {
   filter: brightness(1.1);
 }
 
+/* KHÔNG dùng backdrop-filter ở đây: nó buộc trình duyệt tạo một compositing layer
+   RIÊNG cho TỪNG ô input. Bảng mapping của khối Excel→SQL có 1 <Select> mỗi dòng,
+   nên bảng 40 cột DB = 40 layer blur → cuộn giật, GPU memory tăng vọt. Nền vốn đã
+   gần đục (alpha .5) nên bỏ blur gần như không đổi diện mạo.
+   `transition: all` cũng đã bỏ — nó transition cả thuộc tính layout, chỉ cần
+   border-color và box-shadow là đủ cho hiệu ứng focus. */
 .ant-input, .ant-select-selector {
   background: rgba(24, 24, 27, 0.5) !important;
-  backdrop-filter: blur(8px) !important;
   border: 1px solid var(--border-default) !important;
-  transition: all var(--transition-fast) !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast) !important;
 }
 :root[data-theme="light"] .ant-input, :root[data-theme="light"] .ant-select-selector { background: rgba(255,255,255,0.5) !important; }
 
@@ -456,6 +541,14 @@ body {
   transition: all var(--transition-fast);
   cursor: pointer;
   border-left: 3px solid var(--proj-color, var(--accent-primary));
+}
+
+/* Vòng focus cho thẻ project/workflow — nay chúng là role="button" tabIndex={0}
+   nên PHẢI thấy được mình đang đứng ở đâu khi Tab (Priority 1). */
+.workflow-row:focus-visible,
+.project-row:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 .project-row:hover {

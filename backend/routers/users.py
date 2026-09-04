@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
@@ -6,6 +7,8 @@ from sqlalchemy import select
 
 from database import get_session
 from models import User, Project, Workflow, Schedule
+
+logger = logging.getLogger("pyflow.users")
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -114,6 +117,12 @@ async def activate_user(user_id: str, session: AsyncSession = Depends(get_sessio
 
     schedules_loaded = 0
     listeners_loaded = 0
+    # Lý do đầu tiên khiến việc nạp lại không trọn vẹn — trả về cho FE hiện toast
+    # vàng. Trước đây cả khối này bọc `except Exception: pass` rồi vẫn trả
+    # {"status":"ok"}: nếu lỗi xảy ra sau remove_all_jobs() thì lịch user cũ đã bị
+    # xoá, lịch user mới chưa nạp, mà FE lại hiện toast xanh "Đã chuyển workspace"
+    # — không có lịch nào chạy tới lần restart và không một dòng log nào.
+    reload_warning = None
     # Reload schedules + listeners của user mới
     try:
         async with AsyncSessionLocal() as new_session:
@@ -146,8 +155,9 @@ async def activate_user(user_id: str, session: AsyncSession = Depends(get_sessio
                         )
                         sched.next_run_at = get_next_run_time(sched.id)
                         schedules_loaded += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        reload_warning = reload_warning or f"Lịch {sched.id}: {e}"
+                        logger.error(f"❌ Không nạp được lịch {sched.id} khi đổi workspace: {e}")
                 await new_session.commit()
 
                 # Bật lại các Telegram Listener của user mới
@@ -165,9 +175,16 @@ async def activate_user(user_id: str, session: AsyncSession = Depends(get_sessio
                         try:
                             schedule_run_on_main_loop(wf_id, triggered_by="listener_autostart")
                             listeners_loaded += 1
-                        except Exception:
-                            pass
-    except Exception:
-        pass
+                        except Exception as e:
+                            reload_warning = reload_warning or f"Listener {wf_id}: {e}"
+                            logger.error(f"❌ Không bật lại được listener {wf_id}: {e}")
+    except Exception as e:
+        reload_warning = f"{e}"
+        logger.exception("❌ Lỗi khi nạp lại lịch/listener sau khi đổi workspace")
 
-    return {"status": "ok", "schedules_loaded": schedules_loaded, "listeners_loaded": listeners_loaded}
+    return {
+        "status": "ok",
+        "schedules_loaded": schedules_loaded,
+        "listeners_loaded": listeners_loaded,
+        "warning": reload_warning,
+    }

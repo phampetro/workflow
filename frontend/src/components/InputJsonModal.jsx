@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Card, Modal, Form, Input, Select, App } from 'antd'
+import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Modal, Form, Input, Select, Alert, App } from 'antd'
 import Editor from '@monaco-editor/react'
 import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, API_BASE } from '../api/client'
 import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen, Database, Plug, Pencil } from 'lucide-react'
@@ -23,6 +23,8 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const theme = useStore(state => state.theme)
   const [jsonText, setJsonText] = useState('{}')
   const [savedJsonText, setSavedJsonText] = useState('{}')
+  // Lý do backend không parse được input.json (null = file hợp lệ)
+  const [parseError, setParseError] = useState(null)
   const jsonEditorRef = React.useRef(null)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('json')
@@ -52,10 +54,16 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       } else {
         const cleanData = { ...(initialData || {}) }
         delete cleanData.__raw_text__
+        delete cleanData.__parse_error__
         text = JSON.stringify(cleanData, null, 2)
       }
       setJsonText(text)
       setSavedJsonText(text)
+      // Backend trả __parse_error__ khi input.json có cú pháp sai. Phải hiện
+      // nguyên văn nội dung cũ + lý do, KHÔNG được hiện editor trống: người dùng
+      // sẽ tưởng biến bị mất, gõ lại vài biến rồi Lưu và ghi đè mất sạch token
+      // Telegram / mật khẩu đang có trong file.
+      setParseError(initialData?.__parse_error__ || null)
       if (jsonEditorRef.current) {
         jsonEditorRef.current.setValue(text)
       }
@@ -80,7 +88,13 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   const openDbConnModal = (connection) => {
     setEditingConnection(connection || null)
-    dbConnForm.setFieldsValue(connection || { db_type: 'sqlserver', label: '', host: '', port: '', username: '', password: '', dbname: '' })
+    // API không trả password về nữa (tránh lộ mật khẩu DB qua DevTools/cache), nên
+    // ô mật khẩu luôn mở ra trống. Để trống khi Lưu = backend giữ nguyên mật khẩu cũ.
+    dbConnForm.setFieldsValue(
+      connection
+        ? { ...connection, password: '' }
+        : { db_type: 'sqlserver', label: '', host: '', port: '', username: '', password: '', dbname: '' }
+    )
     setDbConnModalOpen(true)
   }
 
@@ -96,6 +110,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
         username: values.username,
         password: values.password,
         dbname: values.dbname,
+        // Ô mật khẩu để trống khi đang sửa kết nối đã lưu → backend lấy mật khẩu
+        // đang lưu để test, khỏi bắt gõ lại chỉ để bấm Test.
+        saved_connection_id: editingConnection?.id,
       })
       message.success('Kết nối thành công!')
     } catch (e) {
@@ -234,6 +251,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       message.success('Đã lưu cấu hình!')
       setSavedJsonText(currentText)
       setJsonText(currentText)
+      setParseError(null)   // file đã hợp lệ trở lại → gỡ banner cảnh báo
       onClose({ ...parsed, __raw_text__: currentText })
     } catch (e) {
       message.error('Lỗi JSON: ' + e.message)
@@ -338,9 +356,18 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       label: 'Biến môi trường',
       children: (
         <div>
-          <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+          <p style={{ margin: '0 0 12px 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
             Khai báo biến JSON để sử dụng trong Workflow.
           </p>
+          {parseError && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              title="File input.json đang có lỗi cú pháp"
+              description={`${parseError}. Nội dung gốc vẫn được giữ nguyên bên dưới — hãy sửa chỗ sai rồi Lưu. Đừng xoá hết rồi gõ lại: các biến cũ (token, mật khẩu…) sẽ mất.`}
+            />
+          )}
           <div style={{ height: 'calc(100vh - 300px)', border: '1px solid var(--border-default)', borderRadius: 8, overflow: 'hidden' }}>
             <Editor
               height="100%"
@@ -548,8 +575,14 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
         <Form.Item name="username" label="User">
           <Input placeholder="Tên đăng nhập" />
         </Form.Item>
-        <Form.Item name="password" label="Password">
-          <Input.Password placeholder="Mật khẩu" />
+        <Form.Item
+          name="password"
+          label="Password"
+          extra={editingConnection?.has_password
+            ? 'Đã có mật khẩu. Để trống nếu muốn giữ nguyên, hoặc gõ mật khẩu mới để thay.'
+            : undefined}
+        >
+          <Input.Password placeholder={editingConnection?.has_password ? '••••••••  (giữ nguyên)' : 'Mật khẩu'} />
         </Form.Item>
         <Form.Item name="dbname" label="Tên Database">
           <Input placeholder="VD: DMS_Report" />

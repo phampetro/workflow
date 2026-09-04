@@ -136,7 +136,10 @@ async def reload_schedules():
                     sched.next_run_at = get_next_run_time(sched.id)
                     loaded += 1
                 except Exception as e:
-                    pass
+                    # KHÔNG nuốt: cron_expr hỏng (sửa tay / import từ máy khác) làm
+                    # lịch bị bỏ qua im lặng — SchedulerPanel vẫn hiện "Bật" nhưng
+                    # job không bao giờ chạy, và không có dòng log nào giải thích.
+                    logger.error(f"❌ Không nạp được lịch {sched.id} (workflow {sched.workflow_id}): {e}")
             await session.commit()
             logger.info(f"✅ APScheduler started for user {user.name} - loaded {loaded} schedules")
 
@@ -180,7 +183,10 @@ app = FastAPI(lifespan=lifespan, title="PyFlow Studio API")
 # Khi PYFLOW_LICENSE_ENFORCE=1 và license không hợp lệ/hết hạn → chặn mọi API
 # (trừ health, /api/license/* để kích hoạt, /api/system/* để vẫn cập nhật được).
 # Mặc định TẮT (env=0) → middleware thoát ngay, không ảnh hưởng bản dev.
-_LICENSE_ALLOW = ("/health", "/api/license", "/api/system")
+# Chỉ mở đúng những gì cần để KÍCH HOẠT và để biết mình đang dùng bản nào.
+# Trước đây mở cả tiền tố "/api/system" nên POST /api/system/update (git pull +
+# giải nén + restart) vẫn chạy được khi app chưa kích hoạt/đã hết hạn.
+_LICENSE_ALLOW = ("/health", "/api/license", "/api/system/info", "/api/system/check-update")
 
 async def _license_guard(request, call_next):
     if licensing.ENFORCE:
@@ -195,8 +201,47 @@ async def _license_guard(request, call_next):
                 )
     return await call_next(request)
 
-# Thêm guard TRƯỚC CORS để CORS bọc ngoài (response 403 vẫn có header CORS).
+
+# ── CSRF guard ───────────────────────────────────────────────────────────────
+# CORS chỉ chặn trang lạ ĐỌC response, KHÔNG chặn nó GỬI request. Form HTML
+# cross-origin gửi dạng urlencoded/multipart là "simple request" nên không có
+# preflight: request tới nơi và side-effect xảy ra thật. Cụ thể, một tab quảng
+# cáo bất kỳ có thể tự submit form tới POST /api/system/update khiến app git
+# pull + os._exit(0) giữa lúc workflow đang chạy.
+# Vì vậy phải kiểm Origin ở TẦNG ỨNG DỤNG cho mọi method làm đổi trạng thái.
+_ALLOWED_ORIGINS = frozenset({
+    "http://localhost:9000", "http://127.0.0.1:9000",
+    "http://localhost:7000", "http://127.0.0.1:7000",
+    "http://localhost:8000", "http://127.0.0.1:8000",   # bản đóng gói
+})
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+async def _csrf_guard(request, call_next):
+    if request.method in _UNSAFE_METHODS and request.url.path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        if origin and origin not in _ALLOWED_ORIGINS:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "bad_origin",
+                         "detail": "Yêu cầu bị từ chối: origin không được phép."},
+            )
+        # Trình duyệt hiện đại gửi Sec-Fetch-Site; "cross-site" là dấu hiệu chắc
+        # chắn của request từ trang khác, kể cả khi không có Origin.
+        if request.headers.get("sec-fetch-site") == "cross-site":
+            return JSONResponse(
+                status_code=403,
+                content={"error": "bad_origin",
+                         "detail": "Yêu cầu bị từ chối: request đến từ trang khác."},
+            )
+    return await call_next(request)
+
+
+# Thứ tự add_middleware là NGOÀI-VÀO-TRONG ngược lại: add sau = chạy trước.
+# Muốn CORS bọc ngoài cùng (để cả response 403 vẫn có header CORS) thì CORS phải
+# được add SAU CÙNG — xem lệnh add CORSMiddleware ngay bên dưới.
 app.add_middleware(BaseHTTPMiddleware, dispatch=_license_guard)
+app.add_middleware(BaseHTTPMiddleware, dispatch=_csrf_guard)
 
 app.add_middleware(
     CORSMiddleware,
@@ -232,16 +277,31 @@ else:
 frontend_dist = os.path.join(base_dir, "..", "frontend", "dist")
 
 if os.path.exists(frontend_dist):
+    from pathlib import Path as _Path
+
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
-    
+
+    _FRONTEND_ROOT = _Path(frontend_dist).resolve()
+    _INDEX_HTML = _FRONTEND_ROOT / "index.html"
+
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        # Nếu yêu cầu file cụ thể trong dist (ví dụ favicon.ico)
-        file_path = os.path.join(frontend_dist, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        # Còn lại (các route của react-router) trả về index.html
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+        # ⚠ full_path đến từ URL và Starlette KHÔNG chuẩn hoá "..". Trước đây
+        # os.path.join(frontend_dist, full_path) rồi trả thẳng FileResponse, nên
+        #     GET /..%2f..%2fbackend%2fdata%2fpyflow.db
+        # tải về nguyên file SQLite (chứa mật khẩu DB và API key LLM dạng
+        # plaintext). Cùng cách đó đọc được .env, data/license.key và
+        # secrets/license_private.txt. Phải resolve rồi kiểm nằm trong dist.
+        candidate = (_FRONTEND_ROOT / full_path).resolve()
+        try:
+            inside = candidate.is_relative_to(_FRONTEND_ROOT)   # Python 3.9+
+        except AttributeError:                                   # 3.8
+            inside = str(candidate).startswith(str(_FRONTEND_ROOT) + os.sep)
+
+        if inside and candidate.is_file():
+            return FileResponse(candidate)
+        # Còn lại (các route của react-router, và mọi mưu toan thoát thư mục)
+        return FileResponse(_INDEX_HTML)
 
 if __name__ == "__main__":
     # ── Chế độ phụ: cài Chromium riêng cho Playwright ────────────────────────

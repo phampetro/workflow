@@ -6,7 +6,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Divider, Space, Card, Alert, Tooltip, Spin, Empty, Dropdown, Badge, Statistic, Row, Col, message } from 'antd'
+import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App } from 'antd'
 const { Text, Title } = Typography
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -24,6 +24,12 @@ const STATUS_CONFIG = {
 }
 
 export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProjectUpdate }) {
+  // Modal.confirm TĨNH không đọc được context của ConfigProvider: dialog xác nhận
+  // hiện ra với style antd mặc định (xanh dương, bo góc khác, cao khác) lệch hẳn
+  // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
+  // "Static function can not consume context like dynamic theme" ra console.
+  const { modal } = App.useApp()
+
   const [workflows, setWorkflows] = useState([])
   const [packages, setPackages] = useState([])
   const [runHistory, setRunHistory] = useState([])
@@ -175,7 +181,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }
 
   const handleDeleteWorkflow = (id) => {
-    Modal.confirm({
+    modal.confirm({
       title: 'Xóa Workflow',
       content: 'Bạn có chắc muốn xóa workflow này không?',
       okText: 'Xóa',
@@ -927,6 +933,14 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
       {...attributes}
       {...listeners}
       onClick={onOpen}
+      // Cùng lý do với thẻ project ở Dashboard: <div> thuần không nhận Tab/Enter
+      // nên bàn phím không mở được workflow nào.
+      role="button"
+      tabIndex={0}
+      aria-label={`Mở workflow ${workflow.name}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
+      }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
         <div style={{

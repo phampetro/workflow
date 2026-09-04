@@ -1,9 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import {
-  ReactFlow, Background, Controls, MiniMap, Panel,
-  addEdge, useNodesState, useEdgesState, BackgroundVariant,
-  MarkerType, ReactFlowProvider, useReactFlow, useNodesInitialized
-} from '@xyflow/react'
+import { ReactFlow, Background, Controls, MiniMap, addEdge, useNodesState, useEdgesState, BackgroundVariant, MarkerType, ReactFlowProvider, useReactFlow, useNodesInitialized } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import BlockNode, { BLOCK_TYPES, NodeActionsContext } from '../components/BlockNode'
 import DeleteEdge from '../components/DeleteEdge'
@@ -12,10 +8,7 @@ import LogViewer, { formatLogTime } from '../components/LogViewer'
 import SchedulerPanel from '../components/SchedulerPanel'
 import WorkflowHistoryPanel from '../components/WorkflowHistoryPanel'
 import InputJsonModal from '../components/InputJsonModal'
-import {
-  ArrowLeft, Play, Square, Calendar, Terminal, History,
-  Save, Loader, CheckCircle, AlertCircle, Database, Table, Files, RefreshCw, Trash2
-} from 'lucide-react'
+import { ArrowLeft, Play, Square, Calendar, Terminal, History, Save, Loader, CheckCircle, AlertCircle, Database, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Drawer, Space, Input, Popconfirm, Tag, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory, getPendingInput } from '../api/client'
@@ -292,6 +285,17 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     }, 1500)
   }, [wfData?.id])
 
+  // Huỷ autosave đang chờ khi rời màn hình. App.jsx render WorkflowEditor có điều
+  // kiện nên bấm "Quay lại" là unmount thật: nếu không dọn, timer vẫn nổ sau đó và
+  // dialog "Xung đột khi lưu" có thể bật lên giữa màn hình Dashboard — người dùng
+  // không hiểu vì đang không ở trong editor, mà bấm nhầm là reload mất state.
+  useEffect(() => () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+  }, [])
+
   const handleUndo = useCallback(() => {
     const previous = undo(nodesRef.current, edgesRef.current);
     if (previous) {
@@ -365,32 +369,42 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       const res = await updateWorkflow(wfData.id, payload)
       expectedUpdatedAtRef.current = res.data?.updated_at || expectedUpdatedAtRef.current
       setSaveStatus('saved')
+      return { ok: true }
     } catch (err) {
       // BE trả 409 khi FE gửi expected_updated_at khác giá trị hiện tại - có người khác đã lưu
       const detail = err?.response?.data?.detail || err?.response?.data
       const isConflict = err?.response?.status === 409 || detail?.error === 'conflict'
       if (isConflict && !force) {
         setSaveStatus('error')
-        if (conflictDialogOpenRef.current) return
+        if (conflictDialogOpenRef.current) return { ok: false }
         conflictDialogOpenRef.current = true
         modal.confirm({
           title: 'Xung đột khi lưu',
-          content: 'Ai đó (hoặc tab khác của bạn) đã lưu workflow này trong lúc bạn đang sửa. Chọn Tải lại để lấy bản mới nhất (mất thay đổi hiện tại), hoặc Ghi đè để đè lên bản trên server.',
-          okText: 'Tải lại',
-          cancelText: 'Ghi đè',
+          content: 'Ai đó (hoặc tab khác của bạn) đã lưu workflow này trong lúc bạn đang sửa. Chọn Ghi đè để đè bản của bạn lên server (mất thay đổi của người kia), hoặc Tải lại để lấy bản mới nhất (mất thay đổi hiện tại của bạn).',
+          // Ghi đè là hành động PHÁ HUỶ nên phải là lựa chọn chủ động (nút chính,
+          // tô đỏ). Trước đây nó nằm ở onCancel — mà Modal.confirm mặc định
+          // keyboard:true + maskClosable nên bấm Esc hoặc lỡ click ra ngoài là
+          // ghi đè cưỡng bức, xoá mất công việc của tab kia mà không hỏi lại.
+          okText: 'Ghi đè',
+          okButtonProps: { danger: true },
+          cancelText: 'Tải lại',
+          closable: false,
+          keyboard: false,
+          maskClosable: false,
           onOk: () => {
-            conflictDialogOpenRef.current = false
-            window.location.reload()
-          },
-          onCancel: () => {
             conflictDialogOpenRef.current = false
             expectedUpdatedAtRef.current = detail?.server_updated_at || null
             saveGraph(currentNodes, currentEdges, { force: true })
+          },
+          onCancel: () => {
+            conflictDialogOpenRef.current = false
+            window.location.reload()
           },
         })
       } else {
         setSaveStatus('error')
       }
+      return { ok: false }
     }
   }, [wfData?.id, modal])
 
@@ -507,7 +521,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const handleRun = async () => {
     if (!wfData?.id) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    await saveGraph(nodes, edges)
+    // Lưu THẤT BẠI (thường là 409 xung đột) thì KHÔNG được chạy: backend sẽ chạy
+    // graph của tab kia trong khi màn hình đang hiển thị graph của tab này — log
+    // tô sáng sai khối, kết quả sai, rất khó lần ra nguyên nhân.
+    const saved = await saveGraph(nodes, edges)
+    if (saved && !saved.ok) {
+      toast.error('Chưa chạy được: workflow chưa lưu xong. Hãy xử lý xung đột rồi bấm Chạy lại.')
+      return
+    }
 
     setShowLogs(true)
     try {
@@ -1067,8 +1088,6 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         
         .save-status { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); padding: 0 0.75rem; }
         .save-status svg { color: var(--accent-success); }
-
-        .spinning { animation: spin 1s linear infinite; }
 
         .edge-waypoint {
           position: absolute; width: 12px; height: 12px; border-radius: 50%;

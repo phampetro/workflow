@@ -33,7 +33,16 @@ async def create_schedule(workflow_id: str, body: dict, session: AsyncSession = 
     cron_expr = body.get("cron_expr", "").strip()
     if not cron_expr:
         raise HTTPException(400, "Thiếu cron_expr")
-        
+
+    # Validate TRƯỚC khi ghi DB. Trước đây commit enabled=True rồi mới add_job:
+    # cron sai thì trả 400 nhưng row vẫn nằm lại trong DB → SchedulerPanel hiện
+    # lịch ở trạng thái "Bật" mà không bao giờ chạy, và mỗi lần restart backend
+    # add_job lại ném lỗi rồi bị nuốt trong reload_schedules.
+    try:
+        build_cron_trigger(cron_expr)
+    except Exception as e:
+        raise HTTPException(400, f"Lỗi cron: {str(e)}")
+
     sched = Schedule(
         id=str(uuid.uuid4()),
         workflow_id=workflow_id,
@@ -58,7 +67,11 @@ async def create_schedule(workflow_id: str, body: dict, session: AsyncSession = 
             sched.next_run_at = get_next_run_time(sched.id)
             await session.commit()
         except Exception as e:
-            raise HTTPException(400, f"Lỗi cron: {str(e)}")
+            # Cron đã validate ở trên nên tới đây là lỗi khác (APScheduler chưa
+            # chạy…). Vẫn phải dọn row vừa tạo, không để lại lịch "Bật" mồ côi.
+            await session.delete(sched)
+            await session.commit()
+            raise HTTPException(400, f"Không đặt được lịch: {str(e)}")
 
     return sched.to_dict()
 
@@ -125,8 +138,11 @@ async def toggle_schedule(schedule_id: str, body: dict = None, session: AsyncSes
                 replace_existing=True,
             )
             sched.next_run_at = get_next_run_time(sched.id)
-        except Exception:
-            sched.next_run_at = None
+        except Exception as e:
+            # Không nuốt lỗi (giống update_schedule): trước đây vẫn commit
+            # enabled=True với next_run_at=None → lịch hiện "Bật" nhưng không
+            # bao giờ chạy, người dùng không có cách nào biết.
+            raise HTTPException(400, f"Lỗi cron: {str(e)}")
     else:
         try:
             scheduler.remove_job(sched.id)

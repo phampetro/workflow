@@ -19,8 +19,16 @@ _SAVED_CONNECTION_FIELDS = (
 )
 
 
-async def _get_workflow_db_connections(workflow_id: str, session) -> list:
-    """Lấy toàn bộ kết nối Database thuộc về 1 workflow, để đóng gói kèm khi export."""
+async def _get_workflow_db_connections(workflow_id: str, session, include_secrets: bool = False) -> list:
+    """Lấy toàn bộ kết nối Database thuộc về 1 workflow, để đóng gói kèm khi export.
+
+    MẶC ĐỊNH KHÔNG kèm mật khẩu. File export là thứ người dùng gửi cho đồng nghiệp
+    / đính kèm email / up lên chat để chuyển workflow sang máy khác — trước đây
+    workflow.json trong zip chứa "password" dạng plaintext, tức mỗi lần chia sẻ
+    workflow là một lần rò mật khẩu SQL Server nội bộ.
+
+    Người nhận vẫn có đủ host/port/user/dbname, chỉ cần nhập lại mật khẩu một lần.
+    """
     result = await session.execute(
         select(DbConnection).where(DbConnection.workflow_id == workflow_id)
     )
@@ -32,7 +40,8 @@ async def _get_workflow_db_connections(workflow_id: str, session) -> list:
             "host": c.host,
             "port": c.port,
             "username": c.username,
-            "password": c.password,
+            "password": c.password if include_secrets else "",
+            "password_omitted": (not include_secrets) and bool(c.password),
             "dbname": c.dbname,
         }
         for c in result.scalars().all()

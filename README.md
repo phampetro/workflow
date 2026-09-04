@@ -96,7 +96,10 @@ workflow/
 │   │   ├── schedule_endpoints.py     ← Schedule CRUD + toggle (bật/tắt)
 │   │   ├── dashboard.py              ← Thống kê tổng hợp
 │   │   ├── ai_codegen.py             ← Stream code Python từ LLM (OpenAI-compatible)
-│   │   └── system.py                 ← Info app + check update + auto-update
+│   │   ├── system.py                 ← Info app + check update + auto-update
+│   │   ├── license.py                ← Endpoint kích hoạt/xem trạng thái license
+│   │   └── ownership.py              ← Kiểm chủ sở hữu theo X-User-Id (hàng rào chống nhầm
+│   │                                    chéo workspace — KHÔNG phải xác thực)
 │   │
 │   ├── services/                     ← Nghiệp vụ (không lộ HTTP)
 │   │   ├── executor.py               ← Bridge async ↔ thread; sở hữu
@@ -108,7 +111,15 @@ workflow/
 │   │   ├── telegram_listener.py      ← httpx long-polling getUpdates + trigger workflow
 │   │   ├── scheduler.py              ← APScheduler (AsyncIOScheduler) + build_cron_trigger
 │   │   ├── venv_manager.py           ← Tạo/xóa/rename thư mục pj_{slug}/wf_{slug}/.venv
-│   │   └── export_import.py          ← Zip in/out project & workflow (kèm remap DbConnection)
+│   │   ├── export_import.py          ← Zip in/out project & workflow (kèm remap DbConnection).
+│   │   │                                Mặc định KHÔNG kèm mật khẩu DB trong file export.
+│   │   ├── licensing.py              ← Kích hoạt/kiểm license OFFLINE (Ed25519). ENFORCE bật
+│   │   │                                CỨNG khi sys.frozen; env chỉ dùng cho bản dev
+│   │   ├── license_pubkey.py         ← Public key nhúng sẵn để verify chữ ký license
+│   │   ├── block_rules.py            ← "Luật sân chơi" giữa các khối (nguồn sự thật phía BE).
+│   │   │                                ⚠ Giữ đồng bộ TAY với frontend/src/config/blockRules.js
+│   │   ├── browser_recorder.py       ← Ghi thao tác trên trình duyệt → tự sinh step
+│   │   └── pkg_scanner.py            ← Quét code trong graph để đoán thư viện cần cài
 │   │
 │   ├── ws/
 │   │   └── log_socket.py             ← In-memory pub/sub log (subscribe/broadcast/history)
@@ -147,6 +158,11 @@ workflow/
         │   ├── AiSettingsModal.jsx   ← Cấu hình LLM cho AI codegen
         │   ├── AboutModal.jsx        ← Version, check update, chạy update
         │   ├── DeleteEdge.jsx        ← Custom edge có nút xóa
+        │   ├── LicenseGate.jsx       ← Màn khoá khi chưa kích hoạt (mẫu a11y tốt nhất repo)
+        │   ├── AutoInstallModal.jsx  ← Tự cài thư viện thiếu (dùng pkg_scanner)
+        │   ├── InputVarsModal.jsx    ← Popup nhập biến giữa chừng cho khối `input_vars`
+        │   ├── BlockNode.css         ← CSS của khối trên canvas — tách khỏi component để
+        │   │                            KHÔNG nhân bản một thẻ <style> cho MỖI node
         │   └── Navbar.jsx
         │
         ├── api/
@@ -221,7 +237,7 @@ workflow/
 
 ## 🧩 Các khối Workflow (Block Types)
 
-Hiện có **16 loại khối** (`btype`) được xử lý trong `backend/services/executor_blocks.py`, cộng thêm 1 loại đặc biệt (`error_trigger`) không nằm trong luồng chạy chính mà chỉ được kích hoạt khi có lỗi.
+Các khối (`btype`) được xử lý trong `backend/services/executor_blocks.py`, cộng thêm 1 loại đặc biệt (`error_trigger`) không nằm trong luồng chạy chính mà chỉ được kích hoạt khi có lỗi. Ngoài danh sách dưới đây còn có `input_vars` và `queue` — xem mục riêng ở cuối.
 
 > Quy ước: `current_input` là dữ liệu đầu vào khối nhận được (từ khối nối trước nó); sau khi khối chạy, giá trị mới gán cho `current_input` sẽ là dữ liệu truyền tiếp cho khối kế tiếp theo cạnh nối. Nhiều khối gọi biến này là `output_data` bên trong code/script do chính khối đó sinh ra.
 
@@ -340,6 +356,14 @@ Nếu `current_input` trước đó không phải object, bọc thành `{"previo
 { "...(các key cũ giữ nguyên)...", "loop_iteration": 3 }
 ```
 Quyết định đi nhánh `loop` (lặp) hay `endloop` (thoát) dựa theo số lần chạy hoặc điều kiện. `loopDelay` giữa các vòng đã chia nhỏ 0.5s để bấm Dừng phản hồi ngay, không đợi hết delay.
+
+### 17. `input_vars` — Biến đầu vào (chờ người dùng nhập giữa chừng)
+Treo workflow lại, mở popup trên giao diện cho người dùng điền giá trị rồi chạy tiếp. Mỗi field trong `inputFields[]` có `name` — **đó chính là tên biến thật** trong `current_input` và `workflow_env`.
+
+Có `inputTimeout` (giây): hết giờ mà không ai nhập thì khối tự thất bại. Vì khối này **chờ người**, [`block_rules.py`](backend/services/block_rules.py) cấm nó dùng chung workflow với `telegram_listener` và **chặn đặt lịch cron** cho workflow chứa nó (`disables_feature: scheduler`) — cron chạy lúc không có ai ngồi máy thì popup không bao giờ được trả lời.
+
+### 18. `queue` — Xếp hàng
+Chờ các nhánh song song phía trước xong rồi mới chạy tiếp **một lần duy nhất**, tránh khối sau bị kích hoạt nhiều lần khi có nhiều đường dẫn vào.
 
 ### `error_trigger` — Bắt Lỗi toàn cục (không nằm trong luồng chính)
 Không dispatch trong queue bình thường — chỉ tự kích hoạt khi có khối khác gặp lỗi (nếu đã nối). Toàn bộ dữ liệu hiện có **bị thay thế hoàn toàn**:
@@ -510,7 +534,10 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 - **Khối `telegram_listener` chạy `while True: sleep(0.5)`** — chiếm 1 worker cho tới khi Dừng. Đó là lý do phải cấp pool riêng lớn.
 
 ### Về DB
-- **2 kênh truy cập cùng file SQLite**: SQLAlchemy async cho API (`AsyncSessionLocal`), `sqlite3` sync trong executor thread (`_finish_run`, `_set_workflow_listener_flag`). WAL mode giúp không lock, nhưng vẫn phải cẩn thận: đừng long-open async session trong khi executor thread đang UPDATE cùng row.
+- **2 kênh truy cập cùng file SQLite**: SQLAlchemy async cho API (`AsyncSessionLocal`), `sqlite3` sync trong executor thread (`_finish_run`, `_set_workflow_listener_flag`).
+- **WAL + busy_timeout được bật ở [database.py](backend/database.py)** qua `apply_sqlite_pragmas()`, gắn vào sự kiện `connect` của CẢ 2 engine. Kênh sync PHẢI dùng `connect_sqlite()` chứ không `sqlite3.connect()` trần — chỉ một kết nối quên bật là đủ gây `database is locked`.
+  > Trước tháng 09/2026 mục này ghi "WAL mode giúp không lock" nhưng **thực tế chưa hề có dòng `journal_mode` nào** trong backend; DB chạy ở `journal_mode=delete` với busy_timeout mặc định 5s. Đó là lý do `_finish_run` thỉnh thoảng ném lỗi ra ngoài `execute_workflow_thread` và để lại run kẹt RUNNING tới lần restart.
+- Vẫn phải cẩn thận: **đừng long-open async session** trong khi executor thread đang UPDATE cùng row. `run_workflow_internal` đã tách thành 3 đoạn session ngắn, `execute_workflow()` chạy NGOÀI mọi session (workflow có Telegram Listener sống hàng tuần).
 - **Auto-migration** khi startup: [database.py:_sqlite_apply_schema_updates](backend/database.py:30) chỉ thêm cột thiếu, không xóa/đổi kiểu. Muốn đổi schema breaking → tự viết migration.
 - Cột `graph_json` là **TEXT chứa JSON** — luôn `json.loads`/`json.dumps` trước khi đọc/ghi.
 
@@ -538,7 +565,8 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 - **`browser`** merge `key_name`s vào `current_input` cũ (giữ key cũ), khác với `telegram` (chỉ set 2 key), khác với `error_trigger` (thay hoàn toàn).
 
 ### Về port
-- BE 7000, FE 9000. Đã hardcode ở 11 file — nếu đổi lại phải sửa cả: [main.py](backend/main.py) (uvicorn + CORS), [vite.config.js](frontend/vite.config.js), [.claude/launch.json](.claude/launch.json), [client.js](frontend/src/api/client.js) (baseURL), 4 chỗ hardcode `http://localhost:7000` (App.jsx, Dashboard, ProjectDetail, InputJsonModal — dùng cho download link trực tiếp), 3 startup script, README.
+- BE **7000 khi chạy từ mã nguồn**, **8000 khi chạy bản đóng gói** (`main.py` cuối file: `port = 8000 if getattr(sys,'frozen',False) else 7000`). FE dev server 9000.
+- Cần đổi port thì sửa: [main.py](backend/main.py) (uvicorn + CORS + `_ALLOWED_ORIGINS` của CSRF guard), [vite.config.js](frontend/vite.config.js), [.claude/launch.json](.claude/launch.json), [client.js](frontend/src/api/client.js) (`baseURL` — **chỗ duy nhất** còn hardcode `http://localhost:7000`; 4 chỗ cũ ở App.jsx/Dashboard/ProjectDetail/InputJsonModal đã gom về `API_BASE`), 3 startup script, README.
 
 ---
 
