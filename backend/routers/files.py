@@ -2,6 +2,7 @@ import os
 import io
 import mimetypes
 from pathlib import Path
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -251,9 +252,9 @@ async def get_excel_columns(workflow_id: str, filename: str, header_row: str = "
             h_val = h_indices
 
         if str(file_path).endswith('.csv'):
-            df = pd.read_csv(file_path, header=h_val, nrows=0)
+            df = await asyncio.to_thread(pd.read_csv, file_path, header=h_val, nrows=0)
         else:
-            df = pd.read_excel(file_path, header=h_val, nrows=0)
+            df = await asyncio.to_thread(pd.read_excel, file_path, header=h_val, nrows=0)
             
         if isinstance(df.columns, pd.MultiIndex):
             flat_cols = []
@@ -298,9 +299,12 @@ async def get_excel_column_values(workflow_id: str, filename: str, col_name: str
             h_val = h_indices
 
         if str(file_path).endswith('.csv'):
-            df = pd.read_csv(file_path, header=h_val)
+            # to_thread bắt buộc: hàm này đọc TRỌN file để lấy giá trị unique của
+            # 1 cột — file 100MB làm cả app đứng hình hàng phút vì backend chỉ có
+            # MỘT event loop.
+            df = await asyncio.to_thread(pd.read_csv, file_path, header=h_val)
         else:
-            df = pd.read_excel(file_path, header=h_val)
+            df = await asyncio.to_thread(pd.read_excel, file_path, header=h_val)
             
         if isinstance(df.columns, pd.MultiIndex):
             flat_cols = []
@@ -355,17 +359,30 @@ async def get_google_sheets_columns(body: dict):
             else:
                 csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
 
+    # Chốt chặn SSRF: nhánh "/spreadsheets/d/e/" ở trên dùng NGUYÊN URL người dùng
+    # nhập, không hề kiểm host — nên http://192.168.1.1/spreadsheets/d/e/ hay
+    # http://169.254.169.254/spreadsheets/d/e/ sẽ khiến backend fetch giúp rồi trả
+    # nội dung về client, tức quét/đọc dịch vụ nội bộ mà máy tấn công không tới được.
+    # urllib còn hỗ trợ file:// và tự follow redirect sang host nội bộ.
+    _parsed = urllib.parse.urlparse(csv_url)
+    if _parsed.scheme != "https" or _parsed.hostname != "docs.google.com":
+        raise HTTPException(400, "Chỉ chấp nhận link Google Sheet (https://docs.google.com/...)")
+
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         req = urllib.request.Request(csv_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            content_bytes = resp.read()
-            text = content_bytes.decode('utf-8', errors='ignore')
-        
+
+        def _fetch_csv():
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read().decode('utf-8', errors='ignore')
+
+        # to_thread: urlopen chặn tới 15s — đủ để treo SSE log và làm cron lỡ giờ.
+        text = await asyncio.to_thread(_fetch_csv)
+
         header_idx = max(0, header_row - 1)
-        df = pd.read_csv(io.StringIO(text), header=header_idx, nrows=5)
+        df = await asyncio.to_thread(pd.read_csv, io.StringIO(text), header=header_idx, nrows=5)
         cols = [str(c).strip() for c in df.columns if str(c).strip() and not str(c).startswith("Unnamed:")]
         return {"columns": cols, "count": len(cols)}
     except HTTPException:

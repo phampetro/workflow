@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Switch, Button, Select, Alert, Space, Typography } from 'antd';
+import { Modal, Form, Input, Switch, Button, Select, Space, Typography } from 'antd';
 import { Sparkles, CheckCircle2, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAiSettings, saveAiSettings, testAiSettings } from '../api/client';

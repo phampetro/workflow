@@ -178,7 +178,11 @@ class DbConnection(Base):
             "host": self.host,
             "port": self.port,
             "username": self.username,
-            "password": self.password,
+            # KHÔNG trả mật khẩu ra API. Trước đây trả nguyên văn nên mật khẩu SQL
+            # Server production nằm luôn trong tab Network của DevTools và trong
+            # cache trình duyệt. FE chỉ cần biết "đã có mật khẩu hay chưa" để hiện
+            # placeholder; muốn đổi thì gõ mật khẩu mới, để trống = giữ nguyên.
+            "has_password": bool(self.password),
             "dbname": self.dbname,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

@@ -23,3 +23,25 @@ backend/data/license.key
 
 # File dump debug tạm (không phải mã nguồn)
 scratch_*.json
+
+# ── Bản build đóng gói — KHÔNG commit ────────────────────────────────────────
+# `Releases/` và `pyflow-studio/` là output của tools/build_release.py, và chính
+# script đó đã upload artifact lên GitHub Releases (build_release.py:201). Không
+# có dòng code nào ĐỌC 2 thư mục này từ repo.
+#
+# Trước đây chúng được track: 3064/3151 file trong repo là binary build, riêng
+# Releases/update.zip ~86MB được commit lại sau MỖI lần build (30 commit) → .git
+# phình lên 767MB. Tệ hơn: update_and_restart.bat chạy `git pull origin main`,
+# nên mỗi máy khách phải kéo về toàn bộ đống blob đó mỗi lần cập nhật.
+Releases/
+pyflow-studio/
+
+# License đã ký nằm trong bản build (bản ở backend/data đã chặn ở trên).
+# pyflow-studio/backend/_internal/data/license.key từng bị commit — là license
+# THẬT có chữ ký, kèm mã máy của khách.
+*/data/license.key
+**/_internal/data/license.key
+
+# File dump/debug tạm
+diff_output.txt
+frontend/fix_alert.cjs

@@ -1,0 +1,226 @@
+/* CSS của khối trên canvas — TÁCH RA FILE RIÊNG, import một lần.
+
+   Trước đây toàn bộ khối này nằm trong <style> NGAY TRONG component BlockNode,
+   tức mỗi node trên canvas render ra một thẻ <style> giống hệt nhau: workflow 30
+   khối = 30 thẻ <style> với ~6.000 dòng CSS trùng lặp trong DOM. Nặng nhất là lúc
+   chạy workflow — mỗi dòng log SSE bay về đều setNodes() map lại toàn bộ node
+   (WorkflowEditor.jsx), buộc React diff lại chuỗi CSS khổng lồ đó cho từng node
+   nên canvas giật. Các selector ở đây (.block-node, .block-handle...) vốn là
+   global nên 30 bản còn chồng nhau trong cùng một cascade.
+
+   Đây là file dùng chung: sửa ở đây có hiệu lực cho mọi khối. */
+
+        .block-node {
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-md);
+          width: 120px;                 /* Cố định bề ngang 120px theo yêu cầu */
+          height: 60px;                 /* Cố định bề dọc chia hết cho 10 */
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box !important; /* Đảm bảo border nằm bên trong kích thước */
+        }
+
+        .block-node:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 0 0 2px var(--block-color), var(--shadow-md);
+        }
+
+        .block-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 8px;
+          border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+          box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1);
+        }
+
+        .block-type-icon {
+          display: flex;
+          align-items: center;
+          color: rgba(255,255,255,0.9);
+        }
+
+        .block-type-label {
+          font-size: 0.65rem;
+          font-weight: 700;
+          color: white;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          flex: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .block-status-icon {
+          color: white;
+          display: flex;
+          align-items: center;
+        }
+        .block-type-icon svg, .block-status-icon svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        .block-body {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 6px; /* Thay margin bằng gap để dàn đều theo chiều dọc */
+          padding: 8px;
+          border-radius: 0 0 11px 11px;
+          background: var(--bg-surface);
+          overflow: hidden;
+        }
+
+        .block-name {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-primary);
+          line-height: 1.2;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .block-desc {
+          font-size: 0.65rem;
+          color: var(--text-muted);
+          line-height: 1.2;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .block-condition {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+        }
+        .block-condition code {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          display: inline-block;
+          line-height: 1.2;
+          padding: 3px 6px;
+        }
+
+        .condition-label {
+          font-size: 0.6rem;
+          font-weight: 700;
+          color: var(--accent-warning);
+          text-transform: uppercase;
+        }
+
+        .block-condition code {
+          font-size: 0.6rem;
+          background: rgba(245,158,11,0.1);
+          color: var(--accent-warning);
+          border: 1px solid rgba(245,158,11,0.2);
+          padding: 2px 4px;
+          border-radius: var(--radius-sm);
+        }
+
+        .block-actions {
+          position: absolute;
+          top: -34px;
+          right: 0;
+          display: flex;
+          flex-direction: row;
+          gap: 6px;
+          /* padding-bottom nới hộp hover xuống chạm đỉnh node → không còn khe 8px
+             làm rớt hover khi rê chuột lên bấm nút */
+          padding-bottom: 8px;
+          opacity: 0;
+          pointer-events: none;
+          transform: translateY(10px);
+          transition: opacity var(--transition-fast), transform var(--transition-fast);
+          z-index: 100;
+        }
+
+        /* Node sát mép trên: lật thanh nút xuống dưới để không bị .react-flow cắt.
+           padding-top thay padding-bottom để vẫn có "cầu nối" chống rớt hover. */
+        .block-node.actions-below .block-actions {
+          top: 100%;
+          padding-bottom: 0;
+          padding-top: 8px;
+        }
+
+        /* :focus-within BẮT BUỘC phải có ở đây.
+           3 nút Sửa/Sao chép/Xoá bên trong vẫn nằm trong tab order dù opacity:0,
+           nên người dùng bàn phím Tab vào canvas sẽ dừng ở những nút HOÀN TOÀN VÔ
+           HÌNH — và Enter trên <button> vẫn kích hoạt được, tức có thể XOÁ KHỐI mà
+           không thấy gì xảy ra. Ngoài ra thiết bị cảm ứng không hover được nên đây
+           cũng là đường duy nhất chạm tới các nút này (Priority 2: không dựa vào hover). */
+        .block-node:hover .block-actions,
+        .block-node:focus-within .block-actions,
+        .block-node.selected .block-actions {
+          opacity: 1;
+          pointer-events: auto;
+          transform: translateY(0);
+        }
+
+        .block-action-btn:focus-visible {
+          outline: 2px solid var(--accent-primary);
+          outline-offset: 2px;
+        }
+
+        .block-action-btn {
+          width: 26px;
+          height: 26px;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border-default);
+          background: var(--bg-surface);
+          color: var(--text-secondary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .block-action-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+          border-color: var(--border-accent);
+        }
+
+        .block-action-btn.danger:hover {
+          background: rgba(239,68,68,0.1);
+          color: var(--accent-danger);
+          border-color: rgba(239,68,68,0.3);
+        }
+        .block-action-btn svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        .block-handle {
+          width: 10px !important;
+          height: 10px !important;
+          border: 2px solid var(--bg-surface) !important;
+          border-radius: 50% !important;
+          transform: var(--handle-translate, translate(0, -50%)) !important;
+          transition: transform var(--transition-fast) !important;
+          z-index: 10 !important;
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        }
+
+        .block-handle:hover {
+          transform: var(--handle-translate, translate(0, -50%)) scale(1.4) !important;
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+          .status-running { animation: breathe 2s ease-in-out infinite; }
+        }
+
+        @keyframes breathe {
+          0%, 100% { box-shadow: 0 0 8px rgba(34,197,94,0.3); }
+          50% { box-shadow: 0 0 20px rgba(34,197,94,0.6); }
+        }

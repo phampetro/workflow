@@ -7,8 +7,13 @@ apscheduler==3.10.4
 pydantic==2.13.4
 httpx==0.28.1
 python-multipart==0.0.20
-pandas
-openpyxl
-xlrd
-playwright
+# Pin đúng phiên bản đang chạy thật trong backend/.venv.
+# Trước đây 4 gói này thả nổi trong khi mọi gói khác pin chặt, nên setup.bat chạy
+# lại sau vài tháng có thể dựng ra môi trường khác hẳn máy đang dùng.
+# playwright đặc biệt phải pin: bản driver khoá cứng với bản Chromium tương ứng,
+# lệch version là khối Browser hỏng trên máy khách.
+pandas==3.0.3
+openpyxl==3.1.5
+xlrd==2.0.2
+playwright==1.61.0
 cryptography==46.0.3

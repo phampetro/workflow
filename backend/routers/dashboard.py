@@ -33,14 +33,18 @@ async def get_dashboard_stats(request: Request, session: AsyncSession = Depends(
                 running_count += len(_workflow_run_ids[wf_id])
 
         # Filter runs theo project_ids của user
-        stmt = select(WorkflowRun).where(WorkflowRun.project_id.in_(user_project_ids))
+        # CHỈ lấy 2 cột cần dùng. select(WorkflowRun) kéo về MỌI cột, gồm cả
+        # logs_json (TEXT, có thể vài MB mỗi run) — sau 6 tháng dùng là hàng GB
+        # được nạp vào RAM mỗi lần mở Dashboard, trên chính event loop duy nhất.
+        stmt = select(WorkflowRun.status, WorkflowRun.started_at).where(
+            WorkflowRun.project_id.in_(user_project_ids))
     else:
         total_projects = len((await session.execute(select(Project))).scalars().all())
         total_workflows = len((await session.execute(select(Workflow))).scalars().all())
         running_count = sum(len(runs) for runs in _workflow_run_ids.values())
-        stmt = select(WorkflowRun)
+        stmt = select(WorkflowRun.status, WorkflowRun.started_at)
 
-    runs = (await session.execute(stmt)).scalars().all()
+    runs = (await session.execute(stmt)).all()   # list[Row(status, started_at)]
     today = date.today()
     completed_today = 0
     failed_today = 0

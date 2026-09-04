@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,19 @@ class DbConfig(BaseModel):
     password: str = ""
     dbname: str = ""
     driver: str = "ODBC Driver 17 for SQL Server"
+    # Khi sửa một kết nối đã lưu, FE để ô mật khẩu trống (API không trả password
+    # về nữa). Gửi kèm id để backend lấy mật khẩu đang lưu mà test, thay vì bắt
+    # người dùng gõ lại mật khẩu chỉ để bấm "Test kết nối".
+    saved_connection_id: str | None = None
+
+
+async def _fill_saved_password(config: "DbConfig", session: AsyncSession) -> None:
+    """Điền mật khẩu đã lưu vào config nếu FE gửi lên rỗng."""
+    if config.password or not config.saved_connection_id:
+        return
+    conn = await session.get(DbConnection, config.saved_connection_id)
+    if conn and conn.password:
+        config.password = conn.password
 
 class GetSchemaRequest(BaseModel):
     config: DbConfig
@@ -97,7 +111,8 @@ else:
         raise HTTPException(400, f"Lỗi hệ thống: {str(e)}")
 
 @router.post("/api/database/tables")
-async def get_tables(body: DbConfig):
+async def get_tables(body: DbConfig, session: AsyncSession = Depends(get_session)):
+    await _fill_saved_password(body, session)
     script = """
 try:
     engine = create_engine(conn_str, fast_executemany=True)
@@ -113,13 +128,18 @@ except ValueError as e:
 except Exception as e:
     print(json.dumps({"error": str(e)}))
 """
-    return run_db_script(body, script)
+    # await to_thread: run_db_script chạy ensure_packages (pip install, tới 5 phút)
+    # rồi subprocess.run(timeout=20). Gọi thẳng từ async def sẽ chặn event loop
+    # DUY NHẤT của app: log SSE của workflow đang chạy đứng im, cron tới giờ
+    # không bắn, mọi tab khác treo — người dùng tưởng app crash và kill process.
+    return await asyncio.to_thread(run_db_script, body, script)
 
 @router.post("/api/database/columns")
-async def get_columns(body: GetSchemaRequest):
+async def get_columns(body: GetSchemaRequest, session: AsyncSession = Depends(get_session)):
     if not body.table_name:
         raise HTTPException(400, "Vui lòng cung cấp tên bảng")
-        
+    await _fill_saved_password(body.config, session)
+
     table_name = body.table_name
     script = f"""
 try:
@@ -137,7 +157,7 @@ except ValueError as e:
 except Exception as e:
     print(json.dumps({{"error": str(e)}}))
 """
-    return run_db_script(body.config, script)
+    return await asyncio.to_thread(run_db_script, body.config, script)
 
 @router.get("/api/database/connections")
 async def list_db_connections(workflow_id: str, session: AsyncSession = Depends(get_session)):
@@ -160,6 +180,12 @@ async def update_db_connection(connection_id: str, body: DbConnectionBody, sessi
     if not conn:
         raise HTTPException(404, "Không tìm thấy kết nối")
     for k, v in body.dict().items():
+        # Ô mật khẩu để TRỐNG = giữ nguyên mật khẩu đang có. Bắt buộc phải vậy vì
+        # API không còn trả password về FE (xem DbConnection.to_dict), nên form
+        # sửa kết nối luôn mở ra với ô mật khẩu rỗng — nếu ghi đè thì chỉ cần mở
+        # ra bấm Lưu là mất mật khẩu.
+        if k == "password" and not v:
+            continue
         setattr(conn, k, v)
     await session.commit()
     await session.refresh(conn)

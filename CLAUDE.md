@@ -43,6 +43,12 @@ Dùng CSS variables định nghĩa trong [`frontend/src/index.css`](frontend/src
 
 Mỗi biến đã có override cho `:root[data-theme="light"]`. Khi thêm token mới phải khai báo cả 2 chế độ.
 
+⚠ **Bộ `--accent-*` có bản riêng cho light theme** (`#0f766e`, `#b45309`, `#15803d`…) vì bản dark dùng trên nền trắng chỉ đạt 2,1–3,7:1. Thêm accent mới phải đo contrast trên `--bg-surface` của **cả 2 theme**, tối thiểu 4,5:1.
+
+⚠ **Trong `theme.components` của `ConfigProvider` ([App.jsx](frontend/src/App.jsx)), mỗi component CHỈ ĐƯỢC khai MỘT key.** Khai 2 lần thì key sau xoá sạch key trước — đã từng làm mất `activeShadow` (vòng focus) của Select suốt một thời gian dài mà không ai thấy.
+
+⚠ **Animation dùng chung khai trong `index.css`, không nhúng `<style>` trong component.** `@keyframes spin` từng không tồn tại trong khi 4 file cùng khai `.spinning` → mọi spinner trong app đứng im. CSS của khối canvas nằm ở [BlockNode.css](frontend/src/components/BlockNode.css).
+
 Nếu buộc phải dùng màu ngoài palette (VD màu log level, syntax highlight), phải:
 - Đặt thành CSS variable riêng (VD `--log-info`, `--log-success`) trong `index.css`.
 - Khai đủ cho cả dark + light theme (`:root[data-theme="light"]`).
@@ -94,6 +100,26 @@ Khi thêm khối mới có trả dữ liệu ra, hoặc thêm giá trị trả v
 
 Chi tiết đầy đủ + bảng field theo từng khối: README §"Biến toàn cục (`{{var}}` & `workflow_env`)" mục 3.
 
+## Bảo mật (sản phẩm CÓ giao cho khách — không còn là "app local")
+
+Có hệ thống license + `Releases/` + tự cập nhật, tức app chạy trên máy người khác. Các hàng rào dưới đây đã trả giá bằng lỗ hổng thật, **đừng gỡ**:
+
+- **Route phục vụ frontend** ([main.py](backend/main.py)) phải `resolve()` + kiểm `is_relative_to(dist)`. Bỏ ra là `GET /..%2f..%2fbackend%2fdata%2fpyflow.db` tải được nguyên database (chứa mật khẩu DB + API key LLM plaintext).
+- **`licensing.ENFORCE`** phải bật cứng theo `sys.frozen`, KHÔNG chỉ đọc env — cờ env chỉ nằm trong `start.vbs`, khách bấm thẳng `.exe` là mở khoá toàn bộ.
+- **Mọi giá trị đi qua `interpolate()` đều có thể do người ngoài điều khiển** (tin nhắn Telegram, ô Google Sheet). Vì vậy:
+  - Nhúng vào code sinh ra phải dùng `!r` (xem `sql_query` trong khối `sql_to_excel`).
+  - Tên bảng SQL phải qua `_VALID_TABLE_NAME`.
+  - Tên file phải qua `safe_filename()` — kể cả file đính kèm Telegram/Email.
+  - Nội suy phải là **một lượt `re.sub`** (`interpolate` ở executor, `_interpolate_once` ở [browser_executor.py](backend/services/browser_executor.py)). For-loop `replace` gây chain-replace làm rò mật khẩu từ `input.json`.
+- **`_csrf_guard`** trong main.py kiểm `Origin`/`Sec-Fetch-Site`: CORS chỉ chặn ĐỌC response, không chặn GỬI request.
+- **Không trả `password` của `DbConnection` ra API** và không đóng gói vào file export. Ô mật khẩu để trống khi sửa = giữ nguyên.
+
+## SQLite: WAL
+
+`database.py` bật WAL + `busy_timeout=15000` qua `apply_sqlite_pragmas()` cho **cả 2 engine**. Trong thread executor phải dùng **`connect_sqlite()`**, không `sqlite3.connect()` trần — một kết nối quên bật là đủ gây `database is locked` và làm run kẹt RUNNING.
+
+`run_workflow_internal` tách 3 đoạn session ngắn; **`execute_workflow()` chạy NGOÀI mọi session** (workflow có Telegram Listener sống hàng tuần, giữ session là cạn pool).
+
 ## Multi-user
 
 Hệ thống có nhiều user, chỉ **1 user `is_active=True`** tại 1 thời điểm. **Chỉ schedule/listener của user active mới chạy** — đây là design intentional, đừng "fix". Xem README §Multi-user để biết cách activate + reload.
@@ -124,5 +150,11 @@ Type: `fix`/`feat`/`refactor`/`chore`/`docs`/`perf`.
 - Không thêm multi-worker uvicorn (state in-memory sẽ vỡ).
 - Không add auth token/session giả trong FE — hệ thống local-only, `X-User-Id` là đủ.
 - Không revert các fix ETag/rename/SSE reconnect/BroadcastChannel/ThreadPoolExecutor riêng — đều có lý do đã ghi.
+- Không bỏ `connect_sqlite()` để quay lại `sqlite3.connect()` trần (mất WAL/busy_timeout).
+- Không bọc `execute_workflow()` trong `async with AsyncSessionLocal()` — cạn connection pool khi có Telegram Listener.
+- Không dùng `asyncio.create_task` trần trong routers — dùng `_spawn()` để giữ tham chiếu mạnh (task có thể bị GC giữa chừng).
+- Không pop listener khỏi `_active_listeners`/`_stop_events`/`_active_configs` theo key — phải so **danh tính task** (`is`), nếu không sẽ chạy 2 listener cùng bot token và mỗi tin nhắn kích hoạt workflow 2 lần.
+- Không bỏ `run_id` khỏi đường dẫn `runs/<run_id>/<khối>/main.py` — 2 run song song sẽ ghi đè code của nhau.
+- Không commit `Releases/` hay `pyflow-studio/` (build artifact) — xem `.gitignore`.
 - Không quay lại cơ chế "bí danh": trả key tên gốc trong `current_input` rồi chỉ ghi tên custom vào `workflow_env`. Xem §Quy ước biến output của khối.
 - Không bỏ field nào ra khỏi `NON_INTERPOLATED_KEYS`, và không thêm field "tên biến" mới mà quên khai vào đó.

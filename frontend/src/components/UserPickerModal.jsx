@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { User, Plus, Trash2, LogIn, FolderOpen, Workflow, Clock, CheckCircle } from 'lucide-react'
-import { Modal, Button, Input, Spin, Empty } from 'antd'
+import { Modal, Button, Input, Spin, Empty, App } from 'antd'
 import { getUsers, createUser, deleteUser, activateUser, getUserStats } from '../api/client'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -14,6 +14,12 @@ import useStore from '../store/useStore'
  *   allowClose    boolean         — có cho phép bấm X không (false khi chưa có user nào)
  */
 export default function UserPickerModal({ open, onClose, onSelect, allowClose = true }) {
+  // Modal.confirm TĨNH không đọc được context của ConfigProvider: dialog xác nhận
+  // hiện ra với style antd mặc định (xanh dương, bo góc khác, cao khác) lệch hẳn
+  // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
+  // "Static function can not consume context like dynamic theme" ra console.
+  const { modal } = App.useApp()
+
   const currentUser = useStore((s) => s.currentUser)
   const [users, setUsers] = useState([])
   const [userStats, setUserStats] = useState({}) // { [userId]: { project_count, workflow_count, schedule_count } }
@@ -97,7 +103,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
 
   const handleDelete = async (e, user) => {
     e.stopPropagation()
-    Modal.confirm({
+    modal.confirm({
       title: `Xóa "${user.name}"?`,
       content: 'Tất cả projects, workflows và lịch chạy của người dùng này sẽ bị xóa vĩnh viễn.',
       okText: 'Xóa',

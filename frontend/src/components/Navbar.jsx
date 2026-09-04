@@ -398,9 +398,6 @@ export default function Navbar({
         }
 
 
-        .spinning {
-          animation: spin 1s linear infinite;
-        }
       `}</style>
     </header>
   )

@@ -248,12 +248,23 @@ async def stop_telegram_listener(workflow_id: str) -> bool:
         pass
 
     for _ in range(50):  # tối đa ~5s
-        if workflow_id not in _active_listeners:
+        if _active_listeners.get(workflow_id) is not task:
             break
         await asyncio.sleep(0.1)
     else:
-        # Không dọn được thì tự xoá, tránh is_listener_running() báo sai vĩnh viễn
-        _active_listeners.pop(workflow_id, None)
+        # Hết 5s mà task cũ vẫn còn đăng ký (điển hình: đang kẹt trong getUpdates
+        # long-poll 30s). Xoá theo DANH TÍNH, không xoá theo key.
+        #
+        # Trước đây pop thẳng theo workflow_id, kết hợp với việc thread listener cũ
+        # cũng pop theo key trong `finally`, tạo ra chuỗi hỏng thật:
+        #   1. hết 5s → key bị xoá dù task cũ CÒN SỐNG;
+        #   2. người dùng bấm Chạy lại → listener MỚI đăng ký vào cùng key;
+        #   3. ~10s sau task CŨ mới chết và `finally` pop mất listener MỚI;
+        #   4. is_listener_running() = False → lần chạy sau bật thêm listener thứ 2
+        #      với cùng bot token → Telegram chia tin ngẫu nhiên giữa 2 kết nối,
+        #      MỖI TIN NHẮN kích hoạt workflow 2 lần (2 lần gửi mail, 2 lần import SQL).
+        if _active_listeners.get(workflow_id) is task:
+            _active_listeners.pop(workflow_id, None)
 
     return True
 

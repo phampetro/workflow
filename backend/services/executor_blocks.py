@@ -23,12 +23,22 @@ import io
 import pandas as pd
 
 from services import venv_manager
+# connect_sqlite = sqlite3.connect tới pyflow.db đã bật sẵn WAL + busy_timeout 15s.
+# Bắt buộc dùng ở mọi chỗ trong thread executor: kênh sync này ghi song song với
+# SQLAlchemy async của tầng API, chỉ cần một kết nối quên bật là đủ gây
+# "database is locked" và làm run kẹt RUNNING (xem database.apply_sqlite_pragmas).
+from database import connect_sqlite
 
 DATA_DIR = venv_manager.DATA_DIR
 WORKFLOW_DB = DATA_DIR / "pyflow.db"
 
+logger = logging.getLogger("pyflow.executor_blocks")
+
 _active_runs = {}
 _active_procs = {}
+# run_id -> thu muc data/pj_*/wf_*/runs/<run_id> chua main.py sinh ra cho lan chay do.
+# _finish_run xoa theo dict nay.
+_active_run_script_dirs = {}
 _workflow_run_ids = {}
 
 # Các run "thường trú" chỉ để giữ Telegram Listener sống (kẹt ở `while True` chờ nút
@@ -144,8 +154,7 @@ def slugify(text: str) -> str:
     return text
 
 def get_project_dir(project_id: str) -> Path:
-    db_path = venv_manager.DATA_DIR / "pyflow.db"
-    with sqlite3.connect(str(db_path), timeout=5) as conn:
+    with connect_sqlite() as conn:
         row = conn.execute("SELECT name FROM project WHERE id=?", (project_id,)).fetchone()
         name = row[0] if row else "unknown"
     return DATA_DIR / f"pj_{slugify(name)}"
@@ -153,8 +162,7 @@ def get_project_dir(project_id: str) -> Path:
 def get_saved_db_connection(connection_id: str) -> dict | None:
     if not connection_id:
         return None
-    db_path = venv_manager.DATA_DIR / "pyflow.db"
-    with sqlite3.connect(str(db_path), timeout=5) as conn:
+    with connect_sqlite() as conn:
         row = conn.execute(
             "SELECT db_type, host, port, username, password, dbname FROM db_connection WHERE id=?",
             (connection_id,)
@@ -228,7 +236,7 @@ def _stop_telegram_listener_sync(workflow_id: str, log_fn=None):
 def _set_workflow_listener_flag(workflow_id: str, on: bool):
     """Cập nhật cột workflow.listener_on trong DB (sync, chạy trong thread executor)."""
     try:
-        with sqlite3.connect(str(WORKFLOW_DB), timeout=5) as conn:
+        with connect_sqlite() as conn:
             conn.execute(
                 "UPDATE workflow SET listener_on=? WHERE id=?",
                 (1 if on else 0, workflow_id)
@@ -400,6 +408,26 @@ def indent_code(code: str, spaces: int = 4) -> str:
     return "\n".join(" " * spaces + line for line in code.splitlines())
 
 
+# Định danh bảng SQL hợp lệ: ten_bang hoặc schema.ten_bang. Dùng để chặn chuỗi
+# lạ được ghép vào "TRUNCATE TABLE [...]" ở khối excel_to_sql — ô tên bảng có đi
+# qua nội suy {{var}} nên giá trị có thể đến từ dữ liệu người ngoài gửi vào.
+_VALID_TABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+
+
+def safe_filename(name: str, fallback: str) -> str:
+    """Rút gọn về TÊN FILE THUẦN, bỏ mọi thành phần đường dẫn.
+
+    Các ô tên file (excelFileName…) đều đi qua nội suy {{var}}, nên giá trị có thể
+    đến từ tin nhắn Telegram hoặc ô Google Sheet của người khác. Tên file được
+    nhúng vào script con rồi `os.path.join(OUTPUT_DIR, out_file)` — với
+    "../../pyflow.db" thì df.to_excel() ghi đè thẳng lên database chính.
+    """
+    raw = str(name or "").replace("\\", "/").strip()
+    base = os.path.basename(raw).strip()
+    if not base or base in (".", ".."):
+        return fallback
+    return base
+
 # Các field trong bdata chỉ chứa TÊN BIẾN (hoặc code), KHÔNG chứa giá trị →
 # không được nội suy {{var}}/tên trần. Nếu nội suy, tên biến bị thay bằng chính
 # giá trị của biến đó ngay khi tên đã tồn tại trong workflow_env (VD khối chạy
@@ -533,16 +561,18 @@ def topological_sort(nodes: list, edges: list) -> list:
 
 
 def get_workflow_dir(project_id: str, workflow_id: str) -> Path:
-    with sqlite3.connect(str(WORKFLOW_DB), timeout=5) as conn:
+    with connect_sqlite() as conn:
         row = conn.execute("SELECT name FROM workflow WHERE id=?", (workflow_id,)).fetchone()
         name = row[0] if row else "unknown"
     return get_project_dir(project_id) / f"wf_{slugify(name)}"
 
-def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None, workflow_env=None):
+def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None, workflow_env=None, run_id=None):
     """Chạy 1 block Python synchronously, có thể bị ngắt bởi stop_event.
 
     ``timeout`` <= 0 (hoặc None) = chờ vô hạn, dùng cho thủ tục SQL chạy vài tiếng.
     Vẫn dừng được bằng nút Dừng vì ``stop_event`` được kiểm tra mỗi 0.5s.
+
+    ``run_id`` quyết định thư mục chứa main.py sinh ra — xem giải thích bên dưới.
     """
     if not venv_exists(project_id):
         create_venv_sync(project_id)
@@ -550,7 +580,23 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
     python_exe = get_python_path(project_id)
     wf_dir = get_workflow_dir(project_id, workflow_id)
     wf_dir.mkdir(parents=True, exist_ok=True)
-    block_dir = wf_dir / slugify(label or block_id)
+
+    # Tách theo run_id. Trước đây đường dẫn chỉ gồm NHÃN khối, trong khi main.py
+    # sinh ra đã NHÚNG SẴN giá trị nội suy của đúng lượt chạy đó (câu SQL kèm
+    # {{text}}, tên file kết quả, chuỗi kết nối...). Hai run song song — rất dễ xảy
+    # ra khi 2 tin nhắn Telegram tới gần nhau — sẽ ghi đè main.py của nhau:
+    # run A ghi file → run B ghi đè → run A mới Popen → **run A chạy câu SQL của
+    # tin nhắn B**, ghi kết quả sai mà không một dòng log nào bất thường.
+    # Trường hợp nhẹ hơn nhưng chắc chắn xảy ra: 2 khối Python TRÙNG NHÃN trong
+    # cùng workflow dùng chung một file.
+    if run_id:
+        run_root = wf_dir / "runs" / str(run_id)
+        block_dir = run_root / slugify(label or block_id)
+        # Ghi nhớ để _finish_run xoá — vừa chặn thư mục runs/ phình mãi, vừa không
+        # để chuỗi kết nối (mssql+pyodbc://user:pass@...) nằm lại trên đĩa vĩnh viễn.
+        _active_run_script_dirs[str(run_id)] = run_root
+    else:
+        block_dir = wf_dir / slugify(label or block_id)
     block_dir.mkdir(parents=True, exist_ok=True)
     output_dir = wf_dir / "output"
     output_dir.mkdir(exist_ok=True)
@@ -680,10 +726,20 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
 
         duration = int((datetime.now() - start).total_seconds() * 1000)
         output_data = None
-        
+
         # Ensure threads have finished reading
         t_out.join(timeout=1)
         t_err.join(timeout=1)
+
+        # Người dùng bấm Dừng: kill_run() giết tiến trình TRƯỚC rồi mới set cờ, nên
+        # proc.wait(0.5) ở vòng trên trả về ngay và `break` — không đi qua nhánh kiểm
+        # stop_event bên trong vòng. Không kiểm lại ở đây thì returncode != 0 sẽ bị
+        # hiểu thành "Unknown error": lịch sử ghi LỖI và khối Bắt Lỗi bắn cảnh báo giả
+        # dù người dùng chỉ bấm Dừng.
+        if stop_event and stop_event.is_set():
+            if log_fn:
+                log_fn(block_id, "warning", f"⏹ Block đã bị dừng ({duration}ms)")
+            return False, None, "stopped", duration
 
         for line in output_lines:
             try:
@@ -755,8 +811,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
         triggered_by = None
         try:
-            import sqlite3
-            with sqlite3.connect(str(WORKFLOW_DB)) as conn:
+            with connect_sqlite() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT triggered_by FROM workflow_run WHERE id=?", (run_id,))
                 row = cursor.fetchone()
@@ -793,7 +848,14 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         in_error_mode = False
         
         def handle_workflow_error(error_msg, failed_bid=None, failed_label=None):
-            nonlocal in_error_mode, queue
+            nonlocal in_error_mode, queue, workflow_failed, final_error
+            # Workflow ĐÃ thất bại, dù nhánh Bắt Lỗi có chạy trơn tru sau đó.
+            # Trước đây nhánh error_trigger return False mà không ghi nhận gì →
+            # _finish_run cuối hàm vẫn nhận "success", Lịch sử báo Thành công và
+            # Dashboard đếm là chạy thành công cho một workflow đã lỗi.
+            workflow_failed = True
+            if final_error is None:
+                final_error = error_msg
             if in_error_mode:
                 _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn)
                 return True
@@ -816,6 +878,25 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
             else:
                 _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn)
                 return True
+
+        def on_block_failed(error_msg, failed_bid, failed_label, fail_log=None):
+            """Xử lý chung cho MỌI khối chạy qua run_python_block_sync khi thất bại.
+
+            Trả về hành động cho caller tự thực hiện ('stopped' | 'abort' | 'continue')
+            — không thể break/return hộ vì đang ở trong vòng lặp của caller.
+
+            Gom về một chỗ vì trước đây chỉ khối `python` và `browser` kiểm
+            error == "stopped"; 5 khối SQL/Excel thiếu nhánh này nên bấm Dừng giữa
+            lúc import 500k dòng bị ghi thành LỖI và bắn cảnh báo Bắt Lỗi vô cớ.
+            Thêm khối mới chỉ cần gọi hàm này là tự có đủ 3 nhánh.
+            """
+            if error_msg == "stopped":
+                return "stopped"
+            if log_fn:
+                log_fn("system", "error", fail_log or
+                       f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
+            return "abort" if handle_workflow_error(error_msg, failed_bid, failed_label) else "continue"
+
         queue.append((start_nodes[0]["id"], initial_input))
 
         if log_fn:
@@ -827,6 +908,12 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         # Thiếu biến này là lý do 11/28 run trong lịch sử có status=error mà
         # error_message rỗng → mở Lịch sử chỉ thấy "Lỗi" trần, không biết vì sao.
         final_error = None
+        # Đã có khối gặp lỗi, KỂ CẢ khi nhánh Bắt Lỗi đã xử lý xong êm đẹp.
+        # Phải tách khỏi final_status: cổng ở cuối vòng (`final_status != "error"`)
+        # quyết định output có được đẩy sang khối kế hay không, nên đặt
+        # final_status="error" ngay lúc lỗi sẽ làm nhánh Bắt Lỗi chỉ chạy được
+        # đúng khối đầu tiên. Chỉ quy đổi sang status cuối cùng sau vòng lặp.
+        workflow_failed = False
         run_counts = collections.Counter()
         loop_states = {}
 
@@ -1118,9 +1205,17 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 finally:
                                     # Task đã kết thúc (bị dừng/hủy/lỗi) - dọn khỏi bảng theo dõi
                                     # để is_listener_running() phản ánh đúng trạng thái thật.
-                                    _listeners_map.pop(workflow_id, None)
-                                    _stops_map.pop(workflow_id, None)
-                                    _cfg_map.pop(workflow_id, None)
+                                    #
+                                    # CHỈ dọn khi bảng còn đang trỏ tới ĐÚNG task này. Thread cũ
+                                    # có thể chết muộn (kẹt trong getUpdates long-poll 30s) — lúc
+                                    # đó người dùng đã Chạy lại và một listener MỚI đã đăng ký vào
+                                    # cùng key. Pop theo key sẽ xoá mất listener mới, khiến lần
+                                    # chạy sau bật thêm listener thứ 2 cùng bot token và MỖI TIN
+                                    # NHẮN kích hoạt workflow 2 lần.
+                                    if _listeners_map.get(workflow_id) is task:
+                                        _listeners_map.pop(workflow_id, None)
+                                        _stops_map.pop(workflow_id, None)
+                                        _cfg_map.pop(workflow_id, None)
                                     loop.close()
 
                             _t = _threading_listener.Thread(
@@ -1129,6 +1224,31 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 name=f"tg-listener-{workflow_id}",
                             )
                             _t.start()
+
+                            # Chờ listener ĐĂNG KÝ được rồi mới ghi cờ persist.
+                            # Trước đây set cờ ngay sau _t.start(): nếu Bot Token sai
+                            # thì listener chết sau ~1 giây nhưng listener_on vẫn = 1
+                            # trong DB, nên mỗi lần restart backend reload_telegram_
+                            # listeners lại hồi sinh đúng cái xác đó.
+                            import time as _time_reg
+                            _registered = False
+                            for _ in range(60):          # tối đa 6s
+                                if is_listener_running(workflow_id):
+                                    _registered = True
+                                    break
+                                _time_reg.sleep(0.1)
+
+                            if not _registered:
+                                _set_workflow_listener_flag(workflow_id, False)
+                                _act = on_block_failed(
+                                    "Không bật được Telegram Listener (kiểm tra Bot Token và kết nối mạng)",
+                                    bid, label)
+                                if _act == "stopped":
+                                    final_status = "stopped"
+                                    break
+                                if _act == "abort":
+                                    return
+                                continue
 
                             _set_workflow_listener_flag(workflow_id, True)
 
@@ -1157,6 +1277,17 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             _set_workflow_listener_flag(workflow_id, False)
                             final_status = "stopped"
                             break
+                        # Listener có thể chết giữa chừng (Telegram trả 401 vì token bị
+                        # thu hồi, mất mạng dài...). Trước đây vòng này chỉ nhìn
+                        # stop_event nên run treo RUNNING vô hạn, chiếm 1 worker của
+                        # pool và không ai biết listener đã ngừng nghe từ lúc nào.
+                        if not is_listener_running(workflow_id):
+                            _set_workflow_listener_flag(workflow_id, False)
+                            if log_fn:
+                                log_fn(bid, "error", "❌ Telegram Listener đã ngừng hoạt động (token bị thu hồi hoặc mất kết nối). Bấm Chạy lại sau khi kiểm tra cấu hình.")
+                            final_status = "error"
+                            final_error = "Telegram Listener ngừng hoạt động ngoài ý muốn"
+                            break
                         _time_listener.sleep(0.5)
                     break
             elif btype == "telegram":
@@ -1179,7 +1310,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 # --- Resolve attachment file paths ---
                 resolved_files = []
                 for att in telegram_attachments:
-                    att_name = att
+                    # Chỉ nhận TÊN FILE THUẦN. Ô đính kèm đi qua nội suy {{var}}, nên
+                    # cấu hình ["{{text}}"] + tin nhắn "../../pyflow.db" từng đủ để bot
+                    # GỬI CẢ DATABASE (mật khẩu DB, API key) cho người lạ.
+                    att_name = safe_filename(att, "")
                     if not att_name:
                         continue
                     # Tìm trong output trước, rồi input
@@ -1414,7 +1548,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
                 # Attachments
                 for att in mail_attachments:
-                    att_name = att
+                    # Chỉ nhận tên file thuần — cùng lý do với đính kèm Telegram:
+                    # ô này đi qua nội suy {{var}} nên "../../pyflow.db" sẽ gửi cả
+                    # database ra ngoài qua email.
+                    att_name = safe_filename(att, "")
                     if not att_name: continue
                     # try INPUT_DIR then OUTPUT_DIR
                     att_path = input_dir / att_name
@@ -1433,6 +1570,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         if log_fn:
                             log_fn(bid, "warning", f"⚠ [Email] Không tìm thấy file đính kèm: {att_name}")
 
+                smtp = None
                 try:
                     # Decide SSL or TLS based on port
                     if mail_port == 465:
@@ -1440,10 +1578,9 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     else:
                         smtp = smtplib.SMTP(mail_host, mail_port, timeout=15)
                         smtp.starttls()
-                    
+
                     smtp.login(mail_user, mail_pass)
                     smtp.send_message(msg)
-                    smtp.quit()
 
                     if log_fn:
                         log_fn(bid, "success", f"✅ [Email] {label} - Đã gửi thư thánh công!")
@@ -1454,6 +1591,16 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         return
                     else:
                         continue
+                finally:
+                    # PHẢI đóng trong finally. Trước đây quit() nằm ở nhánh thành công:
+                    # sai mật khẩu SMTP hoặc send_message timeout trong một vòng Loop
+                    # 200 vòng sẽ để lại 200 socket TLS mở treo — máy chủ mail hoàn
+                    # toàn có thể chặn IP vì "too many connections".
+                    if smtp is not None:
+                        try:
+                            smtp.quit()
+                        except Exception:
+                            pass
             elif btype == "delete_files":
                 import shutil
                 delete_input = bdata.get("delete_input", False)
@@ -1569,25 +1716,21 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
                         timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event, workflow_env=workflow_env
+                        stop_event=stop_event, workflow_env=workflow_env, run_id=run_id
                     )
                     if not success:
-                        if error == "stopped":
+                        _act = on_block_failed(error, bid, label)
+                        if _act == "stopped":
                             final_status = "stopped"
                             break
-                        if log_fn:
-                            log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                        if handle_workflow_error(error, bid, label):
+                        if _act == "abort":
                             return
-                        else:
-                            continue
+                        continue
                     current_input = output
             elif btype == "sql_to_excel":
                 sql_query = bdata.get("sqlQuery", "").strip()
-                excel_filename = bdata.get("excelFileName", "sqltoexcel.xlsx").strip()
+                excel_filename = safe_filename(bdata.get("excelFileName", ""), "sqltoexcel.xlsx")
                 saved_connection_id = bdata.get("sqlToExcelSavedConnectionId", "").strip()
-                if not excel_filename:
-                    excel_filename = "sqltoexcel.xlsx"
 
                 db_config = get_saved_db_connection(saved_connection_id)
 
@@ -1624,7 +1767,12 @@ conn_str = {conn_str!r}
 
 print("Đang kết nối CSDL và thực thi câu lệnh SQL...")
 engine = sqlalchemy.create_engine(conn_str)
-df = pd.read_sql("""{sql_query}""", engine)
+# !r bắt buộc: sql_query ĐÃ đi qua interpolate_deep nên có thể chứa nội dung do
+# người ngoài gửi ({{{{text}}}} của khối Telegram Listener). Trước đây nhúng thô vào
+# giữa """...""" nên tin nhắn dạng  x""" ; import os; os.system(...) ; z="""
+# thoát khỏi chuỗi và chạy như mã Python trong venv của project.
+sql_query = {sql_query!r}
+df = pd.read_sql(sql_query, engine)
 
 out_file = {excel_filename!r}
 out_path = os.path.join(OUTPUT_DIR, out_file)
@@ -1637,19 +1785,20 @@ output_data = {{"file_name": out_file}}
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
                         timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event
+                        stop_event=stop_event, run_id=run_id
                     )
                     if not success:
-                        if log_fn:
-                            log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                        if handle_workflow_error(error, bid, label):
+                        _act = on_block_failed(error, bid, label)
+                        if _act == "stopped":
+                            final_status = "stopped"
+                            break
+                        if _act == "abort":
                             return
-                        else:
-                            continue
+                        continue
                     current_input = rename_output_keys(btype, bdata, output)
             elif btype == "merge_excel":
                 header_rows = int(bdata.get("headerRows", 3))
-                excel_filename = bdata.get("excelFileName", "merged_excel.xlsx").strip()
+                excel_filename = safe_filename(bdata.get("excelFileName", ""), "merged_excel.xlsx")
                 merge_mode = bdata.get("mergeMode") or ("all_input" if bdata.get("mergeAllInput", True) else "custom")
                 merge_all_input = merge_mode in ("all_input", "all_output")
                 selected_files = bdata.get("selectedFiles", [])
@@ -1754,18 +1903,19 @@ output_data = {{"file_name": out_file}}
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
                     timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                    stop_event=stop_event
+                    stop_event=stop_event, run_id=run_id
                 )
                 if not success:
-                    if log_fn:
-                        log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                    if handle_workflow_error(error, bid, label):
+                    _act = on_block_failed(error, bid, label)
+                    if _act == "stopped":
+                        final_status = "stopped"
+                        break
+                    if _act == "abort":
                         return
-                    else:
-                        continue
+                    continue
                 current_input = rename_output_keys(btype, bdata, output)
             elif btype == "pivot_excel":
-                excel_filename = bdata.get("excelFileName", "pivot.xlsx").strip()
+                excel_filename = safe_filename(bdata.get("excelFileName", ""), "pivot.xlsx")
                 selected_files = bdata.get("pivotInputFiles", [])
                 pivot_index = bdata.get("pivotIndex", "")
                 pivot_columns = bdata.get("pivotColumns", "")
@@ -1939,15 +2089,16 @@ output_data = {{"file_name": out_file}}
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
                     timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                    stop_event=stop_event
+                    stop_event=stop_event, run_id=run_id
                 )
                 if not success:
-                    if log_fn:
-                        log_fn("system", "error", f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                    if handle_workflow_error(error, bid, label):
+                    _act = on_block_failed(error, bid, label)
+                    if _act == "stopped":
+                        final_status = "stopped"
+                        break
+                    if _act == "abort":
                         return
-                    else:
-                        continue
+                    continue
                 current_input = rename_output_keys(btype, bdata, output)
             elif btype == "excel_to_sql":
                 input_file = bdata.get("excelToSqlInputFile", "").strip()
@@ -1975,6 +2126,19 @@ output_data = {{"file_name": out_file}}
                     if log_fn:
                         log_fn(bid, "error", f"❌ Thiếu cấu hình: File nguồn hoặc Bảng đích")
                     if handle_workflow_error("Chưa cấu hình đủ bảng đích hoặc file nguồn", bid, label):
+                        return
+                    else:
+                        continue
+
+                # Tên bảng bị ghép thẳng vào "TRUNCATE TABLE [...]" trong script sinh
+                # ra, mà ô này ĐI QUA nội suy {{var}} → giá trị có thể đến từ tin nhắn
+                # Telegram / Google Sheet của người khác. Dấu ] đóng ngoặc sớm nên
+                # `x]; DROP TABLE don_hang; --` là xoá bảng thật. Chỉ nhận định danh
+                # SQL thường (cho phép schema dạng dbo.ten_bang).
+                if not _VALID_TABLE_NAME.match(table_name):
+                    if log_fn:
+                        log_fn(bid, "error", f"❌ Tên bảng đích không hợp lệ: {table_name!r}. Chỉ cho phép chữ, số, _ và dấu chấm (VD: dbo.don_hang).")
+                    if handle_workflow_error(f"Tên bảng đích không hợp lệ: {table_name!r}", bid, label):
                         return
                     else:
                         continue
@@ -2091,15 +2255,18 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
                     timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                    stop_event=stop_event
+                    stop_event=stop_event, run_id=run_id
                 )
                 if not success:
-                    if log_fn:
-                        log_fn("system", "error", f"❌ Import thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
-                    if handle_workflow_error(error, bid, label):
+                    _act = on_block_failed(
+                        error, bid, label,
+                        fail_log=f"❌ Import thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
+                    if _act == "stopped":
+                        final_status = "stopped"
+                        break
+                    if _act == "abort":
                         return
-                    else:
-                        continue
+                    continue
                 else:
                     current_input = rename_output_keys(btype, bdata, output)
             elif btype == "run_sql_exec":
@@ -2181,19 +2348,26 @@ output_data = {{"result": rows, "row_count": row_count}}
 '''
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
-                        timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event
+                        # sql_timeout do người dùng đặt ở ô "Giới hạn thời gian"
+                        # (0 = không giới hạn). Trước đây truyền cứng 7200 nên ô cấu
+                        # hình là vô nghĩa: log in ra "Không giới hạn thời gian" rồi
+                        # vẫn kill stored procedure đúng phút thứ 120.
+                        timeout=sql_timeout, label=label, log_fn=log_fn, input_dir=str(input_dir),
+                        stop_event=stop_event, run_id=run_id
                     )
                     if not success:
-                        if log_fn:
-                            # duration = thời gian của CHÍNH khối này. Trước đây dùng
-                            # (now - start) là thời gian cả workflow → đọc log tưởng
-                            # câu SQL chạy lâu hơn timeout.
-                            log_fn("system", "error", f"❌ Thực thi SQL thất bại sau {duration}ms")
-                        if handle_workflow_error(error, bid, label):
+                        # duration = thời gian của CHÍNH khối này. Trước đây dùng
+                        # (now - start) là thời gian cả workflow → đọc log tưởng
+                        # câu SQL chạy lâu hơn timeout.
+                        _act = on_block_failed(
+                            error, bid, label,
+                            fail_log=f"❌ Thực thi SQL thất bại sau {duration}ms")
+                        if _act == "stopped":
+                            final_status = "stopped"
+                            break
+                        if _act == "abort":
                             return
-                        else:
-                            continue
+                        continue
                     else:
                         current_input = rename_output_keys(btype, bdata, output)
             elif btype == "google_sheets_read":
@@ -2493,8 +2667,15 @@ output_data = {{"result": rows, "row_count": row_count}}
                                 current_input[k] = v
                                 workflow_env[k] = v
                         else:
-                            current_input["item"] = current_item
-                            workflow_env["item"] = current_item
+                            # Tôn trọng ô "Tên biến phần tử" trên giao diện.
+                            # Trước đây key bị hardcode là "item" trong khi FE vẫn lưu
+                            # loopItemVar và NON_INTERPOLATED_KEYS vẫn khai nó — ai đặt
+                            # loopItemVar = "dong_hien_tai" sẽ thấy {{dong_hien_tai}}
+                            # LUÔN RỖNG mà không có một cảnh báo nào.
+                            # Mặc định của FE là 'item' nên workflow cũ không đổi hành vi.
+                            item_var = (bdata.get("loopItemVar") or "item").strip() or "item"
+                            current_input[item_var] = current_item
+                            workflow_env[item_var] = current_item
 
                         cond_branch_taken = "loop"
                         if log_fn:
@@ -2637,6 +2818,10 @@ output_data = {{"result": rows, "row_count": row_count}}
                         queue.append((target_id, current_input))
 
         total_ms = int((datetime.now() - start).total_seconds() * 1000)
+        # Có khối lỗi mà nhánh Bắt Lỗi chạy xong không báo gì thì vẫn là run LỖI.
+        # Không đè lên "stopped" — người dùng bấm Dừng là chủ ý, không phải lỗi.
+        if workflow_failed and final_status == "success":
+            final_status = "error"
         _finish_run(run_id, final_status, start, error=final_error, log_fn=log_fn)
         if log_fn:
             if final_status == "success":
@@ -2659,14 +2844,42 @@ output_data = {{"result": rows, "row_count": row_count}}
 def _finish_run(run_id, status, start, error=None, log_fn=None):
     finished = datetime.now()
     duration = int((finished - start).total_seconds() * 1000)
-    with sqlite3.connect(str(WORKFLOW_DB)) as conn:
-        conn.execute(
-            "UPDATE workflow_run SET status=?, finished_at=?, duration_ms=?, error_message=? WHERE id=?",
-            (status, finished.isoformat(), duration, error, run_id)
-        )
+
+    # Ghi trạng thái kết thúc là việc KHÔNG ĐƯỢC PHÉP làm hỏng cả thread. Trước đây
+    # câu UPDATE này để trần: chỉ cần một "database is locked" là ngoại lệ bay lên,
+    # thoát khỏi execute_workflow_thread mà không ai dọn 3 dict toàn cục → run kẹt
+    # RUNNING vĩnh viễn trên giao diện tới lần restart backend kế tiếp.
+    # Nay đã bật WAL + busy_timeout 15s nên hiếm, nhưng vẫn phải retry và nuốt có
+    # kiểm soát — dọn dẹp bên dưới quan trọng hơn việc ghi được dòng UPDATE này.
+    for attempt in range(3):
+        try:
+            with connect_sqlite() as conn:
+                conn.execute(
+                    "UPDATE workflow_run SET status=?, finished_at=?, duration_ms=?, error_message=? WHERE id=?",
+                    (status, finished.isoformat(), duration, error, run_id)
+                )
+            break
+        except Exception as e:
+            if attempt == 2:
+                logger.error(f"Không ghi được trạng thái kết thúc cho run {run_id}: {e}")
+                if log_fn:
+                    log_fn("system", "warning", f"⚠ Không ghi được trạng thái kết thúc vào database: {e}")
+            else:
+                import time as _t_retry
+                _t_retry.sleep(0.5 * (attempt + 1))
+
     _active_runs.pop(run_id, None)
     _active_procs.pop(run_id, None)
     _listener_holder_runs.discard(run_id)
+
+    # Xoá thư mục main.py sinh ra cho lượt chạy này (data/pj_*/wf_*/runs/<run_id>).
+    # Hai lý do: (1) không để runs/ phình mãi theo số lần chạy; (2) main.py có nhúng
+    # conn_str dạng mssql+pyodbc://user:pass@... — trước đây nằm lại trên đĩa vĩnh
+    # viễn, và còn bị đóng gói theo khi Export project.
+    script_dir = _active_run_script_dirs.pop(str(run_id), None)
+    if script_dir:
+        import shutil as _sh_scripts
+        _sh_scripts.rmtree(script_dir, ignore_errors=True)
 
     # Dọn dẹp profile duyệt web tạm thời của lượt chạy này
     profile_dir = _active_browser_profiles.pop(run_id, None)

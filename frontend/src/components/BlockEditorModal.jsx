@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns, startBrowserRecording, stopBrowserRecording, createRecordingStream } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Paperclip, Radio as RadioIcon, Flag, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert } from 'lucide-react'
-import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col, Checkbox } from 'antd'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert } from 'lucide-react'
+import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col } from 'antd'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
 import { BLOCK_TYPES } from './BlockNode'
@@ -2168,11 +2168,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   border: `1px solid ${listenerRunning ? '#10b98150' : 'var(--border-default)'}`,
                   borderRadius: 8, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8
                 }}>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: listenerRunning ? '#10b981' : 'var(--text-muted)',
-                    display: 'inline-block', animation: listenerRunning ? 'pulse 2s infinite' : 'none'
-                  }} />
+                  <span
+                    className={listenerRunning ? 'pyflow-pulse' : undefined}
+                    style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: listenerRunning ? 'var(--accent-success)' : 'var(--text-muted)',
+                      display: 'inline-block',
+                    }}
+                  />
                   <span style={{ color: listenerRunning ? '#10b981' : 'var(--text-muted)', fontWeight: 500, fontSize: '0.9rem' }}>
                     {listenerRunning ? 'Đang lắng nghe...' : 'Chưa chạy (bấm Chạy workflow để bật)'}
                   </span>
@@ -2672,7 +2675,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                       border: '1px solid var(--border-default)'
                     }}>
                       {aiGeneratedCode}
-                      {aiGenerating && <span style={{ display: 'inline-block', width: 4, height: 12, background: 'var(--accent-primary)', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />}
+                      {aiGenerating && <span className="pyflow-caret" style={{ display: 'inline-block', width: 4, height: 12, background: 'var(--accent-primary)', marginLeft: 2 }} />}
                     </div>
                     
                     {!aiGenerating && (

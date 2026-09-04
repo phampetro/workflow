@@ -1,7 +1,7 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Table, Tag, Button, Spin, Empty, Card, Space } from 'antd'
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { Table, Tag, Button, Empty } from 'antd'
 import { getRunHistory } from '../api/client'
-import { RefreshCw } from 'lucide-react'
+import {  } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STATUS_CONFIG = {
@@ -17,21 +17,31 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
 
+  // Tăng mỗi lần đổi workflow / gọi lại. Response về sau khi giá trị này đã đổi
+  // là response CŨ → bỏ qua. Không có nó thì đổi workflow nhanh (A → B) mà
+  // response của A về sau response của B sẽ hiển thị LỊCH SỬ CỦA A dưới tiêu đề
+  // của B, và setState còn chạy sau khi Drawer đã đóng.
+  const reqIdRef = useRef(0)
+
   const loadHistory = async () => {
     if (!workflowId) return
+    const myReq = ++reqIdRef.current
     setLoading(true)
     try {
       const res = await getRunHistory(workflowId, 50)
+      if (myReq !== reqIdRef.current) return      // đã có request mới hơn
       setHistory(res.data)
     } catch (e) {
-      toast.error('Lỗi tải lịch sử: ' + e.message)
+      if (myReq === reqIdRef.current) toast.error('Lỗi tải lịch sử: ' + e.message)
     } finally {
-      setLoading(false)
+      if (myReq === reqIdRef.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     loadHistory()
+    // Huỷ hiệu lực request đang bay khi đổi workflow hoặc unmount
+    return () => { reqIdRef.current++ }
   }, [workflowId])
 
   useImperativeHandle(ref, () => ({

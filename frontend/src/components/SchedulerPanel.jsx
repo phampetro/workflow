@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar, Trash2, Clock, Edit2, Info } from 'lucide-react'
 import { getSchedules, createSchedule, updateSchedule, deleteSchedule as apiDeleteSchedule, toggleSchedule as apiToggleSchedule, getUsers } from '../api/client'
-import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber, Card, Empty, Alert } from 'antd'
+import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber, Empty, Alert } from 'antd'
 import toast from 'react-hot-toast'
 import dayjs from 'dayjs'
 import useStore from '../store/useStore'
@@ -58,6 +58,10 @@ export default function SchedulerPanel({ workflow, onClose }) {
         .then(res => setSchedules(res.data || []))
         .catch(e => toast.error('Lỗi tải lịch: ' + e.message))
         .finally(() => setLoading(false))
+    } else {
+      // loading khởi tạo là true; không có else thì mở Drawer khi workflow chưa
+      // sẵn sàng sẽ để <Table loading> quay MÃI MÃI, không có gì gỡ được.
+      setLoading(false)
     }
     getUsers()
       .then(res => setTotalUsers((res.data || []).length))
@@ -229,7 +233,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
       open={true}
       onClose={onClose}
       mask={{ closable: false }}
-      destroyOnClose
+      destroyOnHidden
       size="large"
       placement="right"
       styles={{ body: { padding: 16 } }}

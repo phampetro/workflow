@@ -133,7 +133,12 @@ export const toggleSchedule    = (id)         => api.patch(`/api/schedules/${id}
 // lại và không mất log ở giữa. Trước đây gọi es.close() trong onerror làm EventSource
 // mất luôn cả cơ chế retry gốc -> log ngừng vĩnh viễn cho tới khi F5.
 export const createLogStream = (runId, onMessage, onError, offset = 0) => {
-  let received = 0
+  // TỔNG số dòng đã nhận từ lúc mở stream, KHÔNG phải của riêng lần kết nối này.
+  // Trước đây `received` cộng dồn qua các lần reconnect nhưng lại được cộng vào
+  // `startOffset` (vốn đã bao gồm số dòng cũ) → từ lần đứt thứ 2 offset bị thổi
+  // phồng thành 2·R1 + R2, backend cắt history từ đó nên R1 dòng log biến mất
+  // vĩnh viễn. Càng đứt nhiều lần, lỗ hổng càng lớn.
+  let totalReceived = 0
   let stopped = false
   let es = null
   let retryTimer = null
@@ -146,7 +151,7 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
       try {
         const data = JSON.parse(e.data)
         if (data.run_id && data.message) {
-          received += 1
+          totalReceived += 1
           onMessage(data)
         }
       } catch (_) {}
@@ -159,7 +164,8 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
       es = null
       if (stopped) return
       if (retryTimer) clearTimeout(retryTimer)
-      retryTimer = setTimeout(() => connect(startOffset + received), 3000)
+      // offset gốc + tổng đã nhận (không cộng dồn startOffset của lần trước)
+      retryTimer = setTimeout(() => connect(offset + totalReceived), 3000)
     }
   }
 
@@ -253,7 +259,21 @@ export const createRecordingStream = (workflowId, { onStep, onReplaceLast, onDon
       else if (d.type === 'error') onError?.(new Error(d.message || 'Lỗi ghi'))
     } catch (_) {}
   }
-  es.onerror = () => { /* EventSource tự reconnect; sau 'done' đã tự close */ }
+  // Khác createLogStream (ở đó reconnect là CỐ Ý và có lý do ghi trong README):
+  // ở đây backend trả 404 khi không còn phiên ghi. Bản cũ để onerror rỗng nên
+  // EventSource tự retry mỗi ~3s và nhận 404 mãi mãi — xảy ra mỗi khi người dùng
+  // đóng cửa sổ trình duyệt bằng nút X thay vì bấm "✓ Xong", trong khi banner
+  // "Đang ghi" vẫn hiện. Dừng hẳn sau 3 lần lỗi liên tiếp.
+  let errorStreak = 0
+  const _origOnMessage = es.onmessage
+  es.onmessage = (e) => { errorStreak = 0; _origOnMessage(e) }
+  es.onerror = () => {
+    errorStreak += 1
+    if (errorStreak >= 3) {
+      try { es.close() } catch (_) {}
+      onError?.(new Error('Mất kết nối tới phiên ghi thao tác (phiên có thể đã đóng).'))
+    }
+  }
   return () => { try { es.close() } catch (_) {} }
 }
 
