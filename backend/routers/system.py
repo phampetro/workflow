@@ -113,7 +113,6 @@ def execute_update():
                 raise Exception("Không tìm thấy link tải bản cập nhật trên GitHub Releases.")
 
             def run_updater():
-                import platform
                 root_dir = os.path.dirname(sys.executable)
                 parent_dir = os.path.dirname(root_dir)
                 zip_path = os.path.join(parent_dir, "update.zip")
@@ -127,10 +126,13 @@ def execute_update():
                 with urllib.request.urlopen(req, timeout=120) as response, open(zip_path, 'wb') as out_file:
                     shutil.copyfileobj(response, out_file)
                 
-                if platform.system() == "Windows":
-                    bat_path = os.path.join(parent_dir, "updater.bat")
-                    with open(bat_path, "w", encoding="utf-8") as f:
-                        f.write(f'''@echo off
+                # Windows-only: bản đóng gói chỉ tồn tại dưới dạng .exe do PyInstaller
+                # build trên Windows. Nhánh POSIX cũ (sinh updater.sh chạy `unzip` rồi
+                # `./start_mac.command`) là code chết — nó chỉ chạy khi sys.frozen, mà
+                # không có bản frozen nào cho macOS/Linux.
+                bat_path = os.path.join(parent_dir, "updater.bat")
+                with open(bat_path, "w", encoding="utf-8") as f:
+                    f.write(f'''@echo off
 echo DANG TAI VA CAP NHAT PHIEN BAN MOI...
 echo Xin vui long cho, khong dong cua so nay.
 ping 127.0.0.1 -n 3 > nul
@@ -142,20 +144,7 @@ echo Khoi dong lai phan mem...
 start start.vbs
 del "%~f0"
 ''')
-                    subprocess.Popen(["cmd.exe", "/c", bat_path], cwd=parent_dir, creationflags=0x00000010)
-                else:
-                    sh_path = os.path.join(parent_dir, "updater.sh")
-                    with open(sh_path, "w", encoding="utf-8") as f:
-                        f.write(f'''#!/bin/bash
-echo "DANG CAP NHAT PHIEN BAN MOI..."
-sleep 2
-unzip -o update.zip
-rm update.zip
-./start_mac.command &
-rm "$0"
-''')
-                    os.chmod(sh_path, 0o755)
-                    subprocess.Popen([sh_path], cwd=parent_dir, preexec_fn=os.setsid)
+                subprocess.Popen(["cmd.exe", "/c", bat_path], cwd=parent_dir, creationflags=0x00000010)
                 os._exit(0)
             
             threading.Timer(1.0, run_updater).start()
@@ -163,18 +152,18 @@ rm "$0"
         except Exception as e:
             return {"error": str(e)}
 
+    # Windows-only (xem chú thích ở run_updater bên trên). Chặn sớm và báo rõ:
+    # nếu để rơi xuống mà không làm gì, run_and_die vẫn os._exit(0) → app tắt hẳn
+    # mà không hề cập nhật, người dùng không có cách nào biết chuyện gì đã xảy ra.
+    if os.name != "nt":
+        return {"error": "unsupported_os",
+                "message": "Tính năng tự cập nhật chỉ hỗ trợ Windows."}
+
     try:
-        import platform
-        
         def run_and_die():
             root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-            if platform.system() == "Windows":
-                bat_file = os.path.join(root_dir, "update_and_restart.bat")
-                subprocess.Popen(["cmd.exe", "/c", bat_file], cwd=root_dir, creationflags=0x00000010)
-            else:
-                sh_file = os.path.join(root_dir, "update_and_restart.sh")
-                subprocess.Popen([sh_file], cwd=root_dir, preexec_fn=os.setsid)
-            
+            bat_file = os.path.join(root_dir, "update_and_restart.bat")
+            subprocess.Popen(["cmd.exe", "/c", bat_file], cwd=root_dir, creationflags=0x00000010)
             # Kill current process
             os._exit(0)
 

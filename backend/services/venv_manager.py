@@ -48,9 +48,7 @@ def get_venv_path(project_id: str) -> Path:
 def get_python_path(project_id: str) -> str:
     """Trả về đường dẫn tới python executable của venv"""
     venv = get_venv_path(project_id)
-    if sys.platform == "win32":
-        return str(venv / "Scripts" / "python.exe")
-    return str(venv / "bin" / "python")
+    return str(venv / "Scripts" / "python.exe")
 
 
 def get_pip_path(project_id: str) -> str:
@@ -59,9 +57,7 @@ def get_pip_path(project_id: str) -> str:
     Giữ lại chỉ để kiểm tra sự tồn tại của file.
     """
     venv = get_venv_path(project_id)
-    if sys.platform == "win32":
-        return str(venv / "Scripts" / "pip.exe")
-    return str(venv / "bin" / "pip")
+    return str(venv / "Scripts" / "pip.exe")
 
 
 def get_pip_cmd(project_id: str) -> list:

@@ -143,6 +143,20 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 
 Type: `fix`/`feat`/`refactor`/`chore`/`docs`/`perf`.
 
+## Chỉ hỗ trợ Windows
+
+Dự án là **Windows-only có chủ đích**. Bản đóng gói do PyInstaller build trên Windows, mà PyInstaller **không cross-compile** — muốn có bản macOS thì phải có một máy Mac để build, và đó là việc đã quyết định không làm.
+
+Toàn bộ nhánh POSIX đã được gỡ (09/2026): 4 file `.sh` ở gốc, `start_mac.command` trong build script, nhánh `updater.sh`, `xdg-open`/`open` ở `files.py`, `chrome-mac*`/`~/Library/Caches` ở `browser_executor.py`, `bin/python` ở `venv_manager.py`, `ioreg` ở `licensing.py`.
+
+Bối cảnh: phần macOS trước đây là **cái vỏ viết sẵn cho bản build chưa từng tồn tại** — `start_mac.command` gọi `./pyflow-backend` trong khi zip chỉ có `pyflow-backend.exe`. Nó không hoạt động ngày nào, chỉ gây hiểu nhầm.
+
+⚠ Hai thứ **KHÔNG được nhầm là "rác macOS"**:
+- `.replace('\', '/')` trong `executor_blocks.py` — dùng khi nhúng đường dẫn Windows vào **mã Python sinh ra**; bỏ đi thì ``, `	`, `
+` trong path thành ký tự điều khiển.
+- `mac-node:` ở `licensing.py` — đó là **MAC address** của card mạng (fallback vân tay máy), không liên quan macOS.
+- `licensing._raw_machine_id()` phải giữ nguyên chuỗi `win:{MachineGuid}`: mọi license đã cấp đều ký trên đúng chuỗi đó.
+
 ## Không được làm
 
 - Không commit `backend/data/`, `*.db`, `.env`, `node_modules/`, `.venv/` (đã gitignore).
@@ -156,5 +170,6 @@ Type: `fix`/`feat`/`refactor`/`chore`/`docs`/`perf`.
 - Không pop listener khỏi `_active_listeners`/`_stop_events`/`_active_configs` theo key — phải so **danh tính task** (`is`), nếu không sẽ chạy 2 listener cùng bot token và mỗi tin nhắn kích hoạt workflow 2 lần.
 - Không bỏ `run_id` khỏi đường dẫn `runs/<run_id>/<khối>/main.py` — 2 run song song sẽ ghi đè code của nhau.
 - Không commit `Releases/` hay `pyflow-studio/` (build artifact) — xem `.gitignore`.
+- Không thêm lại nhánh macOS/Linux (`sys.platform == "darwin"`, `xdg-open`, `pkill`, `chrome-mac*`, file `.sh`, `start_mac.command`). Xem §Chỉ hỗ trợ Windows.
 - Không quay lại cơ chế "bí danh": trả key tên gốc trong `current_input` rồi chỉ ghi tên custom vào `workflow_env`. Xem §Quy ước biến output của khối.
 - Không bỏ field nào ra khỏi `NON_INTERPOLATED_KEYS`, và không thêm field "tên biến" mới mà quên khai vào đó.

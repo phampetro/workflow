@@ -157,26 +157,6 @@ Function ChromiumReady(pwRoot)
 End Function
 ''')
 
-    print("Tao start_mac.command (macOS)...")
-    start_mac_path = os.path.join(release_dir, "start_mac.command")
-    with open(start_mac_path, "w", encoding="utf-8") as f:
-        f.write('''#!/bin/bash
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-export PYFLOW_LICENSE_ENFORCE=1
-
-# Kill port 8000
-lsof -i :8000 | awk 'NR!=1 {print $2}' | xargs -r kill -9
-
-cd "$DIR/backend"
-./pyflow-backend &
-sleep 3
-open http://localhost:8000
-''')
-    try:
-        os.chmod(start_mac_path, 0o755)
-    except Exception:
-        pass
-
     print(f"Dong goi thanh cong tai thu muc: {release_dir}")
     
     # ---------------------------------------------------------

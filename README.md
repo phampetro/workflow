@@ -29,14 +29,14 @@ Nền tảng tự động hóa workflow chạy **local** trên máy người dù
 
 ## 🚀 Cài đặt & khởi động
 
+> ⚠ **CHỈ HỖ TRỢ WINDOWS.** Bản đóng gói do PyInstaller build trên Windows, mà
+> PyInstaller không cross-compile — không có bản macOS/Linux và không có kế hoạch
+> làm. Mọi script `.sh`, `start_mac.command` và nhánh code POSIX đã được gỡ bỏ.
+
 ### Cài lần đầu
 
 ```bash
-# Windows
 setup.bat
-
-# macOS/Linux
-./setup.sh
 ```
 
 Setup tạo `backend/.venv`, cài `requirements.txt`, cài Chromium cho Playwright, chạy `npm install` cho frontend.
@@ -44,23 +44,21 @@ Setup tạo `backend/.venv`, cài `requirements.txt`, cài Chromium cho Playwrig
 ### Khởi động
 
 ```bash
-# Windows (mở 2 cửa sổ cmd)
+# Mở 2 cửa sổ cmd
 start.bat
-
-# Windows chạy ẩn (chạy nền, không mở cửa sổ)
-wscript start_hide.vbs
-
-# macOS/Linux
-./start.sh
 ```
 
-Cả 3 script đều: giải phóng port 7000 + 9000 → khởi BE → khởi FE → mở trình duyệt tới `http://localhost:9000`.
+```bash
+# Chạy ẩn (chạy nền, không mở cửa sổ)
+wscript start_hide.vbs
+```
+
+Cả 2 script đều: giải phóng port 7000 + 9000 → khởi BE → khởi FE → mở trình duyệt tới `http://localhost:9000`.
 
 ### Cập nhật (git pull + reinstall + restart)
 
 ```bash
-update_and_restart.bat  # Windows
-./update_and_restart.sh # Linux/Mac
+update_and_restart.bat
 ```
 
 ---
@@ -69,10 +67,10 @@ update_and_restart.bat  # Windows
 
 ```
 workflow/
-├── setup.bat / setup.sh              ← Cài venv + pip + npm install lần đầu
-├── start.bat / start.sh              ← Khởi động BE + FE (kèm giải phóng port)
+├── setup.bat                         ← Cài venv + pip + npm install lần đầu
+├── start.bat                         ← Khởi động BE + FE (kèm giải phóng port)
 ├── start_hide.vbs                    ← Chạy ẩn trên Windows (background)
-├── update_and_restart.{bat,sh}       ← git pull + reinstall + restart
+├── update_and_restart.bat            ← git pull + reinstall + restart
 ├── .claude/
 │   └── launch.json                   ← Cấu hình dev-server cho Claude Code preview
 │
@@ -574,7 +572,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 
 - **Python** 3.8+ (đã test 3.14)
 - **Node.js** 18+
-- **OS**: Windows 10/11, macOS, Linux
+- **OS**: Windows 10/11 — **chỉ hỗ trợ Windows**, không có bản macOS/Linux
 - **RAM**: 2 GB+ (Playwright + Chromium chiếm nhiều nếu chạy khối Browser)
 - **Disk**: 500 MB cho venv + node_modules + Chromium; thêm dung lượng cho `backend/data/pj_*/` tuỳ workflow
 

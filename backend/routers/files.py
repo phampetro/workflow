@@ -6,7 +6,6 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import subprocess
 
 from database import get_session
 from models import Workflow
@@ -122,15 +121,9 @@ async def open_input_file_os(workflow_id: str, filename: str, session: AsyncSess
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại")
 
-    import platform
-    sys_os = platform.system()
+    # Windows-only: mở file bằng ứng dụng mặc định của hệ điều hành.
     try:
-        if sys_os == "Windows":
-            os.startfile(str(file_path))
-        elif sys_os == "Darwin": # macOS
-            subprocess.run(["open", str(file_path)])
-        else: # Linux
-            subprocess.run(["xdg-open", str(file_path)])
+        os.startfile(str(file_path))
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -201,15 +194,9 @@ async def open_output_file_os(workflow_id: str, filename: str, session: AsyncSes
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại")
 
-    import platform
-    sys_os = platform.system()
+    # Windows-only: mở file bằng ứng dụng mặc định của hệ điều hành.
     try:
-        if sys_os == "Windows":
-            os.startfile(str(file_path))
-        elif sys_os == "Darwin": # macOS
-            subprocess.run(["open", str(file_path)])
-        else: # Linux
-            subprocess.run(["xdg-open", str(file_path)])
+        os.startfile(str(file_path))
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(500, str(e))
