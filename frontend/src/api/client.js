@@ -284,7 +284,10 @@ export const checkHealth = () => api.get('/health')
 export const systemApi = {
   getInfo: () => api.get('/api/system/info').then(res => res.data),
   checkUpdate: () => api.get('/api/system/check-update').then(res => res.data),
-  update: () => api.post('/api/system/update').then(res => res.data)
+  update: () => api.post('/api/system/update').then(res => res.data),
+  // Lý do cập nhật thất bại (vd chữ ký không hợp lệ). run_updater chạy ở
+  // thread nền SAU KHI /update đã trả về, nên lỗi chỉ lấy được qua đây.
+  getUpdateStatus: () => api.get('/api/system/update-status').then(res => res.data)
 }
 
 export default api

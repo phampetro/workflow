@@ -2768,6 +2768,20 @@ output_data = {{"result": rows, "row_count": row_count}}
                         else:
                             continue
 
+            else:
+                # Loại khối KHÔNG được chuỗi elif ở trên xử lý.
+                # Trước đây không có nhánh này: khối lạ lọt qua hoàn toàn im lặng,
+                # current_input truyền thẳng sang khối sau như chưa có gì. Đó là lý
+                # do các node `database` (loại khối đã bị gỡ khỏi code từ khi có
+                # "Kết nối Database dùng chung") vẫn nằm trong workflow thật mà
+                # không ai biết — chúng chỉ là node rỗng nối giữa hai khối khác.
+                # Cảnh báo để người dùng còn gỡ, KHÔNG dừng workflow: dừng sẽ phá
+                # các workflow đang chạy được.
+                if log_fn:
+                    log_fn(bid, "warning",
+                           f"⚠️ Khối [{label}] có loại '{btype}' không còn được hỗ trợ — "
+                           f"đã bỏ qua, dữ liệu truyền thẳng sang khối kế. Hãy xoá khối này khỏi sơ đồ.")
+
             if continue_branch and final_status != "error":
                 if btype == "loop" and cond_branch_taken == "loop":
                     delay = float(bdata.get("loopDelay") or 0)

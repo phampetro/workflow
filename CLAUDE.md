@@ -113,6 +113,8 @@ Có hệ thống license + `Releases/` + tự cập nhật, tức app chạy tr�
   - Nội suy phải là **một lượt `re.sub`** (`interpolate` ở executor, `_interpolate_once` ở [browser_executor.py](backend/services/browser_executor.py)). For-loop `replace` gây chain-replace làm rò mật khẩu từ `input.json`.
 - **`_csrf_guard`** trong main.py kiểm `Origin`/`Sec-Fetch-Site`: CORS chỉ chặn ĐỌC response, không chặn GỬI request.
 - **Không trả `password` của `DbConnection` ra API** và không đóng gói vào file export. Ô mật khẩu để trống khi sửa = giữ nguyên.
+- **`update.zip` PHẢI được ký và verify** ([services/update_signing.py](backend/services/update_signing.py)). Đây là kênh phân phối code tới máy khách: không verify thì ai sửa được asset của GitHub Release là mọi máy khách bấm "Cập nhật" sẽ chạy code lạ. Client **từ chối** bản cập nhật không có `update.zip.sig`, và không còn fallback về `zipball_url`.
+  Dùng lại đúng cặp khoá Ed25519 của license, nhưng **tách miền**: chuỗi ký là `b"pyflow-update-v1:" + sha256_hex`, nên chữ ký update không thể đem dùng làm license và ngược lại. Đổi tiền tố này = mọi bản đã phát hành bị từ chối.
 
 ## SQLite: WAL
 
@@ -152,7 +154,8 @@ Toàn bộ nhánh POSIX đã được gỡ (09/2026): 4 file `.sh` ở gốc, `s
 Bối cảnh: phần macOS trước đây là **cái vỏ viết sẵn cho bản build chưa từng tồn tại** — `start_mac.command` gọi `./pyflow-backend` trong khi zip chỉ có `pyflow-backend.exe`. Nó không hoạt động ngày nào, chỉ gây hiểu nhầm.
 
 ⚠ Hai thứ **KHÔNG được nhầm là "rác macOS"**:
-- `.replace('\', '/')` trong `executor_blocks.py` — dùng khi nhúng đường dẫn Windows vào **mã Python sinh ra**; bỏ đi thì ``, `	`, `
+- `.replace('\', '/')` trong `executor_blocks.py` — dùng khi nhúng đường dẫn Windows vào **mã Python sinh ra**; bỏ đi thì `
+`, `	`, `
 ` trong path thành ký tự điều khiển.
 - `mac-node:` ở `licensing.py` — đó là **MAC address** của card mạng (fallback vân tay máy), không liên quan macOS.
 - `licensing._raw_machine_id()` phải giữ nguyên chuỗi `win:{MachineGuid}`: mọi license đã cấp đều ký trên đúng chuỗi đó.

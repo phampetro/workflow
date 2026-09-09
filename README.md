@@ -114,6 +114,8 @@ workflow/
 │   │   ├── licensing.py              ← Kích hoạt/kiểm license OFFLINE (Ed25519). ENFORCE bật
 │   │   │                                CỨNG khi sys.frozen; env chỉ dùng cho bản dev
 │   │   ├── license_pubkey.py         ← Public key nhúng sẵn để verify chữ ký license
+│   │   ├── update_signing.py        ← Ký/verify update.zip (Ed25519, tách miền với
+│   │   │                                license). Client từ chối bản không có .sig
 │   │   ├── block_rules.py            ← "Luật sân chơi" giữa các khối (nguồn sự thật phía BE).
 │   │   │                                ⚠ Giữ đồng bộ TAY với frontend/src/config/blockRules.js
 │   │   ├── browser_recorder.py       ← Ghi thao tác trên trình duyệt → tự sinh step
