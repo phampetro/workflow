@@ -115,6 +115,23 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
         waited += 2000
         try {
           await checkHealth()
+
+          // Backend còn sống → hỏi xem việc cập nhật có bị từ chối không.
+          // Thường gặp nhất: chữ ký số của update.zip không hợp lệ. Không hỏi
+          // chỗ này thì người dùng ngồi nhìn "đang cập nhật" đủ 120 giây rồi
+          // trang tự tải lại như chưa có gì xảy ra — không hiểu vì sao vẫn bản cũ.
+          if (!sawDown) {
+            try {
+              const st = await systemApi.getUpdateStatus()
+              if (st?.error) {
+                clearInterval(pingInterval)
+                setUpdateStatus('error')
+                setUpdateMsg(st.error)
+                return
+              }
+            } catch { /* endpoint chưa có ở bản cũ — bỏ qua */ }
+          }
+
           // Hết thời gian chờ mà backend chưa hề chết → có thể cập nhật thất bại
           // (VD giải nén không ghi đè được exe đang chạy). Vẫn reload để người
           // dùng không bị kẹt ở màn "đang cập nhật".

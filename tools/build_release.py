@@ -167,6 +167,30 @@ End Function
     zip_path = os.path.join(root_dir, "Releases", "update")
     shutil.make_archive(zip_path, 'zip', release_dir)
     print(f"Da tao {zip_path}.zip")
+
+    # ── Ky ban cap nhat ──────────────────────────────────────────────────────
+    # update.zip duoc giai nen DE LEN thu muc cai dat roi chay lai app -> day la
+    # kenh phan phoi code toi may khach. Khong ky thi ai sua duoc asset cua
+    # release la moi may khach bam "Cap nhat" se chay code cua ho.
+    sys.path.insert(0, os.path.join(root_dir, "backend"))
+    from services.update_signing import sign_update
+
+    priv_file = os.path.join(root_dir, "secrets", "license_private.txt")
+    if not os.path.exists(priv_file):
+        print("!! KHONG TIM THAY secrets/license_private.txt - KHONG the ky ban cap nhat.")
+        print("   Client doi moi se TU CHOI cai ban nay. Dung lai.")
+        sys.exit(1)
+
+    with open(priv_file, "r", encoding="utf-8") as f:
+        priv_b64 = f.read().strip()
+
+    print("Dang ky update.zip (Ed25519)...")
+    sig_text = sign_update(zip_path + ".zip", priv_b64)
+    sig_path = zip_path + ".zip.sig"
+    with open(sig_path, "w", encoding="utf-8") as f:
+        f.write(sig_text)
+    print(f"Da tao {sig_path}")
+
     
     env_file = os.path.join(root_dir, ".env")
     token = None
@@ -212,28 +236,44 @@ End Function
                     raise e
                     
             if upload_url:
-                # 2. Delete old asset if exists
+                # Upload CA HAI: update.zip va update.zip.sig
+                # Client doi moi bat buoc phai co .sig moi chiu cai (xem
+                # backend/routers/system.py -> verify_update).
+                uploads = [
+                    ("update.zip", zip_path + ".zip", "application/zip"),
+                    ("update.zip.sig", zip_path + ".zip.sig", "application/json"),
+                ]
+                wanted = {name for name, _, _ in uploads}
+
+                # 2. Xoa asset cu trung ten (chi trung ten minh sap upload)
                 assets_req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/{release_id}/assets", headers=headers)
                 with urllib.request.urlopen(assets_req) as response:
                     assets = json.loads(response.read().decode())
                     for asset in assets:
-                        if asset["name"] == "update.zip":
+                        if asset["name"] in wanted:
                             del_req = urllib.request.Request(asset["url"], headers=headers, method="DELETE")
                             urllib.request.urlopen(del_req)
-                
-                # 3. Upload new asset
-                print(f"Dang upload file ZIP ({os.path.getsize(zip_path + '.zip')} bytes)...")
-                clean_url = upload_url.split("{")[0] + "?name=update.zip"
-                with open(zip_path + '.zip', 'rb') as f:
-                    file_data = f.read()
-                upload_req = urllib.request.Request(clean_url, data=file_data, headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github.v3+json",
-                    "Content-Type": "application/zip",
-                    "User-Agent": "PyFlow-Studio-Builder"
-                })
-                with urllib.request.urlopen(upload_req) as response:
-                    print("Upload GitHub thanh cong!")
+
+                # 3. Upload asset moi.
+                # Upload .sig TRUOC roi moi toi .zip: neu dut mang giua chung thi
+                # release con lai chu ky cu + KHONG co zip -> client bao loi ro
+                # rang. Nguoc lai (zip moi + sig cu) se thanh "chu ky khong hop le"
+                # rat kho hieu.
+                for name, path, ctype in reversed(uploads):
+                    size = os.path.getsize(path)
+                    print(f"Dang upload {name} ({size} bytes)...")
+                    clean_url = upload_url.split("{")[0] + f"?name={name}"
+                    with open(path, "rb") as f:
+                        file_data = f.read()
+                    upload_req = urllib.request.Request(clean_url, data=file_data, headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "Content-Type": ctype,
+                        "User-Agent": "PyFlow-Studio-Builder"
+                    })
+                    with urllib.request.urlopen(upload_req):
+                        print(f"   {name}: OK")
+                print("Upload GitHub thanh cong!")
                     
         except urllib.error.HTTPError as e:
             err_msg = e.read().decode()
