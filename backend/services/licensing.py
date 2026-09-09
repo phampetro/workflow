@@ -15,8 +15,6 @@ import base64
 import hashlib
 import json
 import os
-import platform
-import subprocess
 import sys
 import uuid
 from datetime import date, datetime
@@ -71,39 +69,25 @@ _cached_fp = None
 def _raw_machine_id() -> str:
     """Lấy 1 định danh ổn định theo bản cài OS — KHÔNG phụ thuộc RAM/ổ cứng cụ thể,
     nên khách nâng cấp phần cứng lẻ không bị khóa oan. Chỉ đổi khi cài lại OS."""
-    system = platform.system()
+    # ⚠ Định dạng "win:{MachineGuid}" là CỐ ĐỊNH — mọi license đã cấp cho khách đều
+    # ký trên đúng chuỗi này. Đổi tiền tố hay cách lấy giá trị = vô hiệu toàn bộ key
+    # đang lưu hành. (Windows-only: các nhánh Darwin/Linux cũ đã gỡ.)
     try:
-        if system == "Windows":
-            # MachineGuid: sinh khi cài Windows, rất ổn định
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Microsoft\Cryptography",
-                0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
-            )
-            val, _ = winreg.QueryValueEx(key, "MachineGuid")
-            winreg.CloseKey(key)
-            if val:
-                return f"win:{val}"
-        elif system == "Darwin":
-            # IOPlatformUUID: UUID phần cứng máy Mac
-            out = subprocess.check_output(
-                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                text=True, timeout=5,
-            )
-            for line in out.splitlines():
-                if "IOPlatformUUID" in line:
-                    return "mac:" + line.split('"')[-2]
-        else:  # Linux/khác
-            for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-                fp = Path(p)
-                if fp.exists():
-                    mid = fp.read_text().strip()
-                    if mid:
-                        return f"lin:{mid}"
+        # MachineGuid: sinh khi cài Windows, rất ổn định
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Cryptography",
+            0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+        )
+        val, _ = winreg.QueryValueEx(key, "MachineGuid")
+        winreg.CloseKey(key)
+        if val:
+            return f"win:{val}"
     except Exception:
         pass
-    # Fallback cuối: MAC address (kém ổn định hơn nhưng còn hơn không)
+    # Fallback cuối: địa chỉ MAC của card mạng (kém ổn định hơn nhưng còn hơn không).
+    # "mac-node" ở đây là MAC address, KHÔNG liên quan tới macOS.
     return f"mac-node:{uuid.getnode():012x}"
 
 

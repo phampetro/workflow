@@ -372,21 +372,12 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
 
 def _find_system_browser():
-    import os, sys
-    if sys.platform == "win32":
-        paths = [
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-        ]
-    elif sys.platform == "darwin":
-        paths = [
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-        ]
-    else:
-        paths = []
-        
+    import os
+    paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ]
     for p in paths:
         if os.path.exists(p):
             return p
@@ -396,9 +387,6 @@ def _find_system_browser():
 # Vị trí binary Chromium bên trong <registry>/chromium-<rev>/ theo từng OS.
 _CHROMIUM_BINARIES = (
     os.path.join("chrome-win64", "chrome.exe"),
-    os.path.join("chrome-linux", "chrome"),
-    os.path.join("chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
-    os.path.join("chrome-mac-arm64", "Chromium.app", "Contents", "MacOS", "Chromium"),
 )
 
 
@@ -412,12 +400,8 @@ def playwright_registry_dir() -> str:
     env_dir = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
     if env_dir:
         return env_dir
-    if sys.platform == "win32":
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
-        return os.path.join(base, "ms-playwright")
-    if sys.platform == "darwin":
-        return os.path.expanduser("~/Library/Caches/ms-playwright")
-    return os.path.expanduser("~/.cache/ms-playwright")
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+    return os.path.join(base, "ms-playwright")
 
 
 def find_installed_chromium() -> str:
@@ -500,8 +484,6 @@ def chrome_policy_hint() -> str:
     timeout — không có bước điều hướng nào chạy. Chromium riêng của Playwright đọc
     key ``Policies\\Chromium`` nên không bị các policy dành cho Chrome/Edge chi phối.
     """
-    if sys.platform != "win32":
-        return ""
     try:
         import winreg
     except Exception:
@@ -550,7 +532,7 @@ def chrome_policy_hint() -> str:
 # +56px, đẩy layout xuống) — vừa xấu vừa là dấu hiệu automation cho site bot-detect.
 # Chromium bundled của Playwright không hiện thanh này nên trước đây không ai thấy.
 # Chỉ Linux (container/root) mới thực sự cần tắt sandbox.
-CHROMIUM_SANDBOX = sys.platform in ("win32", "darwin")
+CHROMIUM_SANDBOX = True
 SANDBOX_ARGS = [] if CHROMIUM_SANDBOX else ["--no-sandbox", "--disable-dev-shm-usage"]
 
 
@@ -625,22 +607,18 @@ def force_kill_browser_by_marker(marker: str):
     """
     if not marker:
         return
-    import sys
     import subprocess
     try:
-        if sys.platform == "win32":
-            ps = (
-                "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe'\" | "
-                "Where-Object { $_.CommandLine -like '*" + marker + "*' } | "
-                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-            )
-            subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                capture_output=True, timeout=15,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        else:
-            subprocess.run(["pkill", "-f", marker], capture_output=True, timeout=15)
+        ps = (
+            "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe'\" | "
+            "Where-Object { $_.CommandLine -like '*" + marker + "*' } | "
+            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
     except Exception:
         pass
 
