@@ -578,12 +578,20 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         // thêm 1 run riêng. Nếu cứ bám run giữ Listener thì màn hình không hiện log
         // của run vừa được lệnh Telegram kích hoạt. Backend trả runs theo started_at
         // giảm dần → run nằm TRƯỚC run hiện tại trong mảng là run mới hơn.
+        //
+        // Dò theo VỊ TRÍ trong danh sách, KHÔNG theo status==='running' của run mới.
+        // Bản cũ chỉ bắt được nếu run mới đó CÒN đang chạy đúng lúc tick 1.5s này tới
+        // — 8% run trong lịch sử thực tế xong dưới 1.5s (1 câu SQL + 1 tin trả lời là
+        // xong), nên phần lớn lượt Telegram chạy nhanh không bao giờ được phát hiện:
+        // nó bắt đầu VÀ kết thúc lọt giữa hai lần poll, màn hình vẫn đứng ở log rỗng
+        // của run giữ Listener dù dữ liệu thật đã nằm sẵn trong DB.
         const curIdx = runs.findIndex(r => r.id === currentRunId)
-        const newerRunning = curIdx > 0
-          ? runs.slice(0, curIdx).find(r => r.status === 'running')
-          : null
-        if (!cancelled && newerRunning) {
-          useStore.getState().setActiveRun(wfData.id, newerRunning.id)
+        const newerRun =
+          curIdx > 0 ? runs[0]                                        // có run đứng trước -> chắc chắn mới hơn
+          : curIdx === -1 && runs[0]?.id !== currentRunId ? runs[0]    // run đang xem rớt khỏi top-5 (bot bận,
+          : null                                                      // dồn dập ≥5 lượt mới) -> vẫn còn việc mới
+        if (!cancelled && newerRun) {
+          useStore.getState().setActiveRun(wfData.id, newerRun.id)
           return
         }
 
