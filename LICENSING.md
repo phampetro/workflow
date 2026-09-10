@@ -23,18 +23,26 @@ backend/.venv/Scripts/python.exe tools/keygen.py init
 
 ## 2. Hướng dẫn Đóng gói Tự động (Release)
 
-Thay vì phải tự build và cấu hình thủ công, hệ thống đã có sẵn một công cụ đóng gói tự động. Công cụ này sẽ tự build Frontend, copy mã nguồn an toàn (bỏ qua các thư mục nhạy cảm như `secrets/`, `data/`, `.git/`), và **tự động bật khóa bản quyền** trong file khởi động dành cho khách hàng.
+> ⚠ **PyFlow Studio chỉ chạy trên Windows.** Bản đóng gói do PyInstaller build trên Windows và PyInstaller không cross-compile — không có bản macOS/Linux.
 
-**Bước 1: Chạy công cụ đóng gói**
+Hệ thống có sẵn công cụ đóng gói tự động. Công cụ này sẽ: build Frontend, đóng gói Backend thành file thực thi (EXE) bằng PyInstaller, sinh file khởi động `start.vbs` (đã **tự động bật khóa bản quyền**), tạo `update.zip`, **ký chữ ký số** và upload lên GitHub Releases.
+
+**Chạy công cụ đóng gói**
 Mở terminal tại thư mục gốc của dự án và chạy:
 ```bash
 python tools/build_release.py
 ```
 
-**Bước 2: Nén và gửi cho khách hàng**
-- Sau khi chạy lệnh trên thành công, bạn sẽ thấy một thư mục mới được tạo ra tại `Releases/pyflow-studio`.
-- Bên trong thư mục này đã có sẵn file `start.vbs` (cho máy Windows) và `start_mac.command` (cho máy Mac). Toàn bộ mã nguồn Python đã được đóng gói an toàn thành file thực thi (EXE). Frontend cũng đã được build và gộp thẳng vào Backend.
-- Bạn chỉ việc nén toàn bộ thư mục `pyflow-studio` thành một file `.zip` và gửi cho khách hàng. Mọi thứ đã sẵn sàng để chạy ngay không cần cài đặt (Portable).
+**Kết quả sinh ra**
+| Đường dẫn | Là gì |
+|---|---|
+| `Releases/pyflow-studio/` | Thư mục chạy được (portable) — gửi trực tiếp cho khách hàng cài mới |
+| `Releases/update.zip` | Gói dùng cho tính năng tự cập nhật |
+| `Releases/update.zip.sig` | **Chữ ký số của gói trên — bắt buộc phải đi kèm** |
+
+- Trong `Releases/pyflow-studio/` đã có sẵn `start.vbs`. Mã nguồn Python đã đóng gói thành EXE, Frontend đã build và gộp thẳng vào Backend.
+- Muốn giao cho **khách hàng mới**: nén thư mục `pyflow-studio` thành `.zip` rồi gửi. Chạy ngay, không cần cài đặt (Portable).
+- Nếu file `secrets/license_private.txt` không tồn tại, công cụ sẽ **dừng hẳn** và báo lỗi — vì không ký được thì mọi máy khách sẽ từ chối bản cập nhật đó.
 
 ---
 
@@ -43,7 +51,7 @@ python tools/build_release.py
 Mỗi khi có một khách hàng mới, hãy làm theo quy trình sau:
 
 **Bước 1: Khách hàng tải và lấy Mã Máy**
-- Khách hàng tải bản zip về, giải nén và nhấp đúp vào file `start.vbs` (Windows) hoặc `start_mac.command` (macOS) để chạy phần mềm ngay lập tức (không cần cài đặt setup.bat như trước đây).
+- Khách hàng tải bản zip về, giải nén và nhấp đúp vào file `start.vbs` để chạy phần mềm ngay lập tức (không cần cài đặt `setup.bat` như trước đây).
 - Lần đầu mở phần mềm, màn hình "Kích hoạt bản quyền" sẽ hiện ra cùng một **Mã Máy** (Ví dụ: `e8f4a2b1...`).
 - Khách hàng copy Mã Máy này và gửi cho bạn.
 
@@ -76,20 +84,34 @@ Mỗi khi có một khách hàng mới, hãy làm theo quy trình sau:
 
 Để khách hàng có thể tự động tải và cập nhật phiên bản mới ngay trong ứng dụng (tính năng **Tự động 100%**), bạn cần đẩy bản đóng gói mới lên mục **Releases** của GitHub `phampetro/workflow_re`. Dưới đây là các bước chuẩn xác:
 
-**Phía Bạn (Nhà phát triển):**
-1. Khi có code mới, bạn chạy lại lệnh `python tools/build_release.py`.
-2. Lấy toàn bộ nội dung bên trong thư mục `Releases/pyflow-studio` mới sinh ra (gồm thư mục `backend`, `frontend` và file `start.vbs`), nén tất cả lại thành một file `.zip` (bạn có thể đặt tên là `update.zip`).
-   > *Lưu ý quan trọng: Phải nén **trực tiếp** các file/thư mục con bên trong, chứ không phải nén thư mục thư mục cha `pyflow-studio`. Nếu khách hàng mở file zip ra phải thấy ngay `start.vbs` thì mới đúng chuẩn.*
-3. Lên trang GitHub: `https://github.com/phampetro/workflow_re/releases`
-4. Bấm nút **"Draft a new release"**.
-5. Chọn hoặc tạo mới thẻ phiên bản ở mục **"Choose a tag"** (Ví dụ: `v1.1.0`, nhớ phải có chữ `v` và lớn hơn version cũ).
-6. Kéo thả file `update.zip` vừa tạo vào phần **"Attach binaries by dropping them here..."**.
-7. Bấm **"Publish release"**. Xong!
+**Phía Bạn (Nhà phát triển) — TỰ ĐỘNG HOÀN TOÀN:**
+
+1. Đảm bảo file `.env` ở thư mục gốc có dòng `GITHUB_TOKEN=...` (token cần quyền ghi Releases của repo `phampetro/workflow_re`).
+2. Chạy `python tools/build_release.py`.
+
+Xong. Công cụ tự làm hết phần còn lại: tạo `update.zip`, **ký chữ ký số**, tìm (hoặc tạo) release theo thẻ `v<version>`, xoá asset cũ trùng tên và upload **cả hai** file `update.zip` + `update.zip.sig`.
+
+> ⚠ **KHÔNG upload thủ công qua trang web GitHub.** Từ phiên bản có xác minh chữ ký, mỗi release **bắt buộc phải có đủ 2 asset**:
+> - `update.zip`
+> - `update.zip.sig`
+>
+> Nếu bạn kéo thả tay và chỉ đưa lên `update.zip`, app của khách sẽ **từ chối cài** với thông báo *"Bản cập nhật này không có chữ ký số (update.zip.sig) nên đã bị từ chối"*. Đó là chủ đích: `update.zip` được giải nén **đè lên thư mục cài đặt** rồi chạy lại app, nên nếu không xác minh thì bất kỳ ai sửa được asset của release đều khiến mọi máy khách chạy code lạ.
+>
+> Nếu buộc phải upload tay, phải đưa lên **đúng cả 2 file** mà `build_release.py` đã sinh trong thư mục `Releases/` — không được tự nén lại `update.zip` bằng tay, vì chữ ký gắn với đúng nội dung file cũ (sửa 1 byte là chữ ký sai).
 
 **Phía Khách hàng (Người dùng):**
 1. Khách hàng đang dùng phần mềm sẽ thấy nút **"Cập nhật ngay"** trong mục Thông tin.
-2. Khách bấm nút, phần mềm sẽ tự động tải file `update.zip` từ GitHub về, tự hiện màn hình đen (CMD) giải nén, ghi đè mã nguồn mới và giữ nguyên vẹn toàn bộ dữ liệu (nằm trong thư mục `backend/data`).
-3. Phần mềm tự khởi động lại bản mới. Không cần khách hàng phải thao tác thủ công sao chép file gì cả!
+2. Khách bấm nút, phần mềm tải `update.zip` từ GitHub về, **xác minh chữ ký số trước**, rồi mới hiện màn hình đen (CMD) giải nén, ghi đè mã nguồn mới và giữ nguyên vẹn toàn bộ dữ liệu (nằm trong thư mục `backend/data`).
+3. Phần mềm tự khởi động lại bản mới. Không cần khách hàng thao tác sao chép file gì cả.
+4. Nếu chữ ký không hợp lệ hoặc thiếu, phần mềm **không cài** và hiện lý do ngay trong bảng Thông tin — file tải về cũng bị xoá luôn, không để lại bản chưa xác minh trên đĩa.
+
+### Chữ ký số dùng khoá nào?
+
+Dùng lại **đúng cặp khoá Ed25519 đang ký license** (`secrets/license_private.txt` + public key đã nhúng trong `backend/services/license_pubkey.py`). Không cần tạo hay quản lý thêm khoá nào.
+
+Hai loại chữ ký được **tách miền** nên không thể dùng lẫn cho nhau: chữ ký cập nhật ký trên `pyflow-update-v1:<sha256 của file zip>`, còn license ký trên payload của key. Nghĩa là một license hợp lệ không thể bị đem dùng làm chữ ký cho bản cập nhật giả, và ngược lại.
+
+⚠ Mất `secrets/license_private.txt` = vừa không cấp được license mới, vừa không phát hành được bản cập nhật nào nữa. Sao lưu file này ở nơi an toàn.
 
 ## 6. Lệnh tham khảo nhanh
 
@@ -105,4 +127,12 @@ backend/.venv/Scripts/python.exe backend/services/licensing.py
 
 # 4. Tự kiểm tra 1 key xem có khớp với Mã Máy không
 backend/.venv/Scripts/python.exe tools/keygen.py verify --key PF1.xxx --machine <MÃ_MÁY>
+
+# 5. Đóng gói + ký + upload bản cập nhật (tự động hoàn toàn)
+python tools/build_release.py
+```
+
+**Tự kiểm tra chữ ký của bản cập nhật vừa build:**
+```bash
+backend/.venv/Scripts/python.exe -c "import sys; sys.path.insert(0,'backend'); from services.update_signing import verify_update; from services.license_pubkey import PUBLIC_KEY_B64; verify_update('Releases/update.zip', open('Releases/update.zip.sig',encoding='utf-8').read(), PUBLIC_KEY_B64); print('Chu ky HOP LE')"
 ```
