@@ -1,9 +1,17 @@
 import { create } from 'zustand'
+import i18n from '../i18n'
+import { updateUserLanguage } from '../api/client'
 
 // Khôi phục user từ localStorage nếu có
 const _savedUser = (() => {
   try { return JSON.parse(localStorage.getItem('pyflow_current_user')) } catch { return null }
 })()
+
+// Áp ngay ngôn ngữ của user đã lưu trước khi React render lần đầu, tránh nháy
+// UI tiếng Việt rồi mới đổi sang tiếng Anh (i18next mặc định 'vi').
+if (_savedUser?.language && _savedUser.language !== i18n.language) {
+  i18n.changeLanguage(_savedUser.language)
+}
 
 // Kênh đồng bộ trạng thái RUN giữa các tab cùng origin - trước đây nút Chạy/Dừng
 // chỉ đồng bộ khi cả 2 tab đang mở Drawer Logs (nhờ SSE). Tab đóng Drawer sẽ hiển
@@ -14,11 +22,31 @@ const _runsChannel = typeof BroadcastChannel !== 'undefined'
 
 const useStore = create((set, get) => ({
   // --- Users ---
-  currentUser: _savedUser,   // { id, name, created_at } | null
+  currentUser: _savedUser,   // { id, name, created_at, language } | null
   setCurrentUser: (user) => {
-    if (user) localStorage.setItem('pyflow_current_user', JSON.stringify(user))
-    else localStorage.removeItem('pyflow_current_user')
-    set({ currentUser: user })
+    if (user) {
+      localStorage.setItem('pyflow_current_user', JSON.stringify(user))
+      i18n.changeLanguage(user.language || 'vi')
+    } else {
+      localStorage.removeItem('pyflow_current_user')
+    }
+    set({ currentUser: user, language: user?.language || 'vi' })
+  },
+
+  // --- Language (lưu theo user trong DB, không phải theo trình duyệt) ---
+  language: _savedUser?.language || 'vi',
+  setLanguage: (language) => {
+    i18n.changeLanguage(language)
+    set((state) => {
+      const user = state.currentUser
+      if (!user) return { language }
+      const updatedUser = { ...user, language }
+      localStorage.setItem('pyflow_current_user', JSON.stringify(updatedUser))
+      // Ghi xuống DB — không chờ kết quả để đổi ngôn ngữ trên UI ngay lập tức;
+      // lỗi mạng chỉ làm mất phần lưu, không làm mất hiệu ứng đổi ngôn ngữ.
+      updateUserLanguage(user.id, language).catch(() => {})
+      return { language, currentUser: updatedUser }
+    })
   },
 
   // --- Projects ---

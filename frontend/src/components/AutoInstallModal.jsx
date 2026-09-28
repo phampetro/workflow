@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Modal, Button, Input, Tag, Progress, Spin, Empty, Tooltip, Alert } from 'antd'
 import { PackagePlus, Plus, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import { scanPackages, autoInstallPackages, getInstallStatus } from '../api/client'
 
 /**
@@ -10,6 +11,7 @@ import { scanPackages, autoInstallPackages, getInstallStatus } from '../api/clie
  * Trong lúc cài, chặn đóng modal (đợi cài xong mới cho dùng).
  */
 export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState('scan')   // scan | review | installing | done
   const [items, setItems] = useState([])       // [{package, reasons}]
   const [selected, setSelected] = useState([]) // [package string]
@@ -32,7 +34,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
         setSelected(its.filter(i => !i.installed).map(i => i.package))
         setPhase('review')
       })
-      .catch(err => { toast.error('Lỗi quét: ' + err.message); setPhase('review'); setItems([]); setSelected([]) })
+      .catch(err => { toast.error(t('autoInstall.scanError', { message: err.message })); setPhase('review'); setItems([]); setSelected([]) })
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [open, projectId])
 
@@ -46,7 +48,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   }
 
   const startInstall = async () => {
-    if (selected.length === 0) { toast.error('Chưa có package nào để cài'); return }
+    if (selected.length === 0) { toast.error(t('autoInstall.noPackagesToInstall')); return }
     setPhase('installing'); setLog([]); setError(null); setProgress({ done: 0, total: selected.length })
     try {
       await autoInstallPackages(projectId, selected)
@@ -60,12 +62,12 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
             clearInterval(pollRef.current); pollRef.current = null
             setError(s.error || null)
             setPhase('done')
-            if (s.status === 'done') { toast.success('Cài thư viện xong!'); onDone?.() }
+            if (s.status === 'done') { toast.success(t('autoInstall.installSuccess')); onDone?.() }
           }
         } catch { /* mạng lỗi tạm */ }
       }, 800)
     } catch (err) {
-      toast.error('Lỗi bắt đầu cài: ' + err.message)
+      toast.error(t('autoInstall.startInstallError', { message: err.message }))
       setPhase('review')
     }
   }
@@ -76,7 +78,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   return (
     <Modal
       open={open}
-      title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><PackagePlus size={18} color="var(--accent-primary)" /> Tự động cài thư viện</span>}
+      title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><PackagePlus size={18} color="var(--accent-primary)" /> {t('autoInstall.title')}</span>}
       onCancel={installing ? undefined : onClose}
       mask={{ closable: !installing }}
       closable={!installing}
@@ -85,19 +87,19 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
       footer={
         phase === 'review' ? (
           <>
-            <Button onClick={onClose}>Hủy</Button>
+            <Button onClick={onClose}>{t('common.cancel')}</Button>
             <Button type="primary" icon={<Play size={15} />} onClick={startInstall} disabled={selected.length === 0}>
-              Cài {selected.length} thư viện
+              {t('autoInstall.installBtn', { count: selected.length })}
             </Button>
           </>
         ) : phase === 'done' ? (
-          <Button type="primary" onClick={onClose}>Đóng</Button>
+          <Button type="primary" onClick={onClose}>{t('common.close')}</Button>
         ) : null
       }
     >
       {phase === 'scan' && (
         <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-          <Spin /> <div style={{ marginTop: 12, color: 'var(--text-secondary)' }}>Đang quét workflow để tìm thư viện cần thiết…</div>
+          <Spin /> <div style={{ marginTop: 12, color: 'var(--text-secondary)' }}>{t('autoInstall.scanningText')}</div>
         </div>
       )}
 
@@ -106,21 +108,21 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
         return (
           <div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0 }}>
-              Đã quét mọi workflow của project (lọc trùng, chỉ chọn gói còn thiếu). Thư viện từ khối <b>Python</b> là dự đoán từ <code>import</code> — bạn có thể bớt/thêm trước khi cài.
+              {t('autoInstall.reviewDescPrefix')} <b>Python</b> {t('autoInstall.reviewDescSuffix')} <code>import</code> {t('autoInstall.reviewDescEnd')}
             </p>
 
             {selected.length === 0 ? (
               installedItems.length > 0
-                ? <Alert type="success" showIcon title="Tất cả thư viện cần thiết đã được cài đủ." style={{ marginBottom: 12 }} />
-                : <Empty description="Không phát hiện thư viện nào cần cài" />
+                ? <Alert type="success" showIcon title={t('autoInstall.allInstalledAlert')} style={{ marginBottom: 12 }} />
+                : <Empty description={t('autoInstall.noPackagesFound')} />
             ) : (
               <>
                 <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Cần cài ({selected.length}):
+                  {t('autoInstall.needToInstallLabel', { count: selected.length })}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                   {selected.map(p => {
-                    const reason = items.find(i => i.package === p)?.reasons?.join('; ') || 'Bạn tự thêm'
+                    const reason = items.find(i => i.package === p)?.reasons?.join('; ') || t('autoInstall.customAddedReason')
                     return (
                       <Tooltip key={p} title={reason}>
                         <Tag color="orange" closable onClose={(e) => { e.preventDefault(); removePkg(p) }} style={{ padding: '4px 8px', fontSize: '0.8rem' }}>
@@ -135,19 +137,19 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
 
             {installedItems.length > 0 && (
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.6 }}>
-                ✓ Đã có sẵn trong môi trường ({installedItems.length}): {installedItems.map(i => i.package).join(', ')}
+                {t('autoInstall.alreadyInstalledLabel', { count: installedItems.length, list: installedItems.map(i => i.package).join(', ') })}
               </div>
             )}
 
             <div style={{ display: 'flex', gap: 8 }}>
               <Input
-                placeholder="Thêm thư viện thủ công (vd: requests)"
+                placeholder={t('autoInstall.addManualPlaceholder')}
                 value={custom}
                 onChange={e => setCustom(e.target.value)}
                 onPressEnter={addCustom}
                 size="small"
               />
-              <Button icon={<Plus size={14} />} onClick={addCustom} size="small">Thêm</Button>
+              <Button icon={<Plus size={14} />} onClick={addCustom} size="small">{t('autoInstall.addBtn')}</Button>
             </div>
           </div>
         )
@@ -168,7 +170,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
           </div>
           {phase === 'done' && (
             <div style={{ marginTop: 10, fontWeight: 600, color: error ? 'var(--accent-danger)' : 'var(--accent-success)' }}>
-              {error ? `⚠ ${error}` : '🎉 Hoàn tất — môi trường đã sẵn sàng.'}
+              {error ? `⚠ ${error}` : t('autoInstall.doneSuccess')}
             </div>
           )}
         </div>

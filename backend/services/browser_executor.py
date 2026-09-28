@@ -144,7 +144,10 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
     value = step.get("value", "")
     attribute = step.get("attribute", "")
     key_name = step.get("key_name", "result")
-    timeout = int(step.get("timeout", 20000))
+    try:
+        timeout = int(step.get("timeout") or 20000)
+    except (TypeError, ValueError):
+        timeout = 20000
 
     # Fallback selector chain (do recorder sinh ra): thử lần lượt để chống UI đổi DOM.
     raw_selectors = step.get("selectors")

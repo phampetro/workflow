@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow } from '@xyflow/react'
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 // Đường THẲNG nối lần lượt các điểm (polyline)
 function straightPath(pts) {
@@ -20,6 +21,7 @@ export default function DeleteEdge({
   id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   style = {}, markerEnd, data, selected,
 }) {
+  const { t } = useTranslation()
   const { screenToFlowPosition } = useReactFlow()
   const waypoints = data?.waypoints || []
   const [drag, setDrag] = useState(null)  // {idx, x, y} khi đang kéo 1 điểm
@@ -85,7 +87,7 @@ export default function DeleteEdge({
             onPointerMove={pointerMove}
             onPointerUp={pointerUp}
             onDoubleClick={(e) => removePoint(i, e)}
-            title="Kéo để uốn đường · double-click để xóa điểm"
+            title={t('deleteEdge.waypointTitle')}
           />
         ))}
 
@@ -96,8 +98,8 @@ export default function DeleteEdge({
           >
             <button
               className="edge-delete-btn"
-              title="Xóa kết nối"
-              aria-label="Xóa kết nối"
+              title={t('deleteEdge.deleteConnection')}
+              aria-label={t('deleteEdge.deleteConnection')}
               onClick={(e) => { e.stopPropagation(); data?.onDelete?.(id) }}
             >
               <X size="0.75rem" />

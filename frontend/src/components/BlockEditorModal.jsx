@@ -4,17 +4,19 @@ import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumn
 import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col } from 'antd'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 import { BLOCK_TYPES } from './BlockNode'
 
 const { Text, Title } = Typography
 
 const FileSelectionTable = ({ value = [], onChange, files = [], loading = false }) => {
+  const { t } = useTranslation()
   return (
     <Table
       size="small"
       rowKey="name"
-      columns={[{ title: 'Tên file (Nhấp vào dòng để chọn)', dataIndex: 'name' }]}
+      columns={[{ title: t('blockEditor.fileSelectTableCol'), dataIndex: 'name' }]}
       dataSource={files}
       pagination={false}
       loading={loading}
@@ -86,8 +88,8 @@ print(f"✓ Queried {len(output_data)} rows")
   }
 }
 
-const TEMPLATE_OPTIONS = [
-  { key: 'default', label: 'Mặc định' },
+const getTemplateOptions = (t) => [
+  { key: 'default', label: t('blockEditor.templateDefault') },
   { key: 'http', label: 'HTTP Request' },
   { key: 'pandas', label: 'Pandas DataFrame' },
   { key: 'sql', label: 'SQLite Query' },
@@ -102,70 +104,68 @@ SELECT * FROM my_table;
 // làm key trong code Python (input_data['ten_bien']) → không cho khoảng trắng,
 // dấu câu, chữ có dấu, và không bắt đầu bằng số.
 const VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
-const VAR_NAME_RULE = {
+const getVarNameRule = (t) => ({
   validator: (_, value) => {
     if (!value) return Promise.resolve()
     if (VAR_NAME_PATTERN.test(String(value))) return Promise.resolve()
-    return Promise.reject(new Error('Chỉ dùng chữ không dấu, số và _ — không khoảng trắng/dấu, không bắt đầu bằng số'))
+    return Promise.reject(new Error(t('blockEditor.varNameInvalid')))
   },
-}
+})
 
 // Câu giải thích dùng chung cho mọi ô đặt tên biến output
-const VAR_NAME_HINT = 'Tên bạn gõ ở đây là tên DUY NHẤT của biến: dùng cho cả {{ten_bien}} ở khối sau và input_data[\'ten_bien\'] trong code Python. Để trống hoặc giữ mặc định thì dùng tên gốc.'
+const getVarNameHint = (t) =>
+  `${t('blockEditor.varNameHintPrefix')} {{ten_bien}} ${t('blockEditor.varNameHintMiddle')} input_data['ten_bien'] ${t('blockEditor.varNameHintSuffix')}`
 
 // ─── Action definitions ──────────────────────────────────────────────────────
 
-const BROWSER_ACTIONS = [
-  { group: '🌐 Điều hướng', actions: [
-    { value: 'navigate',      label: 'Mở URL',            params: ['url'], needsSelector: false },
-    { value: 'go_back',       label: 'Quay lại',          params: [], needsSelector: false },
-    { value: 'go_forward',    label: 'Tiến tới',          params: [], needsSelector: false },
-    { value: 'reload',        label: 'Tải lại trang',     params: [], needsSelector: false },
-    { value: 'wait_for_load', label: 'Chờ trang tải',     params: [], needsSelector: false },
+const getBrowserActions = (t) => [
+  { group: t('browserStep.groupNav'), actions: [
+    { value: 'navigate',      label: t('browserStep.actionNavigate'),     params: ['url'], needsSelector: false },
+    { value: 'go_back',       label: t('browserStep.actionGoBack'),       params: [], needsSelector: false },
+    { value: 'go_forward',    label: t('browserStep.actionGoForward'),    params: [], needsSelector: false },
+    { value: 'reload',        label: t('browserStep.actionReload'),       params: [], needsSelector: false },
+    { value: 'wait_for_load', label: t('browserStep.actionWaitForLoad'),  params: [], needsSelector: false },
   ]},
-  { group: '🖱️ Tương tác', actions: [
-    { value: 'click',         label: 'Click',             params: [], needsSelector: true },
-    { value: 'double_click',  label: 'Double Click',      params: [], needsSelector: true },
-    { value: 'right_click',   label: 'Right Click',       params: [], needsSelector: true },
-    { value: 'hover',         label: 'Hover',             params: [], needsSelector: true },
-    { value: 'scroll_to',     label: 'Cuộn đến phần tử', params: [], needsSelector: true },
-    { value: 'scroll_page',   label: 'Cuộn trang',        params: ['direction'], needsSelector: false },
+  { group: t('browserStep.groupInteract'), actions: [
+    { value: 'click',         label: t('browserStep.actionClick'),        params: [], needsSelector: true },
+    { value: 'double_click',  label: t('browserStep.actionDoubleClick'),  params: [], needsSelector: true },
+    { value: 'right_click',   label: t('browserStep.actionRightClick'),   params: [], needsSelector: true },
+    { value: 'hover',         label: t('browserStep.actionHover'),        params: [], needsSelector: true },
+    { value: 'scroll_to',     label: t('browserStep.actionScrollTo'),     params: [], needsSelector: true },
+    { value: 'scroll_page',   label: t('browserStep.actionScrollPage'),   params: ['direction'], needsSelector: false },
   ]},
-  { group: '⌨️ Nhập liệu', actions: [
-    { value: 'fill',          label: 'Nhập văn bản',      params: ['text'], needsSelector: true },
-    { value: 'type_slowly',   label: 'Gõ từng ký tự',    params: ['text'], needsSelector: true },
-    { value: 'clear',         label: 'Xóa nội dung',      params: [], needsSelector: true },
-    { value: 'press_key',     label: 'Nhấn phím',         params: ['key'], needsSelector: true },
+  { group: t('browserStep.groupInput'), actions: [
+    { value: 'fill',          label: t('browserStep.actionFill'),         params: ['text'], needsSelector: true },
+    { value: 'type_slowly',   label: t('browserStep.actionTypeSlowly'),   params: ['text'], needsSelector: true },
+    { value: 'clear',         label: t('browserStep.actionClear'),        params: [], needsSelector: true },
+    { value: 'press_key',     label: t('browserStep.actionPressKey'),     params: ['key'], needsSelector: true },
   ]},
-  { group: '📋 Form & Select', actions: [
-    { value: 'select_option', label: 'Chọn dropdown',     params: ['option'], needsSelector: true },
-    { value: 'check',         label: 'Tick checkbox',     params: [], needsSelector: true },
-    { value: 'uncheck',       label: 'Bỏ tick checkbox',  params: [], needsSelector: true },
+  { group: t('browserStep.groupFormSelect'), actions: [
+    { value: 'select_option', label: t('browserStep.actionSelectOption'), params: ['option'], needsSelector: true },
+    { value: 'check',         label: t('browserStep.actionCheck'),        params: [], needsSelector: true },
+    { value: 'uncheck',       label: t('browserStep.actionUncheck'),      params: [], needsSelector: true },
   ]},
-  { group: '📥 Tải xuống', actions: [
-    { value: 'click_and_download', label: 'Click & Tải file', params: ['key_name'], needsSelector: true },
+  { group: t('browserStep.groupDownload'), actions: [
+    { value: 'click_and_download', label: t('browserStep.actionClickAndDownload'), params: ['key_name'], needsSelector: true },
   ]},
-  { group: '🪟 Modal & Dialog', actions: [
-    { value: 'wait_for_selector', label: 'Chờ phần tử', params: [], needsSelector: true },
-    { value: 'accept_dialog', label: 'Chấp nhận Dialog', params: [], needsSelector: false },
-    { value: 'dismiss_dialog',label: 'Đóng Dialog',      params: [], needsSelector: false },
+  { group: t('browserStep.groupModalDialog'), actions: [
+    { value: 'wait_for_selector', label: t('browserStep.actionWaitForSelector'), params: [], needsSelector: true },
+    { value: 'accept_dialog', label: t('browserStep.actionAcceptDialog'), params: [], needsSelector: false },
+    { value: 'dismiss_dialog',label: t('browserStep.actionDismissDialog'), params: [], needsSelector: false },
   ]},
-  { group: '📝 Lấy dữ liệu', actions: [
-    { value: 'get_text',      label: 'Lấy Text',          params: ['key_name'], needsSelector: true },
-    { value: 'get_attribute', label: 'Lấy Attribute',     params: ['attribute', 'key_name'], needsSelector: true },
-    { value: 'get_all_text',  label: 'Lấy tất cả Text',  params: ['key_name'], needsSelector: true },
-    { value: 'get_url',       label: 'Lấy URL hiện tại', params: ['key_name'], needsSelector: false },
-    { value: 'screenshot',    label: 'Chụp màn hình',     params: ['key_name'], needsSelector: false },
-    { value: 'evaluate_js',   label: 'Chạy JavaScript',  params: ['js_code', 'key_name'], needsSelector: false },
+  { group: t('browserStep.groupGetData'), actions: [
+    { value: 'get_text',      label: t('browserStep.actionGetText'),      params: ['key_name'], needsSelector: true },
+    { value: 'get_attribute', label: t('browserStep.actionGetAttribute'), params: ['attribute', 'key_name'], needsSelector: true },
+    { value: 'get_all_text',  label: t('browserStep.actionGetAllText'),   params: ['key_name'], needsSelector: true },
+    { value: 'get_url',       label: t('browserStep.actionGetUrl'),       params: ['key_name'], needsSelector: false },
+    { value: 'screenshot',    label: t('browserStep.actionScreenshot'),   params: ['key_name'], needsSelector: false },
+    { value: 'evaluate_js',   label: t('browserStep.actionEvaluateJs'),   params: ['js_code', 'key_name'], needsSelector: false },
   ]},
-  { group: '⏱️ Chờ đợi', actions: [
-    { value: 'wait',          label: 'Dừng chờ (giây)',  params: ['seconds'], needsSelector: false },
-    { value: 'wait_for_url',  label: 'Chờ URL thay đổi', params: ['url_pattern'], needsSelector: false },
+  { group: t('browserStep.groupWait'), actions: [
+    { value: 'wait',          label: t('browserStep.actionWait'),         params: ['seconds'], needsSelector: false },
+    { value: 'wait_for_url',  label: t('browserStep.actionWaitForUrl'),   params: ['url_pattern'], needsSelector: false },
   ]},
 ]
-
-const ACTION_MAP = {}
-BROWSER_ACTIONS.forEach(g => g.actions.forEach(a => { ACTION_MAP[a.value] = a }))
 
 const SCROLL_DIR_OPTIONS = ['down', 'up', 'bottom', 'top']
 const KEY_OPTIONS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F5']
@@ -182,6 +182,10 @@ const STEP_COLORS = {
 }
 
 const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
+  const { t } = useTranslation()
+  const BROWSER_ACTIONS = getBrowserActions(t)
+  const ACTION_MAP = {}
+  BROWSER_ACTIONS.forEach(g => g.actions.forEach(a => { ACTION_MAP[a.value] = a }))
   const [expandedIdx, setExpandedIdx] = useState(null)
 
   const dragItem = React.useRef(null)
@@ -208,9 +212,9 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
   const applyLive = () => onChange([...stepsBeforeRef.current, ...liveRef.current])
 
   const beginRecording = async () => {
-    if (!workflowId) { toast.error('Hãy lưu workflow trước khi ghi thao tác'); return }
+    if (!workflowId) { toast.error(t('browserStep.saveBeforeRecord')); return }
     let url = recUrl.trim()
-    if (!url) { toast.error('Nhập địa chỉ trang cần thao tác (VD: example.com)'); return }
+    if (!url) { toast.error(t('browserStep.enterUrlToRecord')); return }
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url
 
     setStarting(true)
@@ -229,13 +233,13 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
         onDone: (finalSteps) => {
           if (Array.isArray(finalSteps)) onChange([...stepsBeforeRef.current, ...finalSteps])
           finishRecordingUI()
-          toast.success('Đã dừng ghi — kiểm tra & tinh chỉnh các bước nếu cần')
+          toast.success(t('browserStep.recordStoppedToast'))
         },
-        onError: (e) => { toast.error('Lỗi ghi: ' + e.message); finishRecordingUI() },
+        onError: (e) => { toast.error(t('browserStep.recordErrorToast', { message: e.message })); finishRecordingUI() },
       })
-      toast.success('Đã mở trình duyệt — hãy thao tác, các bước sẽ tự sinh')
+      toast.success(t('browserStep.recordOpenedToast'))
     } catch (e) {
-      toast.error(e.response?.data?.detail || e.message || 'Không mở được trình duyệt ghi')
+      toast.error(e.response?.data?.detail || e.message || t('browserStep.recordOpenFailedToast'))
       finishRecordingUI()
     } finally {
       setStarting(false)
@@ -309,7 +313,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Globe size={16} color="#0ea5e9" />
           <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-            Danh sách bước ({steps.length})
+            {t('browserStep.stepListTitle', { count: steps.length })}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -318,29 +322,29 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
               type="button"
               onClick={() => setShowUrlPrompt(v => !v)}
               disabled={starting}
-              aria-label="Ghi lại thao tác trên trình duyệt"
-              title="Mở trình duyệt và tự động ghi lại thao tác của bạn thành các bước"
+              aria-label={t('browserStep.recordAria')}
+              title={t('browserStep.recordTooltip')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: showUrlPrompt ? 'var(--bg-hover)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.82rem', cursor: starting ? 'wait' : 'pointer', opacity: starting ? 0.6 : 1 }}
             >
-              <Circle size={13} fill="#ef4444" color="#ef4444" /> Ghi thao tác
+              <Circle size={13} fill="#ef4444" color="#ef4444" /> {t('browserStep.recordBtn')}
             </button>
           ) : (
             <button
               type="button"
               onClick={stopRecording}
-              aria-label="Dừng ghi thao tác"
+              aria-label={t('browserStep.stopRecordAria')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
             >
-              <Square size={13} fill="#fff" /> Dừng ghi
+              <Square size={13} fill="#fff" /> {t('browserStep.stopRecordBtn')}
             </button>
           )}
           <button
             type="button"
             onClick={addStep}
-            aria-label="Thêm bước thủ công"
+            aria-label={t('browserStep.addStepAria')}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
           >
-            <Plus size={14} /> Thêm bước
+            <Plus size={14} /> {t('browserStep.addStepBtn')}
           </button>
         </div>
       </div>
@@ -350,7 +354,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
           <input
             style={{ ...inputStyle, flex: 1 }}
-            placeholder="Địa chỉ trang cần thao tác — VD: id.company.com/login"
+            placeholder={t('browserStep.urlPromptPlaceholder')}
             value={recUrl}
             autoFocus
             onChange={e => setRecUrl(e.target.value)}
@@ -362,7 +366,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
             disabled={starting}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: starting ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: starting ? 0.7 : 1 }}
           >
-            <Video size={14} /> {starting ? 'Đang mở...' : 'Bắt đầu ghi'}
+            <Video size={14} /> {starting ? t('browserStep.startingRecord') : t('browserStep.startRecordBtn')}
           </button>
         </div>
       )}
@@ -372,10 +376,10 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'color-mix(in srgb, #ef4444 12%, transparent)', borderBottom: '1px solid #ef444455', flexShrink: 0 }}>
           <span className="pyflow-rec-dot" style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
           <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Đang ghi trên cửa sổ trình duyệt vừa mở · <span style={{ color: '#ef4444' }}>{recCount} bước</span>
+            {t('browserStep.recordingBanner', { count: recCount })}
           </span>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-            Thao tác bình thường — bấm "✓ Xong" trên cửa sổ đó hoặc "Dừng ghi" để kết thúc
+            {t('browserStep.recordingHint')}
           </span>
         </div>
       )}
@@ -385,8 +389,8 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
         {steps.length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-muted)' }}>
             <Globe size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <div style={{ fontSize: '0.9rem', marginBottom: 6 }}>Chưa có bước nào</div>
-            <div style={{ fontSize: '0.8rem' }}>Nhấn <strong>+ Thêm bước</strong> để bắt đầu</div>
+            <div style={{ fontSize: '0.9rem', marginBottom: 6 }}>{t('browserStep.noStepsTitle')}</div>
+            <div style={{ fontSize: '0.8rem' }}>{t('browserStep.noStepsHintPrefix')} <strong>+ {t('browserStep.addStepBtn')}</strong> {t('browserStep.noStepsHintSuffix')}</div>
           </div>
         )}
 
@@ -421,8 +425,8 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
                   {step.note && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 1 }}>{step.note}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStep(i) }} style={{ width: 22, height: 22, border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }} title="Xóa bước"><Trash2 size={12} /></button>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, cursor: 'grab', color: 'var(--text-muted)' }} title="Kéo thả để sắp xếp"><GripVertical size={14} /></div>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStep(i) }} style={{ width: 22, height: 22, border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }} title={t('browserStep.deleteStepAria')}><Trash2 size={12} /></button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, cursor: 'grab', color: 'var(--text-muted)' }} title={t('browserStep.dragToReorder')}><GripVertical size={14} /></div>
                 </div>
               </div>
 
@@ -431,7 +435,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
                 <div style={{ padding: '12px', borderTop: `1px solid ${accentColor}33`, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {/* Action type */}
                   <div>
-                    <label style={labelStyle}>Loại hành động</label>
+                    <label style={labelStyle}>{t('browserStep.actionTypeLabel')}</label>
                     <select value={step.action} onChange={e => updateStep(i, 'action', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                       {BROWSER_ACTIONS.map(g => (
                         <optgroup key={g.group} label={g.group}>
@@ -444,11 +448,11 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
                   {/* Selector */}
                   {actionDef.needsSelector && (
                     <div>
-                      <label style={labelStyle}>Selector (CSS / XPath / text=...)</label>
-                      <input style={inputStyle} placeholder="VD: #login-btn, .submit, text=Đăng nhập" value={step.selector || ''} onChange={e => updateStep(i, 'selector', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.selectorLabel')}</label>
+                      <input style={inputStyle} placeholder={t('browserStep.selectorPlaceholder')} value={step.selector || ''} onChange={e => updateStep(i, 'selector', e.target.value)} />
                       {Array.isArray(step.selectors) && step.selectors.length > 1 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: '0.7rem', color: 'var(--accent-success)' }} title={step.selectors.join('\n')}>
-                          <ShieldAlert size={12} /> {step.selectors.length} selector dự phòng (tự chuyển nếu giao diện đổi)
+                          <ShieldAlert size={12} /> {t('browserStep.fallbackSelectors', { count: step.selectors.length })}
                         </div>
                       )}
                     </div>
@@ -457,18 +461,18 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
                   {/* Value / URL / Text */}
                   {['navigate', 'go_to', 'wait_for_url'].includes(step.action) && (
                     <div>
-                      <label style={labelStyle}>URL</label>
+                      <label style={labelStyle}>{t('browserStep.urlLabel')}</label>
                       <input style={inputStyle} placeholder="https://example.com" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
                     </div>
                   )}
 
                   {['fill', 'type_slowly'].includes(step.action) && (
                     <div>
-                      <label style={labelStyle}>Nội dung nhập (hỗ trợ {'{{key}}'})</label>
-                      <input style={inputStyle} placeholder="VD: hello world hoặc {{username}}" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.fillContentLabel')} {'{{key}}'})</label>
+                      <input style={inputStyle} placeholder={`${t('browserStep.fillPlaceholderPrefix')} {{username}}`} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
                       {step.is_password && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: '0.7rem', color: 'var(--accent-warning)' }}>
-                          <ShieldAlert size={12} /> Ô mật khẩu — vì bảo mật giá trị không được ghi lại. Hãy nhập tay hoặc dùng {'{{biến}}'}.
+                          <ShieldAlert size={12} /> {t('browserStep.passwordFieldHint')} {'{{biến}}'}.
                         </div>
                       )}
                     </div>
@@ -476,7 +480,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
 
                   {step.action === 'press_key' && (
                     <div>
-                      <label style={labelStyle}>Phím</label>
+                      <label style={labelStyle}>{t('browserStep.keyLabel')}</label>
                       <select value={step.value || 'Enter'} onChange={e => updateStep(i, 'value', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                         {KEY_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
                       </select>
@@ -485,14 +489,14 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
 
                   {step.action === 'select_option' && (
                     <div>
-                      <label style={labelStyle}>Giá trị / Label option</label>
-                      <input style={inputStyle} placeholder="VD: Hà Nội hoặc 0 (chỉ số)" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.optionValueLabel')}</label>
+                      <input style={inputStyle} placeholder={t('browserStep.optionValuePlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
                     </div>
                   )}
 
                   {step.action === 'scroll_page' && (
                     <div>
-                      <label style={labelStyle}>Hướng cuộn</label>
+                      <label style={labelStyle}>{t('browserStep.scrollDirLabel')}</label>
                       <select value={step.value || 'down'} onChange={e => updateStep(i, 'value', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                         {SCROLL_DIR_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
                         <option value="500">500px</option>
@@ -503,70 +507,70 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
 
                   {step.action === 'wait' && (
                     <div>
-                      <label style={labelStyle}>Thời gian (giây)</label>
+                      <label style={labelStyle}>{t('browserStep.waitSecondsLabel')}</label>
                       <input type="number" style={inputStyle} placeholder="VD: 2" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} min="0.1" step="0.5" />
                     </div>
                   )}
 
                   {step.action === 'wait_for_selector' && (
                     <div>
-                      <label style={labelStyle}>Chờ phần tử...</label>
+                      <label style={labelStyle}>{t('browserStep.waitForLabel')}</label>
                       <select value={step.state || 'visible'} onChange={e => updateStep(i, 'state', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        <option value="visible">Xuất hiện (VD: dữ liệu/kết quả đã load xong)</option>
-                        <option value="hidden">Biến mất (VD: spinner/loading tắt đi)</option>
-                        <option value="attached">Được thêm vào DOM</option>
-                        <option value="detached">Bị xóa khỏi DOM</option>
+                        <option value="visible">{t('browserStep.stateVisible')}</option>
+                        <option value="hidden">{t('browserStep.stateHidden')}</option>
+                        <option value="attached">{t('browserStep.stateAttached')}</option>
+                        <option value="detached">{t('browserStep.stateDetached')}</option>
                       </select>
                     </div>
                   )}
 
                   {step.action === 'get_attribute' && (
                     <div>
-                      <label style={labelStyle}>Tên attribute</label>
-                      <input style={inputStyle} placeholder="VD: href, value, src, data-id" value={step.attribute || ''} onChange={e => updateStep(i, 'attribute', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.attributeNameLabel')}</label>
+                      <input style={inputStyle} placeholder={t('browserStep.attributePlaceholder')} value={step.attribute || ''} onChange={e => updateStep(i, 'attribute', e.target.value)} />
                     </div>
                   )}
 
                   {step.action === 'evaluate_js' && (
                     <div>
-                      <label style={labelStyle}>JavaScript expression</label>
-                      <textarea style={{ ...inputStyle, height: 64, resize: 'vertical', fontFamily: 'monospace' }} placeholder="VD: document.title" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.jsExprLabel')}</label>
+                      <textarea style={{ ...inputStyle, height: 64, resize: 'vertical', fontFamily: 'monospace' }} placeholder={t('browserStep.jsExprPlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
                     </div>
                   )}
 
                   {step.action === 'click_and_download' && (
                     <div>
-                      <label style={labelStyle}>Tên file lưu lại (Tùy chọn)</label>
-                      <input style={inputStyle} placeholder="VD: bao_cao_thang (Hệ thống sẽ tự động thêm đuôi file gốc)" value={step.file_name || ''} onChange={e => updateStep(i, 'file_name', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.downloadFileNameLabel')}</label>
+                      <input style={inputStyle} placeholder={t('browserStep.downloadFileNamePlaceholder')} value={step.file_name || ''} onChange={e => updateStep(i, 'file_name', e.target.value)} />
                     </div>
                   )}
 
                   {/* Key name for data collection */}
                   {['get_text', 'get_attribute', 'get_all_text', 'get_url', 'screenshot', 'evaluate_js', 'click_and_download'].includes(step.action) && (
                     <div>
-                      <label style={labelStyle}>Lưu vào key (output_data key)</label>
-                      <input style={inputStyle} placeholder="VD: title, url, content" value={step.key_name || 'result'} onChange={e => updateStep(i, 'key_name', e.target.value)} />
+                      <label style={labelStyle}>{t('browserStep.keyNameLabel')}</label>
+                      <input style={inputStyle} placeholder={t('browserStep.keyNamePlaceholder')} value={step.key_name || 'result'} onChange={e => updateStep(i, 'key_name', e.target.value)} />
                     </div>
                   )}
 
                   {/* Timeout */}
                   {actionDef.needsSelector && (
                     <div>
-                      <label style={labelStyle}>Timeout (ms, mặc định 20000)</label>
+                      <label style={labelStyle}>{t('browserStep.timeoutLabel')}</label>
                       <input type="number" style={inputStyle} placeholder="20000" value={step.timeout || ''} onChange={e => updateStep(i, 'timeout', e.target.value)} min="1000" step="1000" />
                     </div>
                   )}
 
                   {/* Note */}
                   <div>
-                    <label style={labelStyle}>Ghi chú (hiển thị trong log)</label>
-                    <input style={inputStyle} placeholder="VD: Click nút Đăng nhập" value={step.note || ''} onChange={e => updateStep(i, 'note', e.target.value)} />
+                    <label style={labelStyle}>{t('browserStep.noteLabel')}</label>
+                    <input style={inputStyle} placeholder={t('browserStep.notePlaceholder')} value={step.note || ''} onChange={e => updateStep(i, 'note', e.target.value)} />
                   </div>
 
                   {/* Continue on error */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input type="checkbox" id={`coe-${i}`} checked={step.continue_on_error || false} onChange={e => updateStep(i, 'continue_on_error', e.target.checked)} style={{ cursor: 'pointer' }} />
-                    <label htmlFor={`coe-${i}`} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>Bỏ qua lỗi và tiếp tục (continue_on_error)</label>
+                    <label htmlFor={`coe-${i}`} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>{t('browserStep.continueOnError')}</label>
                   </div>
                 </div>
               )}
@@ -576,7 +580,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
       </div>
 
       {/* Footer hint */}
-      <Alert title={<span>Dùng <Text code>{'{{key}}'}</Text> trong trường value để chèn dữ liệu từ <Text code>input_data</Text></span>}
+      <Alert title={<span>{t('browserStep.footerHintPrefix')} <Text code>{'{{key}}'}</Text> {t('browserStep.footerHintSuffix')} <Text code>input_data</Text></span>}
         type="info"
         showIcon
         style={{ margin: '8px 16px', borderRadius: 8 }}
@@ -586,6 +590,7 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
 }
 
 const PositionSelector = ({ value, onChange }) => {
+  const { t } = useTranslation()
   const btnStyle = (pos) => ({
     width: 48,
     height: 28,
@@ -605,22 +610,25 @@ const PositionSelector = ({ value, onChange }) => {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '48px 48px 48px', gridTemplateRows: '28px 28px 28px', gap: '4px' }}>
       <div style={{ gridColumn: 2, gridRow: 1 }} onClick={() => onChange('top')}>
-        <div style={btnStyle('top')}>Trên</div>
+        <div style={btnStyle('top')}>{t('browserStep.posTop')}</div>
       </div>
       <div style={{ gridColumn: 1, gridRow: 2 }} onClick={() => onChange('left')}>
-        <div style={btnStyle('left')}>Trái</div>
+        <div style={btnStyle('left')}>{t('browserStep.posLeft')}</div>
       </div>
       <div style={{ gridColumn: 3, gridRow: 2 }} onClick={() => onChange('right')}>
-        <div style={btnStyle('right')}>Phải</div>
+        <div style={btnStyle('right')}>{t('browserStep.posRight')}</div>
       </div>
       <div style={{ gridColumn: 2, gridRow: 3 }} onClick={() => onChange('bottom')}>
-        <div style={btnStyle('bottom')}>Dưới</div>
+        <div style={btnStyle('bottom')}>{t('browserStep.posBottom')}</div>
       </div>
     </div>
   );
 };
 
 export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate, inputKeys = [], workflowId, projectId }) {
+  const { t } = useTranslation()
+  const VAR_NAME_RULE = getVarNameRule(t)
+  const VAR_NAME_HINT = getVarNameHint(t)
   const theme = useStore(state => state.theme)
   const [form] = Form.useForm()
   const [code, setCode] = useState(node.data.code || BLOCK_TEMPLATES.python.default)
@@ -737,11 +745,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     const file = form.getFieldValue('excelReadFile')
     const header_row = form.getFieldValue('excelReadHeaderRow') || 1
     if (!file) {
-      toast.error('Vui lòng chọn/nhập tên file Excel trước')
+      toast.error(t('blockEditor.selectExcelFileFirst'))
       return
     }
     if (file.includes('{{')) {
-      toast.error('Không thể tải cột khi dùng biến {{...}} — hãy chọn 1 file cụ thể')
+      toast.error(`${t('blockEditor.cannotLoadColsWithVarPrefix')} {{...}} ${t('blockEditor.cannotLoadColsWithVarSuffix')}`)
       return
     }
     setLoadingExcelReadCols(true)
@@ -751,7 +759,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       const res = await getFileColumns(workflowId, file, backendHeader)
       const cols = (res.data?.columns || []).map(c => String(c))
       setExcelReadCols(cols)
-      toast.success(`Đã tìm thấy ${cols.length} cột tiêu đề`)
+      toast.success(t('blockEditor.foundColumnsCount', { count: cols.length }))
     } catch (e) {
       toast.error(e.response?.data?.detail || e.message)
     } finally {
@@ -764,7 +772,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     const sheet_name = form.getFieldValue('googleSheetsSheetName')
     const header_row = form.getFieldValue('googleSheetsHeaderRow') || 1
     if (!url) {
-      toast.error('Vui lòng nhập Link Google Sheet trước')
+      toast.error(t('blockEditor.enterGoogleSheetLink'))
       return
     }
     setLoadingGoogleSheetsCols(true)
@@ -772,7 +780,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       const res = await getGoogleSheetsColumns({ url, sheet_name, header_row })
       const cols = res.data?.columns || []
       setGoogleSheetsCols(cols)
-      toast.success(`Đã tìm thấy ${cols.length} cột tiêu đề`)
+      toast.success(t('blockEditor.foundColumnsCount', { count: cols.length }))
     } catch (e) {
       toast.error(e.response?.data?.detail || e.message)
     } finally {
@@ -860,7 +868,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           aiCancelFn.current = null;
         },
         onError: (err) => {
-          toast.error("Lỗi AI: " + err.message);
+          toast.error(t('blockEditor.aiError', { message: err.message }));
           setAiGenerating(false);
           aiCancelFn.current = null;
         }
@@ -1045,11 +1053,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               form.setFieldsValue(updates)
             }
           } else {
-            setColumnError('Không lấy được danh sách cột.')
+            setColumnError(t('blockEditor.noColumnsFound'))
             setAvailableColumns([])
           }
         } catch (e) {
-          setColumnError('File chưa tồn tại, vui lòng tự nhập chữ cái cột (A, B, C...).')
+          setColumnError(t('blockEditor.fileNotExistManualCol'))
           setAvailableColumns([])
         } finally {
           setLoadingColumns(false)
@@ -1095,7 +1103,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const getSelectedDbConfig = (connectionId) => {
     const conn = dbConnections.find(c => c.id === connectionId);
     if (!conn) {
-      throw new Error("Vui lòng chọn Kết nối Database");
+      throw new Error(t('blockEditor.selectDbConnection'));
     }
     return {
       project_id: projectId,
@@ -1109,12 +1117,12 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   };
 
   const renderDbConnectionField = (fieldName) => (
-    <Form.Item name={fieldName} label="Kết nối Database" rules={[{ required: true, message: 'Chọn kết nối Database' }]} style={{ marginBottom: 16 }}>
+    <Form.Item name={fieldName} label={t('blockEditor.dbConnectionLabel')} rules={[{ required: true, message: t('blockEditor.dbConnectionRequired') }]} style={{ marginBottom: 16 }}>
       <Select
         loading={loadingDbConnections}
-        placeholder="Chọn kết nối đã lưu (Dữ liệu Workflow → tab Database)"
+        placeholder={t('blockEditor.dbConnectionPlaceholder')}
         options={dbConnections.map(c => ({ value: c.id, label: c.label }))}
-        notFoundContent={loadingDbConnections ? 'Đang tải...' : 'Chưa có kết nối nào — thêm ở tab Database trong Dữ liệu Workflow'}
+        notFoundContent={loadingDbConnections ? t('blockEditor.dbConnectionLoading') : t('blockEditor.dbConnectionEmpty')}
       />
     </Form.Item>
   );
@@ -1144,7 +1152,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       const dbConfig = getSelectedDbConfig(excelToSqlSavedConnectionId);
       const res = await getDatabaseTables(dbConfig);
       setDbTables(res.data?.tables || []);
-      toast.success('Kiểm tra connect thành công! Đã tải danh sách bảng');
+      toast.success(t('blockEditor.dbConnectTestSuccess'));
     } catch (e) {
       toast.error(e.response?.data?.detail || e.message);
     } finally {
@@ -1154,7 +1162,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
   const fetchDbColumns = async () => {
     if (!workflowId || !excelToSqlTableName) {
-      toast.error('Vui lòng nhập hoặc chọn bảng đích');
+      toast.error(t('blockEditor.enterOrSelectTargetTable'));
       return;
     }
     setLoadingSchema(true);
@@ -1179,7 +1187,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           excCols = excRes.data?.columns || [];
           setExcelColumns(excCols);
         } catch(e) {
-           toast.error('Lỗi đọc file Excel: ' + e.message);
+           toast.error(t('blockEditor.readExcelError', { message: e.message }));
         }
       }
       
@@ -1193,7 +1201,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         return newMap;
       });
       
-      toast.success('Đã tải cấu trúc bảng và file');
+      toast.success(t('blockEditor.loadedSchemaSuccess'));
     } catch (e) {
       toast.error(e.response?.data?.detail || e.message);
     } finally {
@@ -1220,7 +1228,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           mailCc: (values.mailCc || []).join(','),
         } : {}),
       })
-      toast.success('Đã lưu cấu hình khối!')
+      toast.success(t('blockEditor.saveBlockSuccess'))
     } catch (e) {
       // validation error already surfaced via form fields
     }
@@ -1258,7 +1266,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
   return (
     <Drawer
-      title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} Chỉnh sửa Block</Space>}
+      title={<Space>{isBrowser ? <Globe size="1.125rem" color="#0ea5e9" /> : <Code2 size="1.125rem" color="var(--accent-primary)" />} {t('blockEditor.editBlockTitle')}</Space>}
       size={drawerWidthStr}
       onClose={onClose}
       open={true}
@@ -1267,8 +1275,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       destroyOnHidden
       extra={
         <Space>
-          <Button onClick={onClose}>Hủy</Button>
-          <Button type="primary" onClick={handleSave}>Lưu</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
+          <Button type="primary" onClick={handleSave}>{t('common.save')}</Button>
         </Space>
       }
       styles={{ body: { padding: 0, display: 'flex', overflow: 'hidden' } }}
@@ -1382,22 +1390,22 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         >
           <div style={{ width: leftPanelWidth, height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            <Form.Item name="inPosition" label={<span>Cổng vào (IN) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+            <Form.Item name="inPosition" label={<span>{t('blockEditor.portIn')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
               <PositionSelector />
             </Form.Item>
-            
+
             {!isLoop && !isCondition && (
-              <Form.Item name="outPosition" label={<span>Cổng ra (OUT) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+              <Form.Item name="outPosition" label={<span>{t('blockEditor.portOut')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background: BLOCK_TYPES[node.data.type]?.color || 'var(--text-secondary)', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                 <PositionSelector />
               </Form.Item>
             )}
 
             {isCondition && (
               <>
-                <Form.Item name="loopPosition" label={<span>Cổng True <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#22c55e', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                <Form.Item name="loopPosition" label={<span>{t('blockEditor.portTrue')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#22c55e', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
-                <Form.Item name="donePosition" label={<span>Cổng False <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#ef4444', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                <Form.Item name="donePosition" label={<span>{t('blockEditor.portFalse')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#ef4444', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
               </>
@@ -1405,79 +1413,79 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
             {isLoop && (
               <>
-                <Form.Item name="outPosition" label={<span>Cổng Đúng (TRUE) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#22c55e', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                <Form.Item name="outPosition" label={<span>{t('blockEditor.portLoopTrue')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#22c55e', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
-                <Form.Item name="loopPosition" label={<span>Cổng Lặp (LOOP) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#f59e0b', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                <Form.Item name="loopPosition" label={<span>{t('blockEditor.portLoop')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#f59e0b', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
-                <Form.Item name="donePosition" label={<span>Cổng Kết thúc (ENDLOOP) <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#ef4444', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
+                <Form.Item name="donePosition" label={<span>{t('blockEditor.portEndloop')} <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'#ef4444', marginLeft:4}}></span></span>} style={{ marginBottom: 0 }}>
                   <PositionSelector />
                 </Form.Item>
               </>
             )}
           </div>
 
-          <Form.Item name="label" label="Tên Block" rules={[{ required: true, message: 'Nhập tên block' }]}>
-            <Input placeholder="Tên hiển thị trên canvas" />
+          <Form.Item name="label" label={t('blockEditor.blockNameLabel')} rules={[{ required: true, message: t('blockEditor.blockNameRequired') }]}>
+            <Input placeholder={t('blockEditor.blockNamePlaceholder')} />
           </Form.Item>
 
-          <Form.Item name="description" label="Mô tả">
-            <Input.TextArea placeholder="Mô tả ngắn về block này" rows={2} />
+          <Form.Item name="description" label={t('blockEditor.blockDescLabel')}>
+            <Input.TextArea placeholder={t('blockEditor.blockDescPlaceholder')} rows={2} />
           </Form.Item>
 
 
 
           {isLoop && (
             <>
-              <Alert title="Điều kiện ĐÚNG sẽ thoát (rẽ nhánh TRUE). Điều kiện SAI sẽ lặp (rẽ nhánh LOOP). Hết lượt cho phép (rẽ nhánh ENDLOOP)." 
-                type="info" 
-                showIcon 
-                style={{ marginBottom: 16 }} 
+              <Alert title={t('blockEditor.loopExitHint')}
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
               />
-              <Alert title={<span>Khi chạy vòng lặp, khối này tự động xuất ra biến <Text code>{`{{loop_iteration}}`}</Text> (số đếm vòng lặp hiện tại: 1, 2, 3...) để các khối sau sử dụng.</span>} type="success" showIcon style={{ marginBottom: 16 }} />
-              <Form.Item name="loopMode" label="Chế độ lặp">
+              <Alert title={<span>{t('blockEditor.loopIterationHintPrefix')} <Text code>{`{{loop_iteration}}`}</Text> {t('blockEditor.loopIterationHintSuffix')}</span>} type="success" showIcon style={{ marginBottom: 16 }} />
+              <Form.Item name="loopMode" label={t('blockEditor.loopModeLabel')}>
                 <Select>
-                  <Select.Option value="count">Lặp theo số lần cố định</Select.Option>
-                  <Select.Option value="condition">Lặp theo điều kiện biến</Select.Option>
-                  <Select.Option value="array">Lặp qua Mảng dữ liệu (Array)</Select.Option>
+                  <Select.Option value="count">{t('blockEditor.loopModeCount')}</Select.Option>
+                  <Select.Option value="condition">{t('blockEditor.loopModeCondition')}</Select.Option>
+                  <Select.Option value="array">{t('blockEditor.loopModeArray')}</Select.Option>
                 </Select>
               </Form.Item>
               {loopMode === 'count' && (
-                <Form.Item name="loopCount" label="Số lần lặp" rules={[{ required: true, message: 'Nhập số lần lặp' }]}>
-                  <InputNumber min={1} max={2000} style={{ width: '100%' }} placeholder="Ví dụ: 5" />
+                <Form.Item name="loopCount" label={t('blockEditor.loopCountLabel')} rules={[{ required: true, message: t('blockEditor.loopCountRequired') }]}>
+                  <InputNumber min={1} max={2000} style={{ width: '100%' }} placeholder={t('blockEditor.loopCountPlaceholder')} />
                 </Form.Item>
               )}
               {loopMode === 'array' && (
-                <Form.Item name="loopArrayVar" label="Tên biến Mảng cần lặp" rules={[{ required: true, message: 'Nhập tên biến mảng' }]} tooltip="Chọn tên biến mảng dữ liệu đã đọc từ khối trước (mặc định: sheets_data)">
+                <Form.Item name="loopArrayVar" label={t('blockEditor.loopArrayVarLabel')} rules={[{ required: true, message: t('blockEditor.loopArrayVarRequired') }]} tooltip={t('blockEditor.loopArrayVarTooltip')}>
                   <AutoComplete options={autoCompleteOptions} placeholder="sheets_data" allowClear />
                 </Form.Item>
               )}
               {loopMode === 'condition' && (
                 <Form.Item
                   name="loopMaxCount"
-                  label="Số lần lặp tối đa"
-                  tooltip="Giới hạn an toàn - nếu điều kiện mãi không đúng, vòng lặp sẽ tự dừng (đi nhánh ENDLOOP) sau đúng số lần này, tránh lặp vô hạn."
-                  rules={[{ required: true, message: 'Nhập số lần lặp tối đa' }]}
+                  label={t('blockEditor.loopMaxCountLabel')}
+                  tooltip={t('blockEditor.loopMaxCountTooltip')}
+                  rules={[{ required: true, message: t('blockEditor.loopMaxCountRequired') }]}
                 >
-                  <InputNumber min={1} max={5000} style={{ width: '100%' }} placeholder="Ví dụ: 50" />
+                  <InputNumber min={1} max={5000} style={{ width: '100%' }} placeholder={t('blockEditor.loopMaxCountPlaceholder')} />
                 </Form.Item>
               )}
-              <Form.Item name="loopDelay" label="Thời gian chờ mỗi lần lặp (giây)">
-                <InputNumber min={0} step={0.5} style={{ width: '100%' }} placeholder="Ví dụ: 1" />
+              <Form.Item name="loopDelay" label={t('blockEditor.loopDelayLabel')}>
+                <InputNumber min={0} step={0.5} style={{ width: '100%' }} placeholder={t('blockEditor.loopDelayPlaceholder')} />
               </Form.Item>
             </>
           )}
 
           {(isCondition || (isLoop && loopMode === 'condition')) && (
             <>
-              <Form.Item name="logicalOperator" label="Toán tử Logic" tooltip="Cách kết hợp khi có nhiều điều kiện">
+              <Form.Item name="logicalOperator" label={t('blockEditor.logicalOperatorLabel')} tooltip={t('blockEditor.logicalOperatorTooltip')}>
                 <Select>
-                  <Select.Option value="AND">Tất cả đều đúng (AND)</Select.Option>
-                  <Select.Option value="OR">Ít nhất một cái đúng (OR)</Select.Option>
+                  <Select.Option value="AND">{t('blockEditor.logicalOpAnd')}</Select.Option>
+                  <Select.Option value="OR">{t('blockEditor.logicalOpOr')}</Select.Option>
                 </Select>
               </Form.Item>
-              
+
               <Form.List name="conditions">
                 {(fields, { add, remove }) => (
                   <>
@@ -1487,11 +1495,11 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                           {...restField}
                           name={[name, 'condVariable']}
                           style={{ flex: 1, marginBottom: 0 }}
-                          rules={[{ required: true, message: 'Nhập biến' }]}
+                          rules={[{ required: true, message: t('blockEditor.condVarRequired') }]}
                         >
-                          <Input placeholder="Biến (VD: npp)" />
+                          <Input placeholder={t('blockEditor.condVarPlaceholder')} />
                         </Form.Item>
-                        
+
                         <Form.Item
                           {...restField}
                           name={[name, 'condOperator']}
@@ -1504,7 +1512,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                             <Select.Option value="<">&lt;</Select.Option>
                             <Select.Option value=">=">&gt;=</Select.Option>
                             <Select.Option value="<=">&lt;=</Select.Option>
-                            <Select.Option value="contains">chứa</Select.Option>
+                            <Select.Option value="contains">{t('blockEditor.condOpContains')}</Select.Option>
                           </Select>
                         </Form.Item>
 
@@ -1513,7 +1521,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                           name={[name, 'condValue']}
                           style={{ flex: 1, marginBottom: 0 }}
                         >
-                          <Input placeholder="Giá trị" />
+                          <Input placeholder={t('blockEditor.condValuePlaceholder')} />
                         </Form.Item>
 
                         <Button
@@ -1522,24 +1530,24 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                           icon={<Trash2 size={16} />}
                           onClick={() => remove(name)}
                           style={{ marginTop: 4 }}
-                          aria-label="Xóa điều kiện"
+                          aria-label={t('blockEditor.removeConditionAria')}
                         />
                       </div>
                     ))}
                     <Form.Item>
                       <Button type="dashed" onClick={() => add({ condOperator: '==' })} block icon={<Plus size={16} />}>
-                        Thêm điều kiện
+                        {t('blockEditor.addConditionBtn')}
                       </Button>
                     </Form.Item>
                   </>
                 )}
               </Form.List>
-              <Alert title={<span>Biến so sánh là các key (trường dữ liệu) nằm trong gói <b>output_data</b> được truyền từ khối liền trước nó.</span>} type="info" showIcon style={{ marginBottom: 24 }} />
+              <Alert title={<span>{t('blockEditor.condSourceHintPrefix')} <b>output_data</b> {t('blockEditor.condSourceHintSuffix')}</span>} type="info" showIcon style={{ marginBottom: 24 }} />
             </>
           )}
 
           {isDelay && (
-            <Form.Item label="Thời gian chờ (giây)" name="delaySeconds" rules={[{ required: true, message: 'Nhập số giây' }]}>
+            <Form.Item label={t('blockEditor.delayWaitLabel')} name="delaySeconds" rules={[{ required: true, message: t('blockEditor.delaySecondsRequired') }]}>
               <InputNumber min={1} style={{ width: '100%' }} />
             </Form.Item>
           )}
@@ -1550,25 +1558,25 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 type="warning"
                 showIcon
                 style={{ marginBottom: 16 }}
-                description="Khi chạy tới khối này, workflow tạm dừng và hiện form cho người dùng nhập. Hết thời gian chờ mà chưa nhập → khối BÁO LỖI (đi nhánh Bắt Lỗi nếu có). Biến nhập được đưa vào global cho các khối sau (biến ngày lưu dạng YYYY-MM-DD)."
+                description={t('blockEditor.inputVarsWarning')}
               />
               <Form.Item
-                label="Thời gian chờ nhập (giây)"
+                label={t('blockEditor.inputTimeoutLabel')}
                 name="inputTimeout"
-                rules={[{ required: true, message: 'Nhập số giây' }]}
-                extra="Hết thời gian này người dùng không nhập nữa, khối sẽ báo lỗi."
+                rules={[{ required: true, message: t('blockEditor.delaySecondsRequired') }]}
+                extra={t('blockEditor.inputTimeoutExtra')}
               >
                 <InputNumber min={5} max={3600} style={{ width: '100%' }} />
               </Form.Item>
 
-              <Divider style={{ margin: '8px 0 16px' }}>Danh sách biến</Divider>
+              <Divider style={{ margin: '8px 0 16px' }}>{t('blockEditor.varListDivider')}</Divider>
 
               {inputFields.map((f, idx) => (
                 <div key={idx} style={{ border: '1px solid var(--border-default)', borderRadius: 8, padding: 12, marginBottom: 10, background: 'var(--bg-surface)' }}>
                   <Row gutter={8} align="middle">
                     <Col span={8}>
                       <Input
-                        placeholder="tên_biến (không dấu, không cách)"
+                        placeholder={t('blockEditor.varNamePlaceholder')}
                         value={f.name}
                         onChange={(e) => updateInputField(idx, 'name', e.target.value.replace(/[^\w]/g, '_'))}
                         addonBefore="{{ }}"
@@ -1576,7 +1584,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     </Col>
                     <Col span={9}>
                       <Input
-                        placeholder="Nhãn hiển thị cho người dùng"
+                        placeholder={t('blockEditor.varLabelPlaceholder')}
                         value={f.label}
                         onChange={(e) => updateInputField(idx, 'label', e.target.value)}
                       />
@@ -1587,45 +1595,45 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                         value={f.type || 'text'}
                         onChange={(v) => updateInputField(idx, 'type', v)}
                         options={[
-                          { value: 'text', label: 'Chữ' },
-                          { value: 'number', label: 'Số' },
-                          { value: 'date', label: 'Ngày' },
+                          { value: 'text', label: t('blockEditor.varTypeText') },
+                          { value: 'number', label: t('blockEditor.varTypeNumber') },
+                          { value: 'date', label: t('blockEditor.varTypeDate') },
                         ]}
                       />
                     </Col>
                     <Col span={2} style={{ textAlign: 'right' }}>
-                      <Button danger type="text" icon={<Trash2 size={16} />} aria-label="Xóa biến"
+                      <Button danger type="text" icon={<Trash2 size={16} />} aria-label={t('blockEditor.removeVarAria')}
                         onClick={() => removeInputField(idx)} disabled={inputFields.length <= 1} />
                     </Col>
                   </Row>
                   <Row gutter={8} align="middle" style={{ marginTop: 8 }}>
                     <Col span={17}>
                       <Input
-                        placeholder="Giá trị mặc định (tùy chọn)"
+                        placeholder={t('blockEditor.defaultValuePlaceholder')}
                         value={f.defaultValue}
                         onChange={(e) => updateInputField(idx, 'defaultValue', e.target.value)}
                       />
                     </Col>
                     <Col span={7} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Switch checked={!!f.required} onChange={(v) => updateInputField(idx, 'required', v)} size="small" />
-                      <span className="text-secondary text-sm">Bắt buộc</span>
+                      <span className="text-secondary text-sm">{t('blockEditor.requiredLabel')}</span>
                     </Col>
                   </Row>
                 </div>
               ))}
 
-              <Button type="dashed" block icon={<Plus size={16} />} onClick={addInputField}>Thêm biến</Button>
+              <Button type="dashed" block icon={<Plus size={16} />} onClick={addInputField}>{t('blockEditor.addVarBtn')}</Button>
             </>
           )}
 
           {isEnd && (
-            <Alert title="Khi workflow chạy đến khối này, nó sẽ kết thúc." type="info" showIcon style={{ marginBottom: 16 }} />
+            <Alert title={t('blockEditor.endBlockHint')} type="info" showIcon style={{ marginBottom: 16 }} />
           )}
 
           {isQueue && (
             <Alert
-              title="Khối Xếp hàng (không xử lý gì)"
-              description="Nối 1 nhánh vào khối này. Nó sẽ 'lấy số chờ tới lượt': đợi tất cả các nhánh song song khác chạy xong rồi mới chạy tiếp khối phía sau — đảm bảo khối sau chạy SAU CÙNG và đúng 1 lần. Không thay đổi biến nào."
+              title={t('blockEditor.queueTitle')}
+              description={t('blockEditor.queueDesc')}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -1633,16 +1641,16 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           )}
 
           {isErrorTrigger && (
-            <Alert 
+            <Alert
               description={
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <span>Khi có bất kỳ khối nào bị lỗi, khối này sẽ được kích hoạt.</span>
-                  <span>Cung cấp 4 biến để các khối sau sử dụng:</span>
+                  <span>{t('blockEditor.errorTriggerDesc1')}</span>
+                  <span>{t('blockEditor.errorTriggerDesc2')}</span>
                   <ul style={{ paddingLeft: '20px', margin: 0 }}>
-                    <li><Text code>{`{{status}}`}</Text>: Luôn là "error"</li>
-                    <li><Text code>{`{{error_detail}}`}</Text>: Chi tiết mã lỗi báo về</li>
-                    <li><Text code>{`{{failed_block}}`}</Text>: Tên của khối bị lỗi</li>
-                    <li><Text code>{`{{failed_block_id}}`}</Text>: ID của khối bị lỗi</li>
+                    <li><Text code>{`{{status}}`}</Text>: {t('blockEditor.errorVarStatus')}</li>
+                    <li><Text code>{`{{error_detail}}`}</Text>: {t('blockEditor.errorVarDetail')}</li>
+                    <li><Text code>{`{{failed_block}}`}</Text>: {t('blockEditor.errorVarFailedBlock')}</li>
+                    <li><Text code>{`{{failed_block_id}}`}</Text>: {t('blockEditor.errorVarFailedBlockId')}</li>
                   </ul>
                 </div>
               }
@@ -1654,83 +1662,83 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
           {isTelegram && (
             <>
-              <Form.Item label="Chế độ" name="telegramAction">
+              <Form.Item label={t('blockEditor.telegramActionLabel')} name="telegramAction">
                 <Select>
-                  <Select.Option value="send">📤 Gửi mới</Select.Option>
-                  <Select.Option value="edit">✏️ Sửa tin nhắn</Select.Option>
-                  <Select.Option value="reply">↩️ Trả lời tin nhắn</Select.Option>
+                  <Select.Option value="send">{t('blockEditor.telegramActionSend')}</Select.Option>
+                  <Select.Option value="edit">{t('blockEditor.telegramActionEdit')}</Select.Option>
+                  <Select.Option value="reply">{t('blockEditor.telegramActionReply')}</Select.Option>
                 </Select>
               </Form.Item>
-              <Form.Item label="Bot Token" name="telegramBotToken" rules={[{ required: true, message: 'Nhập Bot Token' }]}>
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
+              <Form.Item label={t('blockEditor.botTokenLabel')} name="telegramBotToken" rules={[{ required: true, message: t('blockEditor.botTokenRequired') }]}>
+                <AutoComplete options={autoCompleteOptions} placeholder={t('blockEditor.botTokenPlaceholder')} allowClear />
               </Form.Item>
-              <Form.Item label="ID Người nhận / Nhóm" name="telegramChatId" rules={[{ required: true, message: 'Nhập Chat ID' }]}>
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập ID hoặc chọn biến" allowClear />
+              <Form.Item label={t('blockEditor.chatIdLabel')} name="telegramChatId" rules={[{ required: true, message: t('blockEditor.chatIdRequired') }]}>
+                <AutoComplete options={autoCompleteOptions} placeholder={t('blockEditor.chatIdPlaceholder')} allowClear />
               </Form.Item>
               {(telegramAction === 'edit' || telegramAction === 'reply') && (
-                <Form.Item label="Message ID" name="telegramMessageId" rules={[{ required: true, message: 'Nhập Message ID' }]} tooltip="Dùng biến {{message_id}} từ block Telegram trước đó.">
-                  <AutoComplete options={[{ value: '{{message_id}}' }, ...autoCompleteOptions]} placeholder="{{message_id}} hoặc nhập số" allowClear />
+                <Form.Item label={t('blockEditor.messageIdLabel')} name="telegramMessageId" rules={[{ required: true, message: t('blockEditor.messageIdRequired') }]} tooltip={`${t('blockEditor.messageIdTooltipPrefix')} {{message_id}} ${t('blockEditor.messageIdTooltipSuffix')}`}>
+                  <AutoComplete options={[{ value: '{{message_id}}' }, ...autoCompleteOptions]} placeholder={`{{message_id}} ${t('blockEditor.messageIdPlaceholderSuffix')}`} allowClear />
                 </Form.Item>
               )}
 
-              <Form.Item label="Định dạng văn bản (Parse Mode)" name="telegramParseMode">
+              <Form.Item label={t('blockEditor.parseModeLabel')} name="telegramParseMode">
                 <Select>
                   <Select.Option value="HTML">HTML</Select.Option>
                   <Select.Option value="MarkdownV2">Markdown V2</Select.Option>
-                  <Select.Option value="">Không có</Select.Option>
+                  <Select.Option value="">{t('blockEditor.parseModeNone')}</Select.Option>
                 </Select>
               </Form.Item>
               {telegramAction !== 'edit' && (
                 <>
                   <Divider style={{ margin: '16px 0 12px' }}>
-                    <Space><Paperclip size="0.875rem" /> Đính kèm tập tin</Space>
+                    <Space><Paperclip size="0.875rem" /> {t('blockEditor.attachFileDivider')}</Space>
                   </Divider>
-                  <Form.Item label="Đính kèm File" name="telegramAttachments">
-                    <Select mode="tags" loading={loadingTelegramFiles} placeholder="Chọn file có sẵn hoặc gõ tên file và Enter" style={{ width: '100%' }}>
+                  <Form.Item label={t('blockEditor.attachFileLabel')} name="telegramAttachments">
+                    <Select mode="tags" loading={loadingTelegramFiles} placeholder={t('blockEditor.attachFilePlaceholder')} style={{ width: '100%' }}>
                       {telegramFiles.map(f => (
                         <Select.Option key={f.name || f} value={f.name || f}>{f.name || f}</Select.Option>
                       ))}
                     </Select>
                   </Form.Item>
-                  <Alert title="Chọn file từ thư mục Output hoặc gõ tên file (VD: bao_cao.xlsx) rồi bấm Enter." type="info" showIcon style={{ marginBottom: 16 }} />
+                  <Alert title={t('blockEditor.attachFileHint')} type="info" showIcon style={{ marginBottom: 16 }} />
                 </>
               )}
               <Divider style={{ margin: '16px 0 12px' }} />
               <Alert
-                description={<span>Khi chạy thành công, khối này luôn có sẵn <Text code>{`{{chat_id}}`}</Text> và <Text code>{`{{sent_message_id}}`}</Text> cho khối sau (nếu dữ liệu đầu vào chưa từng là object, sẽ có thêm <Text code>{`{{message_id}}`}</Text> giống <Text code>{`{{sent_message_id}}`}</Text>). Muốn dùng tên riêng (tránh bị khối Telegram khác ghi đè), đặt tên ở 2 ô bên dưới.</span>}
+                description={<span>{t('blockEditor.telegramVarsPart1')} <Text code>{`{{chat_id}}`}</Text> {t('blockEditor.telegramVarsPart2')} <Text code>{`{{sent_message_id}}`}</Text> {t('blockEditor.telegramVarsPart3')} <Text code>{`{{message_id}}`}</Text> {t('blockEditor.telegramVarsPart4')} <Text code>{`{{sent_message_id}}`}</Text>{t('blockEditor.telegramVarsPart5')}</span>}
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
               />
-              {renderVarNameField('telegramSentMessageIdVarName', 'Lưu sent_message_id vào biến', 'Mặc định trùng tên biến trả về ({{sent_message_id}}). Nếu workflow có nhiều khối Telegram và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: sent_message_id', { marginBottom: 12 })}
-              {renderVarNameField('telegramChatIdVarName', 'Lưu chat_id vào biến', 'Mặc định trùng tên biến trả về ({{chat_id}}). Nếu workflow có nhiều khối Telegram và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: chat_id', { marginBottom: 16 })}
+              {renderVarNameField('telegramSentMessageIdVarName', t('blockEditor.saveSentMsgIdLabel'), `${t('blockEditor.outputVarHintPrefix')}{{sent_message_id}}). ${t('blockEditor.multiBlockHintTelegram')}`, 'VD: sent_message_id', { marginBottom: 12 })}
+              {renderVarNameField('telegramChatIdVarName', t('blockEditor.saveChatIdLabel'), `${t('blockEditor.outputVarHintPrefix')}{{chat_id}}). ${t('blockEditor.multiBlockHintTelegram')}`, 'VD: chat_id', { marginBottom: 16 })}
             </>
           )}
 
           {isTelegramListener && (
             <>
-              <Form.Item label="Bot Token" name="telegramListenerToken" rules={[{ required: true, message: 'Nhập Bot Token' }]}>
-                <AutoComplete options={autoCompleteOptions} placeholder="Nhập mã hoặc chọn biến" allowClear />
+              <Form.Item label={t('blockEditor.botTokenLabel')} name="telegramListenerToken" rules={[{ required: true, message: t('blockEditor.botTokenRequired') }]}>
+                <AutoComplete options={autoCompleteOptions} placeholder={t('blockEditor.botTokenPlaceholder')} allowClear />
               </Form.Item>
-              <Alert title="Cấu hình các lệnh ở bảng bên phải. Bấm nút Chạy của workflow để bot bắt đầu lắng nghe." type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title={t('blockEditor.listenerBotTokenAlert')} type="info" showIcon style={{ marginBottom: 16 }} />
               <Alert
-                description={<span>Khi có tin nhắn khớp lệnh, khối này luôn có sẵn <Text code>{`{{chat_id}}`}</Text>, <Text code>{`{{message_id}}`}</Text>, <Text code>{`{{text}}`}</Text>, <Text code>{`{{sender_name}}`}</Text>. Muốn dùng tên riêng, đặt tên ở các ô bên dưới.</span>}
+                description={<span>{t('blockEditor.listenerVarsPart1')} <Text code>{`{{chat_id}}`}</Text>, <Text code>{`{{message_id}}`}</Text>, <Text code>{`{{text}}`}</Text>, <Text code>{`{{sender_name}}`}</Text>{t('blockEditor.listenerVarsPart2')}</span>}
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
               />
-              {renderVarNameField('telegramListenerChatIdVarName', 'Lưu chat_id vào biến', 'Mặc định trùng tên biến trả về ({{chat_id}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: chat_id', { marginBottom: 12 })}
-              {renderVarNameField('telegramListenerMessageIdVarName', 'Lưu message_id vào biến', 'Mặc định trùng tên biến trả về ({{message_id}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: message_id', { marginBottom: 12 })}
-              {renderVarNameField('telegramListenerTextVarName', 'Lưu text vào biến', 'Mặc định trùng tên biến trả về ({{text}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: text', { marginBottom: 12 })}
-              {renderVarNameField('telegramListenerSenderNameVarName', 'Lưu sender_name vào biến', 'Mặc định trùng tên biến trả về ({{sender_name}}). Đổi tên riêng nếu muốn tránh nhầm lẫn với khối khác.', 'VD: sender_name', { marginBottom: 16 })}
+              {renderVarNameField('telegramListenerChatIdVarName', t('blockEditor.saveChatIdLabel'), `${t('blockEditor.outputVarHintPrefix')}{{chat_id}}). ${t('blockEditor.multiBlockHintListener')}`, 'VD: chat_id', { marginBottom: 12 })}
+              {renderVarNameField('telegramListenerMessageIdVarName', t('blockEditor.saveMessageIdLabel'), `${t('blockEditor.outputVarHintPrefix')}{{message_id}}). ${t('blockEditor.multiBlockHintListener')}`, 'VD: message_id', { marginBottom: 12 })}
+              {renderVarNameField('telegramListenerTextVarName', t('blockEditor.saveTextLabel'), `${t('blockEditor.outputVarHintPrefix')}{{text}}). ${t('blockEditor.multiBlockHintListener')}`, 'VD: text', { marginBottom: 12 })}
+              {renderVarNameField('telegramListenerSenderNameVarName', t('blockEditor.saveSenderNameLabel'), `${t('blockEditor.outputVarHintPrefix')}{{sender_name}}). ${t('blockEditor.multiBlockHintListener')}`, 'VD: sender_name', { marginBottom: 16 })}
             </>
           )}
 
           {isSqlToExcel && (
             <>
               {renderDbConnectionField('sqlToExcelSavedConnectionId')}
-              <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
-                <Input placeholder="VD: sqltoexcel.xlsx" />
+              <Form.Item name="excelFileName" label={t('blockEditor.excelResultFileNameLabel')} rules={[{ required: true, message: t('blockEditor.excelResultFileNameRequired') }]}>
+                <Input placeholder={t('blockEditor.sqlToExcelFilePlaceholder')} />
               </Form.Item>
             </>
           )}
@@ -1738,18 +1746,17 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           {isRunSqlExec && (
             <>
               {renderDbConnectionField('sqlExecSavedConnectionId')}
-              {renderVarNameField('sqlExecResultVarName', 'Lưu kết quả (rows) vào biến', 'Mặc định trùng tên biến trả về ({{result}}, dạng danh sách object). Nếu workflow có nhiều khối Chạy Hàm SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: result', { marginBottom: 12 })}
-              {renderVarNameField('sqlExecRowCountVarName', 'Lưu số dòng vào biến', 'Mặc định trùng tên biến trả về ({{row_count}}). Nếu workflow có nhiều khối Chạy Hàm SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: row_count', { marginBottom: 16 })}
+              {renderVarNameField('sqlExecResultVarName', t('blockEditor.saveResultLabel'), `${t('blockEditor.outputVarHintPrefix')}{{result}}${t('blockEditor.resultListNote')}). ${t('blockEditor.multiBlockHintSqlExec')}`, 'VD: result', { marginBottom: 12 })}
+              {renderVarNameField('sqlExecRowCountVarName', t('blockEditor.saveRowCountLabel'), `${t('blockEditor.outputVarHintPrefix')}{{row_count}}). ${t('blockEditor.multiBlockHintSqlExec')}`, 'VD: row_count', { marginBottom: 16 })}
               <Form.Item
-                label="Giới hạn thời gian chạy (giây)"
+                label={t('blockEditor.runSqlTimeoutLabel')}
                 name="sqlExecTimeout"
                 extra={
                   // Màu mặc định của .ant-form-item-extra là --text-muted → chỉ 2.56:1
                   // trên nền trắng (dưới ngưỡng 4.5:1). Dùng --text-secondary: 7.58:1
                   // (light) và 6.96:1 (dark).
                   <span style={{ color: 'var(--text-secondary)' }}>
-                    Nhập 0 để chờ vô hạn — dùng cho thủ tục nặng chạy vài tiếng. Hết thời gian này khối sẽ báo lỗi
-                    và đi nhánh Bắt Lỗi. Dù đặt bao nhiêu vẫn dừng được bằng nút Dừng.
+                    {t('blockEditor.runSqlTimeoutExtra')}
                   </span>
                 }
                 style={{ marginBottom: 16 }}
@@ -1761,37 +1768,37 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
           {isMergeExcel && (
             <>
-              <Form.Item name="headerRows" label="Số dòng tiêu đề (Header)" rules={[{ required: true, message: 'Nhập số dòng tiêu đề' }]}>
-                <InputNumber min={0} style={{ width: '100%' }} placeholder="VD: 3" />
+              <Form.Item name="headerRows" label={t('blockEditor.headerRowsLabel')} rules={[{ required: true, message: t('blockEditor.headerRowsRequired') }]}>
+                <InputNumber min={0} style={{ width: '100%' }} placeholder={t('blockEditor.headerRowsPlaceholder')} />
               </Form.Item>
-              <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
-                <Input placeholder="VD: merged_report.xlsx" />
+              <Form.Item name="excelFileName" label={t('blockEditor.excelResultFileNameLabel')} rules={[{ required: true, message: t('blockEditor.excelResultFileNameRequired') }]}>
+                <Input placeholder={t('blockEditor.mergedFilePlaceholder')} />
               </Form.Item>
             </>
           )}
 
           {isPivotExcel && (
             <>
-              <Form.Item name="pivotInputFiles" label="File cần xử lý Pivot" rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}>
-                <Select mode="tags" loading={loadingFiles} placeholder="Nhấp để chọn hoặc gõ tên file..." style={{ width: '100%' }}>
+              <Form.Item name="pivotInputFiles" label={t('blockEditor.pivotFilesLabel')} rules={[{ required: true, message: t('blockEditor.pivotFilesRequired') }]}>
+                <Select mode="tags" loading={loadingFiles} placeholder={t('blockEditor.pivotFilesPlaceholder')} style={{ width: '100%' }}>
                   {availableFiles.map(f => (
                     <Select.Option key={f.name} value={f.name}>{f.name}</Select.Option>
                   ))}
                 </Select>
               </Form.Item>
-              <Form.Item name="pivotHeaderRow" label="Dòng chứa Tiêu đề (Header)" rules={[{ required: true, message: 'Nhập vị trí dòng tiêu đề' }]}>
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="VD: 1" />
+              <Form.Item name="pivotHeaderRow" label={t('blockEditor.pivotHeaderRowLabel')} rules={[{ required: true, message: t('blockEditor.pivotHeaderRowRequired') }]}>
+                <InputNumber min={1} style={{ width: '100%' }} placeholder={t('blockEditor.pivotHeaderRowPlaceholder')} />
               </Form.Item>
-              <Alert title="Gõ 1 nếu tiêu đề nằm ở dòng đầu tiên." type="info" showIcon style={{ marginBottom: 16 }} />
-              <Form.Item name="excelFileName" label="Tên file Excel kết quả" rules={[{ required: true, message: 'Nhập tên file' }]}>
-                <Input placeholder="VD: pivot.xlsx" />
+              <Alert title={t('blockEditor.pivotHeaderHint')} type="info" showIcon style={{ marginBottom: 16 }} />
+              <Form.Item name="excelFileName" label={t('blockEditor.excelResultFileNameLabel')} rules={[{ required: true, message: t('blockEditor.excelResultFileNameRequired') }]}>
+                <Input placeholder={t('blockEditor.pivotFilePlaceholder')} />
               </Form.Item>
             </>
           )}
 
           {isEmail && (
             <>
-              <Form.Item label="Nền tảng Email" name="mailProvider">
+              <Form.Item label={t('blockEditor.emailProviderLabel')} name="mailProvider">
                 <Select
                   style={{ fontSize: '0.85rem' }}
                   popupClassName="small-text-dropdown"
@@ -1803,61 +1810,61 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     }
                   }}
                 >
-                  <Select.Option value="gmail" style={{ fontSize: '0.85rem' }}>Gmail</Select.Option>
-                  <Select.Option value="outlook" style={{ fontSize: '0.85rem' }}>Outlook / Hotmail</Select.Option>
-                  <Select.Option value="custom" style={{ fontSize: '0.85rem' }}>Tùy chỉnh (Custom SMTP)</Select.Option>
+                  <Select.Option value="gmail" style={{ fontSize: '0.85rem' }}>{t('blockEditor.emailProviderGmail')}</Select.Option>
+                  <Select.Option value="outlook" style={{ fontSize: '0.85rem' }}>{t('blockEditor.emailProviderOutlook')}</Select.Option>
+                  <Select.Option value="custom" style={{ fontSize: '0.85rem' }}>{t('blockEditor.emailProviderCustom')}</Select.Option>
                 </Select>
               </Form.Item>
-              <Form.Item label="Host (Máy chủ SMTP)" name="mailHost" rules={[{ required: true, message: 'Vui lòng nhập Host' }]}>
-                <Input placeholder="VD: smtp.gmail.com" />
+              <Form.Item label={t('blockEditor.smtpHostLabel')} name="mailHost" rules={[{ required: true, message: t('blockEditor.smtpHostRequired') }]}>
+                <Input placeholder={t('blockEditor.smtpHostPlaceholder')} />
               </Form.Item>
-              <Form.Item label="Port" name="mailPort" rules={[{ required: true, message: 'Vui lòng nhập Port' }]}>
-                <InputNumber style={{ width: '100%' }} placeholder="VD: 465 hoặc 587" />
+              <Form.Item label={t('blockEditor.smtpPortLabel')} name="mailPort" rules={[{ required: true, message: t('blockEditor.smtpPortRequired') }]}>
+                <InputNumber style={{ width: '100%' }} placeholder={t('blockEditor.smtpPortPlaceholder')} />
               </Form.Item>
               {/* Dummy fields chống Chrome autofill */}
               <input type="email" style={{ width: 0, height: 0, padding: 0, margin: 0, border: 0, position: 'absolute' }} tabIndex={-1} autoComplete="off" />
               <input type="password" style={{ width: 0, height: 0, padding: 0, margin: 0, border: 0, position: 'absolute' }} tabIndex={-1} autoComplete="new-password" />
-              <Form.Item label="Tài khoản (Email gửi)" name="mailUser" rules={[{ required: true, message: 'Vui lòng nhập Email' }]}>
-                <Input placeholder="Nhập Email người gửi" autoComplete="new-password" />
+              <Form.Item label={t('blockEditor.mailUserLabel')} name="mailUser" rules={[{ required: true, message: t('blockEditor.mailUserRequired') }]}>
+                <Input placeholder={t('blockEditor.mailUserPlaceholder')} autoComplete="new-password" />
               </Form.Item>
-              <Form.Item label="Mật khẩu Ứng dụng" name="mailPass" rules={[{ required: true, message: 'Vui lòng nhập Mật khẩu' }]}>
-                <Input.Password placeholder="Nhập mật khẩu ứng dụng (App Password)" autoComplete="new-password" />
+              <Form.Item label={t('blockEditor.mailPassLabel')} name="mailPass" rules={[{ required: true, message: t('blockEditor.mailPassRequired') }]}>
+                <Input.Password placeholder={t('blockEditor.mailPassPlaceholder')} autoComplete="new-password" />
               </Form.Item>
             </>
           )}
-        
+
 
           {isDeleteFiles && (
             <>
               <Divider style={{ margin: '24px 0' }} />
-              <Form.Item name="delete_input" valuePropName="checked" label="Thư mục Input">
-                <Switch checkedChildren="Xóa" unCheckedChildren="Giữ lại" />
+              <Form.Item name="delete_input" valuePropName="checked" label={t('blockEditor.deleteInputLabel')}>
+                <Switch checkedChildren={t('blockEditor.switchDelete')} unCheckedChildren={t('blockEditor.switchKeep')} />
               </Form.Item>
-              <Alert title="Xóa toàn bộ tập tin trong thư mục dữ liệu đầu vào (Không xóa file input.json)" type="info" showIcon style={{ marginBottom: 16 }} />
-              <Form.Item name="delete_output" valuePropName="checked" label="Thư mục Output">
-                <Switch checkedChildren="Xóa" unCheckedChildren="Giữ lại" />
+              <Alert title={t('blockEditor.deleteInputHint')} type="info" showIcon style={{ marginBottom: 16 }} />
+              <Form.Item name="delete_output" valuePropName="checked" label={t('blockEditor.deleteOutputLabel')}>
+                <Switch checkedChildren={t('blockEditor.switchDelete')} unCheckedChildren={t('blockEditor.switchKeep')} />
               </Form.Item>
-              <Alert title="Xóa toàn bộ tập tin trong thư mục kết quả đầu ra" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title={t('blockEditor.deleteOutputHint')} type="info" showIcon style={{ marginBottom: 16 }} />
             </>
           )}
 
           {isGoogleSheets && (
             <>
               <Divider style={{ margin: '24px 0' }} />
-              <Title level={5} style={{ margin: '0 0 16px 0' }}><TableProperties size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#0f9d58' }}/> Cấu hình Google Sheets</Title>
+              <Title level={5} style={{ margin: '0 0 16px 0' }}><TableProperties size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#0f9d58' }}/> {t('blockEditor.googleSheetsConfigTitle')}</Title>
               <Form.Item label="Link Google Sheet (Public Share)" name="googleSheetsUrl" rules={[{ required: true, message: 'Nhập Link Google Sheet' }]}>
                 <Input placeholder="https://docs.google.com/spreadsheets/d/.../edit" />
               </Form.Item>
-              <Form.Item label="Tên Sheet / Tab" name="googleSheetsSheetName" tooltip="Mặc định là Sheet1 nếu để trống">
+              <Form.Item label={t('blockEditor.sheetNameLabel')} name="googleSheetsSheetName" tooltip={t('blockEditor.sheetNameTooltip')}>
                 <Input placeholder="Sheet1" />
               </Form.Item>
-              <Form.Item label="Dòng tiêu đề (Header Row)" name="googleSheetsHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
+              <Form.Item label={t('blockEditor.headerRowLabel')} name="googleSheetsHeaderRow" tooltip={t('blockEditor.headerRowTooltip')}>
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
               </Form.Item>
-              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }, VAR_NAME_RULE]} tooltip={`Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data). ${VAR_NAME_HINT} Đổi tên ở đây thì phải sửa luôn ô "Tên biến Mảng cần lặp" của khối Vòng Lặp cho khớp.`}>
+              <Form.Item label={t('blockEditor.outputArrayVarLabel')} name="outputVarName" rules={[{ required: true, message: t('blockEditor.outputArrayVarRequired') }, VAR_NAME_RULE]} tooltip={`${t('blockEditor.outputArrayVarTooltipPrefix')} ${VAR_NAME_HINT} ${t('blockEditor.outputArrayVarTooltipSuffix')}`}>
                 <Input placeholder="sheets_data" />
               </Form.Item>
-              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" rules={[VAR_NAME_RULE]} tooltip={`Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows). ${VAR_NAME_HINT}`}>
+              <Form.Item label={t('blockEditor.saveRowCountLabel')} name="rowCountVarName" rules={[VAR_NAME_RULE]} tooltip={`${t('blockEditor.rowCountTooltipPrefix')} ${VAR_NAME_HINT}`}>
                 <Input placeholder="sheets_rows" />
               </Form.Item>
 
@@ -1865,17 +1872,17 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Space>
                   <TableProperties size={16} />
-                  <Text strong style={{ fontSize: '0.85rem' }}>Cột tiêu đề & Biến tùy chỉnh</Text>
+                  <Text strong style={{ fontSize: '0.85rem' }}>{t('blockEditor.colMappingTitle')}</Text>
                 </Space>
                 <Button type="primary" size="small" icon={<RefreshCw size={14} />} style={{ background: '#0f9d58', borderColor: '#0f9d58', color: '#ffffff', fontWeight: 500 }} loading={loadingGoogleSheetsCols} onClick={handleFetchGoogleSheetsColumns}>
-                  Tải danh sách cột
+                  {t('blockEditor.loadColsBtn')}
                 </Button>
               </div>
 
               {googleSheetsCols.length > 0 ? (
                 <div style={{ background: 'var(--bg-elevated)', padding: 12, borderRadius: 8, border: '1px solid var(--border-default)', marginBottom: 16 }}>
                   <Text type="secondary" style={{ fontSize: '0.8rem', display: 'block', marginBottom: 8 }}>
-                    Danh sách cột tiêu đề tự động. Bạn có thể gõ Tên biến Custom tương ứng:
+                    {t('blockEditor.colMappingHint')}
                   </Text>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {googleSheetsCols.map(col => (
@@ -1896,7 +1903,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   </div>
                 </div>
               ) : (
-                <Alert title="Bấm 'Tải danh sách cột' để xem và tùy chỉnh tên biến từ dòng tiêu đề trên Google Sheet." type="info" showIcon style={{ marginBottom: 16 }} />
+                <Alert title={t('blockEditor.googleSheetsLoadColsAlert')} type="info" showIcon style={{ marginBottom: 16 }} />
               )}
             </>
           )}
@@ -1904,25 +1911,25 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
           {isExcelRead && (
             <>
               <Divider style={{ margin: '24px 0' }} />
-              <Title level={5} style={{ margin: '0 0 16px 0' }}><FileSpreadsheet size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#217346' }}/> Cấu hình Đọc Excel</Title>
-              <Form.Item label="Nguồn file (Excel/CSV)" name="excelReadFile" rules={[{ required: true, message: 'Chọn file hoặc nhập biến' }]} tooltip="Chọn file quét từ thư mục input/output, hoặc gõ tên biến dạng {{ten_file}}">
+              <Title level={5} style={{ margin: '0 0 16px 0' }}><FileSpreadsheet size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#217346' }}/> {t('blockEditor.excelReadConfigTitle')}</Title>
+              <Form.Item label={t('blockEditor.excelReadSourceLabel')} name="excelReadFile" rules={[{ required: true, message: t('blockEditor.excelReadSourceRequired') }]} tooltip={`${t('blockEditor.excelReadSourceTooltipPrefix')} {{ten_file}}`}>
                 <AutoComplete
-                  placeholder="Chọn file hoặc nhập biến (VD: {{ten_file}})"
+                  placeholder={t('blockEditor.excelReadSourcePlaceholder')}
                   options={availableFiles.map(f => ({ value: f.name, label: `${f.name} (${f.type})` }))}
                   filterOption={(input, option) => (option?.value || '').toLowerCase().includes(input.toLowerCase())}
                   allowClear
                 />
               </Form.Item>
-              <Form.Item label="Tên Sheet / Tab" name="excelReadSheetName" tooltip="Để trống = đọc sheet đầu tiên">
-                <Input placeholder="(mặc định sheet đầu tiên)" />
+              <Form.Item label={t('blockEditor.sheetNameLabel')} name="excelReadSheetName" tooltip={t('blockEditor.excelReadSheetTooltip')}>
+                <Input placeholder={t('blockEditor.excelReadSheetPlaceholder')} />
               </Form.Item>
-              <Form.Item label="Dòng tiêu đề (Header Row)" name="excelReadHeaderRow" tooltip="Số thứ tự dòng chứa tên các cột (mặc định là 1)">
+              <Form.Item label={t('blockEditor.headerRowLabel')} name="excelReadHeaderRow" tooltip={t('blockEditor.headerRowTooltip')}>
                 <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
               </Form.Item>
-              <Form.Item label="Tên biến mảng dữ liệu" name="outputVarName" rules={[{ required: true, message: 'Nhập tên biến mảng' }, VAR_NAME_RULE]} tooltip={`Chứa danh sách tất cả các dòng dữ liệu để lặp (mặc định: sheets_data). ${VAR_NAME_HINT} Đổi tên ở đây thì phải sửa luôn ô "Tên biến Mảng cần lặp" của khối Vòng Lặp cho khớp.`}>
+              <Form.Item label={t('blockEditor.outputArrayVarLabel')} name="outputVarName" rules={[{ required: true, message: t('blockEditor.outputArrayVarRequired') }, VAR_NAME_RULE]} tooltip={`${t('blockEditor.outputArrayVarTooltipPrefix')} ${VAR_NAME_HINT} ${t('blockEditor.outputArrayVarTooltipSuffix')}`}>
                 <Input placeholder="sheets_data" />
               </Form.Item>
-              <Form.Item label="Lưu số dòng vào biến" name="rowCountVarName" rules={[VAR_NAME_RULE]} tooltip={`Chứa tổng số dòng dữ liệu đọc được (mặc định: sheets_rows). ${VAR_NAME_HINT}`}>
+              <Form.Item label={t('blockEditor.saveRowCountLabel')} name="rowCountVarName" rules={[VAR_NAME_RULE]} tooltip={`${t('blockEditor.rowCountTooltipPrefix')} ${VAR_NAME_HINT}`}>
                 <Input placeholder="sheets_rows" />
               </Form.Item>
 
@@ -1930,17 +1937,17 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Space>
                   <TableProperties size={16} />
-                  <Text strong style={{ fontSize: '0.85rem' }}>Cột tiêu đề & Biến tùy chỉnh</Text>
+                  <Text strong style={{ fontSize: '0.85rem' }}>{t('blockEditor.colMappingTitle')}</Text>
                 </Space>
                 <Button type="primary" size="small" icon={<RefreshCw size={14} />} style={{ background: '#217346', borderColor: '#217346', color: '#ffffff', fontWeight: 500 }} loading={loadingExcelReadCols} onClick={handleFetchExcelReadColumns}>
-                  Tải danh sách cột
+                  {t('blockEditor.loadColsBtn')}
                 </Button>
               </div>
 
               {excelReadCols.length > 0 ? (
                 <div style={{ background: 'var(--bg-elevated)', padding: 12, borderRadius: 8, border: '1px solid var(--border-default)', marginBottom: 16 }}>
                   <Text type="secondary" style={{ fontSize: '0.8rem', display: 'block', marginBottom: 8 }}>
-                    Danh sách cột tiêu đề tự động. Bạn có thể gõ Tên biến Custom tương ứng:
+                    {t('blockEditor.colMappingHint')}
                   </Text>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {excelReadCols.map(col => (
@@ -1961,18 +1968,18 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   </div>
                 </div>
               ) : (
-                <Alert title="Chọn 1 file cụ thể rồi bấm 'Tải danh sách cột' để xem & tùy chỉnh tên biến từ dòng tiêu đề. (Không dùng được khi nguồn là biến {{...}})" type="info" showIcon style={{ marginBottom: 16 }} />
+                <Alert title={<span>{t('blockEditor.excelReadLoadColsAlertPrefix')} {'{{...}}'} {t('blockEditor.excelReadLoadColsAlertSuffix')}</span>} type="info" showIcon style={{ marginBottom: 16 }} />
               )}
             </>
           )}
           {isBrowser && (
             <>
               <Divider style={{ margin: '24px 0' }} />
-              <Form.Item name="debugMode" label="Chế độ Debug" valuePropName="checked">
+              <Form.Item name="debugMode" label={t('blockEditor.browserDebugModeLabel')} valuePropName="checked">
                 <Switch checkedChildren="Headed" unCheckedChildren="Headless" />
               </Form.Item>
-              <Alert title={<span style={{ fontSize: '0.85rem' }}>Bật để hiển thị cửa sổ trình duyệt khi chạy</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
-              <Alert title={<span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Hướng dẫn Selector</span>}
+              <Alert title={<span style={{ fontSize: '0.85rem' }}>{t('blockEditor.browserDebugAlert')}</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
+              <Alert title={<span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{t('blockEditor.selectorGuideTitle')}</span>}
                 description={
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     <div>• CSS: <Text code style={{ fontSize: '0.75rem' }}>#login-btn</Text>, <Text code style={{ fontSize: '0.75rem' }}>.btn-submit</Text></div>
@@ -1993,31 +2000,31 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <Divider style={{ margin: '24px 0' }} />
             
             <div>
-              <Text strong style={{ display: 'block', marginBottom: 12 }}><Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }}/> Biến có sẵn</Text>
+              <Text strong style={{ display: 'block', marginBottom: 12 }}><Box size="0.875rem" style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }}/> {t('blockEditor.pythonAvailableVarsTitle')}</Text>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <Tag color="geekblue" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>input_data</Tag>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Output từ block trước</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('blockEditor.pyVarInputDesc')}</div>
                 </div>
                 <div>
                   <Tag color="purple" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>output_data</Tag>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Kết quả gửi sang block sau</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('blockEditor.pyVarOutputDesc')}</div>
                 </div>
                 <div>
                   <Tag color="cyan" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>OUTPUT_DIR</Tag>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Thư mục lưu trữ file đầu ra an toàn</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('blockEditor.pyVarOutputDirDesc')}</div>
                 </div>
                 <div>
                   <Tag color="gold" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>INPUT_DIR</Tag>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Thư mục chứa file đầu vào (đã tải lên ở Dữ liệu Workflow)</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('blockEditor.pyVarInputDirDesc')}</div>
                 </div>
                 <div>
                   <Tag color="default" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>workflow_id</Tag>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>ID của workflow hiện tại</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('blockEditor.pyVarWorkflowIdDesc')}</div>
                 </div>
                 <div>
                   <Tag color="default" style={{ fontFamily: 'var(--font-mono)', marginBottom: 4 }}>block_id</Tag>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>ID của khối Python này</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('blockEditor.pyVarBlockIdDesc')}</div>
                 </div>
               </div>
             </div>
@@ -2027,20 +2034,20 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         {isExcelToSql && (
           <>
             <Divider style={{ margin: '24px 0' }} />
-            <Title level={5} style={{ margin: '0 0 16px 0' }}><Database size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2 }}/> Cấu hình Nguồn</Title>
+            <Title level={5} style={{ margin: '0 0 16px 0' }}><Database size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2 }}/> {t('blockEditor.excelToSqlSourceTitle')}</Title>
             {renderDbConnectionField('excelToSqlSavedConnectionId')}
-            <Form.Item name="excelToSqlInputFile" label="Nguồn file Excel" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
-              <AutoComplete placeholder="Chọn file hoặc nhập biến (VD: {{ten}})" options={availableFiles.map(f => ({ value: f.name }))} />
+            <Form.Item name="excelToSqlInputFile" label={t('blockEditor.excelToSqlSourceFileLabel')} rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+              <AutoComplete placeholder={t('blockEditor.excelToSqlSourceFilePlaceholder')} options={availableFiles.map(f => ({ value: f.name }))} />
             </Form.Item>
-            <Form.Item name="excelToSqlHeaderRow" label="Dòng tiêu đề (vd: 1 hoặc 3,4)" style={{ marginBottom: 16 }}>
-              <Input placeholder="Mặc định: 1" />
+            <Form.Item name="excelToSqlHeaderRow" label={t('blockEditor.excelToSqlHeaderLabel')} style={{ marginBottom: 16 }}>
+              <Input placeholder={t('blockEditor.excelToSqlHeaderPlaceholder')} />
             </Form.Item>
             <Button type="primary" block onClick={fetchDbTables} loading={loadingSchema}>
-              Kiểm tra connect & Lấy bảng
+              {t('blockEditor.checkConnectBtn')}
             </Button>
             <Divider style={{ margin: '24px 0' }} />
-            {renderVarNameField('excelToSqlRowsVarName', 'Lưu số dòng đã import vào biến', 'Mặc định trùng tên biến trả về ({{rows_inserted}}). Nếu workflow có nhiều khối Excel to SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: rows_inserted', { marginBottom: 12 })}
-            {renderVarNameField('excelToSqlTableVarName', 'Lưu tên bảng đích vào biến', 'Mặc định trùng tên biến trả về ({{table}}). Nếu workflow có nhiều khối Excel to SQL và muốn tránh bị ghi đè, đổi thành tên riêng.', 'VD: table', { marginBottom: 16 })}
+            {renderVarNameField('excelToSqlRowsVarName', t('blockEditor.saveRowsInsertedLabel'), `${t('blockEditor.outputVarHintPrefix')}{{rows_inserted}}). ${t('blockEditor.multiBlockHintExcelToSql')}`, 'VD: rows_inserted', { marginBottom: 12 })}
+            {renderVarNameField('excelToSqlTableVarName', t('blockEditor.saveTableNameLabel'), `${t('blockEditor.outputVarHintPrefix')}{{table}}). ${t('blockEditor.multiBlockHintExcelToSql')}`, 'VD: table', { marginBottom: 16 })}
           </>
         )}
 
@@ -2052,8 +2059,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               rules={[VAR_NAME_RULE]}
               label={
                 <Space size={4}>
-                  Lưu tên file kết quả vào biến
-                  <Tooltip title={`Mặc định trùng tên biến trả về ({{file_name}}). Nếu workflow có nhiều khối cùng loại và muốn tránh bị ghi đè, đổi thành tên riêng. ${VAR_NAME_HINT}`}>
+                  {t('blockEditor.outputVarFileNameLabel')}
+                  <Tooltip title={`${t('blockEditor.outputVarHintPrefix')}{{file_name}}). ${t('blockEditor.multiBlockHintGeneric')} ${VAR_NAME_HINT}`}>
                     <Info size={14} style={{ cursor: 'help', color: 'var(--text-muted)' }} />
                   </Tooltip>
                 </Space>
@@ -2072,17 +2079,17 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                   <Database size="1.5rem" color="#0ea5e9" />
-                  <Title level={4} style={{ margin: 0 }}>Bảng đích & Mapping</Title>
+                  <Title level={4} style={{ margin: 0 }}>{t('blockEditor.excelToSqlRightTitle')}</Title>
                 </div>
-                
+
                 <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', flex: 1, overflowY: 'auto' }}>
                   {(dbTables.length > 0 || (node.data && node.data.excelToSqlTableName)) ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                      <Form.Item name="excelToSqlTableName" label="Tên bảng (Table Name)" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+                      <Form.Item name="excelToSqlTableName" label={t('blockEditor.tableNameLabel')} rules={[{ required: true }]} style={{ marginBottom: 12 }}>
                         <Select
                           showSearch
                           filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                          placeholder="Chọn hoặc tìm kiếm tên bảng..."
+                          placeholder={t('blockEditor.tableNamePlaceholder')}
                           options={
                             dbTables.length > 0
                               ? dbTables.map(t => ({label: t, value: t}))
@@ -2090,31 +2097,31 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                           }
                         />
                       </Form.Item>
-                      
-                      <Form.Item name="excelToSqlImportMode" label="Chế độ ghi" style={{ marginBottom: 12 }}>
+
+                      <Form.Item name="excelToSqlImportMode" label={t('blockEditor.writeModeLabel')} style={{ marginBottom: 12 }}>
                         <Select options={[
-                          { label: 'Thêm vào cuối (Append)', value: 'append' },
-                          { label: 'Xoá và chèn lại (Truncate)', value: 'truncate' }
+                          { label: t('blockEditor.writeModeAppend'), value: 'append' },
+                          { label: t('blockEditor.writeModeTruncate'), value: 'truncate' }
                         ]} />
                       </Form.Item>
 
                       <Button type="primary" onClick={fetchDbColumns} loading={loadingSchema} style={{ width: '100%', marginBottom: 12 }}>
-                        Lấy cấu trúc Cột & File
+                        {t('blockEditor.getColumnsBtn')}
                       </Button>
 
                       {dbColumns.length > 0 && (
                         <div style={{ marginTop: 12 }}>
-                          <Text strong>Bảng ghép cột (Mapping):</Text>
+                          <Text strong>{t('blockEditor.columnMappingTableTitle')}</Text>
                           <Table
                             size="small"
                             pagination={false}
                             rowKey="name"
                             dataSource={dbColumns}
                             columns={[
-                              { title: 'Cột SQL', dataIndex: 'name', render: t => <Text code>{t}</Text> },
-                              { title: 'Kiểu DB', dataIndex: 'type', render: t => <Text type="secondary">{t}</Text> },
-                              { 
-                                title: 'Cột Excel tương ứng', 
+                              { title: t('blockEditor.colSqlCol'), dataIndex: 'name', render: t => <Text code>{t}</Text> },
+                              { title: t('blockEditor.colDbType'), dataIndex: 'type', render: t => <Text type="secondary">{t}</Text> },
+                              {
+                                title: t('blockEditor.colExcelMatch'),
                                 dataIndex: 'name',
                                 render: (sqlCol) => (
                                   <Select
@@ -2122,7 +2129,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                                     allowClear
                                     showSearch
                                     filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                                    placeholder="[ Bỏ qua / NULL ]"
+                                    placeholder={t('blockEditor.skipNullPlaceholder')}
                                     value={excelToSqlMapping[sqlCol]}
                                     onChange={(val) => setExcelToSqlMapping(prev => ({...prev, [sqlCol]: val}))}
                                     options={excelColumns.map(c => ({label: c, value: c}))}
@@ -2137,7 +2144,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '300px', textAlign: 'center' }}>
                       <Database size={48} color="var(--border-strong)" style={{ marginBottom: 16, opacity: 0.5 }} />
-                      <Text type="secondary">Vui lòng <strong>Kiểm tra connect</strong> ở cột bên trái trước để cấu hình Mapping.</Text>
+                      <Text type="secondary">{t('blockEditor.checkConnectFirstHintPrefix')} <strong>{t('blockEditor.checkConnectFirstHintStrong')}</strong> {t('blockEditor.checkConnectFirstHintSuffix')}</Text>
                     </div>
                   )}
                 </div>
@@ -2146,9 +2153,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                   <Terminal size="1.5rem" color="#14b8a6" />
-                  <Title level={4} style={{ margin: 0 }}>Câu lệnh SQL / EXEC</Title>
+                  <Title level={4} style={{ margin: 0 }}>{t('blockEditor.sqlExecCmdTitle')}</Title>
                 </div>
-                <Form.Item name="sqlCommand" rules={[{ required: true, message: 'Nhập câu lệnh cần thực thi' }]} style={{ flex: 1, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
+                <Form.Item name="sqlCommand" rules={[{ required: true, message: t('blockEditor.sqlExecCmdRequired') }]} style={{ flex: 1, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
                   <Input.TextArea
                     placeholder={'VD: EXEC ten_ham\nhoặc: EXEC ten_ham @tham_so = {{bien}}'}
                     style={{ fontFamily: 'var(--font-mono)', flex: 1, minHeight: '100%', resize: 'none' }}
@@ -2161,7 +2168,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <RadioIcon size="1.25rem" color="var(--accent-primary)" />
-                  <Title level={4} style={{ margin: 0 }}>Danh sách lệnh</Title>
+                  <Title level={4} style={{ margin: 0 }}>{t('blockEditor.listenerCmdListTitle')}</Title>
                 </div>
                 <div style={{
                   background: listenerRunning ? '#10b98120' : 'var(--bg-elevated)',
@@ -2177,7 +2184,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     }}
                   />
                   <span style={{ color: listenerRunning ? '#10b981' : 'var(--text-muted)', fontWeight: 500, fontSize: '0.9rem' }}>
-                    {listenerRunning ? 'Đang lắng nghe...' : 'Chưa chạy (bấm Chạy workflow để bật)'}
+                    {listenerRunning ? t('blockEditor.listenerRunningStatus') : t('blockEditor.listenerStoppedStatus')}
                   </span>
                 </div>
               </div>
@@ -2194,23 +2201,23 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 14, marginBottom: 10, border: '1px solid var(--border-default)' }}
                 >
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }} title="Kéo thả để sắp xếp">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }} title={t('blockEditor.dragReorderTooltip')}>
                       <GripVertical size={14} />
                     </div>
                     <Input
                       value={cmd.command}
                       onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], command: e.target.value }; setListenerCommands(c) }}
-                      placeholder="/lệnh hoặc *"
+                      placeholder={t('blockEditor.commandPlaceholder')}
                       style={{ width: 120 }}
                     />
                     <Input
                       value={cmd.description}
                       onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], description: e.target.value }; setListenerCommands(c) }}
-                      placeholder="Mô tả lệnh (hiển thị trên app Telegram)"
+                      placeholder={t('blockEditor.cmdDescPlaceholder')}
                       style={{ flex: 1 }}
                     />
                     <div style={{ flex: 1 }} />
-                    <Tooltip title={cmd.runWorkflow ? 'Chạy workflow tiếp' : 'Chỉ trả lời nhanh'}>
+                    <Tooltip title={cmd.runWorkflow ? t('blockEditor.runWorkflowTooltip') : t('blockEditor.replyOnlyTooltip')}>
                       <Switch
                         size="small"
                         checked={cmd.runWorkflow}
@@ -2220,14 +2227,14 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                       />
                     </Tooltip>
                     {listenerCommands.length > 1 && (
-                      <Button size="small" type="text" danger icon={<Trash2 size="0.8rem" />} onClick={() => setListenerCommands(listenerCommands.filter((_, i) => i !== idx))} aria-label="Xóa lệnh listener" />
+                      <Button size="small" type="text" danger icon={<Trash2 size="0.8rem" />} onClick={() => setListenerCommands(listenerCommands.filter((_, i) => i !== idx))} aria-label={t('blockEditor.deleteListenerCmdAria')} />
                     )}
                   </div>
                   {!cmd.runWorkflow && (
                     <Input.TextArea
                       value={cmd.reply}
                       onChange={e => { const c = [...listenerCommands]; c[idx] = { ...c[idx], reply: e.target.value }; setListenerCommands(c) }}
-                      placeholder="Mẫu trả lời..."
+                      placeholder={t('blockEditor.replyTemplatePlaceholder')}
                       rows={2}
                       style={{ fontSize: '0.9rem' }}
                     />
@@ -2236,17 +2243,17 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               ))}
 
               <Button type="dashed" block icon={<Plus size="0.875rem" />} onClick={() => setListenerCommands([...listenerCommands, { command: '', description: '', reply: '', runWorkflow: false }])}>
-                Thêm lệnh
+                {t('blockEditor.addCommandBtn')}
               </Button>
 
               <Divider style={{ margin: '24px 0' }} />
-              <Alert title={<span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Hướng dẫn cơ bản</span>}
+              <Alert title={<span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{t('blockEditor.basicGuideTitle')}</span>}
                 description={
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    <div>• <b>Lệnh</b>: Nhập lệnh bắt đầu bằng <Text code style={{ fontSize: '0.75rem' }}>/</Text> (vd: <Text code style={{ fontSize: '0.75rem' }}>/start</Text>). Nhập <Text code style={{ fontSize: '0.75rem' }}>*</Text> hoặc để trống để bắt <b>mọi tin nhắn</b>.</div>
-                    <div>• <b>Reply</b>: Bot trả lời ngay, không chạy workflow</div>
-                    <div>• <b>WF</b>: Chạy tiếp các block phía sau, không gửi mẫu trả lời (muốn phản hồi thì thêm khối Telegram trong workflow)</div>
-                    <div>• Dữ liệu truyền vào workflow: <Text code style={{ fontSize: '0.75rem' }}>{'{chat_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{message_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{text}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{sender_name}'}</Text> (không có <Text code style={{ fontSize: '0.75rem' }}>{'{command}'}</Text> — tên lệnh chỉ dùng nội bộ để định tuyến, không truyền vào biến)</div>
+                    <div>• <b>{t('blockEditor.guideCommandLabel')}</b>: {t('blockEditor.guideCommandPrefix')} <Text code style={{ fontSize: '0.75rem' }}>/</Text> {t('blockEditor.guideCommandExample')} <Text code style={{ fontSize: '0.75rem' }}>/start</Text>{t('blockEditor.guideCommandMiddle')} <Text code style={{ fontSize: '0.75rem' }}>*</Text> {t('blockEditor.guideCommandCatchAll')} <b>{t('blockEditor.guideCommandAllMessages')}</b>.</div>
+                    <div>• <b>{t('blockEditor.guideReplyLabel')}</b>: {t('blockEditor.guideReplyText')}</div>
+                    <div>• <b>{t('blockEditor.guideWfLabel')}</b>: {t('blockEditor.guideWfText')}</div>
+                    <div>• {t('blockEditor.guideDataPrefix')} <Text code style={{ fontSize: '0.75rem' }}>{'{chat_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{message_id}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{text}'}</Text>, <Text code style={{ fontSize: '0.75rem' }}>{'{sender_name}'}</Text> {t('blockEditor.guideDataSuffix', { command: '{command}' })}</div>
                   </div>
                 }
                 type="info"
@@ -2255,25 +2262,25 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               />
 
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', overflowX: 'auto' }}>
-                <div style={{ marginBottom: 12, fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Cú pháp HTML cho mẫu Reply:</div>
+                <div style={{ marginBottom: 12, fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('blockEditor.listenerSyntaxTitle')}</div>
                 <Table
                   size="small"
                   pagination={false}
                   columns={[
-                    { title: 'Chức năng', dataIndex: 'func', key: 'func', width: '25%' },
-                    { title: 'Cú pháp thẻ HTML', dataIndex: 'syntax', key: 'syntax', render: t => <code style={{ color: 'var(--accent-primary)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{t}</code> },
-                    { title: 'Kết quả hiển thị', dataIndex: 'result', key: 'result', width: '35%' }
+                    { title: t('blockEditor.tableFuncCol'), dataIndex: 'func', key: 'func', width: '25%' },
+                    { title: t('blockEditor.tableHtmlSyntaxCol'), dataIndex: 'syntax', key: 'syntax', render: t => <code style={{ color: 'var(--accent-primary)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{t}</code> },
+                    { title: t('blockEditor.tableResultCol'), dataIndex: 'result', key: 'result', width: '35%' }
                   ]}
                   dataSource={[
-                    { key: 1, func: 'In đậm', syntax: '<b>chữ in đậm</b>', result: <strong style={{ fontWeight: 'bold' }}>chữ in đậm</strong> },
-                    { key: 2, func: 'In nghiêng', syntax: '<i>chữ in nghiêng</i>', result: <em style={{ fontStyle: 'italic' }}>chữ in nghiêng</em> },
-                    { key: 3, func: 'Gạch chân', syntax: '<u>chữ gạch chân</u>', result: <u style={{ textDecoration: 'underline' }}>chữ gạch chân</u> },
-                    { key: 4, func: 'Gạch ngang', syntax: '<s>gạch ngang</s>', result: <del style={{ textDecoration: 'line-through' }}>gạch ngang</del> },
-                    { key: 5, func: 'Link ẩn', syntax: '<a href="http://example.com/">Tên link</a>', result: <a href="#">Tên link (Click được)</a> },
-                    { key: 6, func: 'Code 1 dòng', syntax: '<code>đoạn code ngắn</code>', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>đoạn code ngắn</code> },
-                    { key: 7, func: 'Khối Code', syntax: '<pre>code nhiều dòng</pre>', result: 'Khối code nền xám' },
-                    { key: 8, func: 'Trích dẫn', syntax: '<blockquote>đoạn trích dẫn</blockquote>', result: 'Thanh dọc thụt lề' },
-                    { key: 9, func: 'Giấu chữ', syntax: '<tg-spoiler>bí mật</tg-spoiler>', result: 'Làm mờ, bấm vào hiện' },
+                    { key: 1, func: t('blockEditor.fnBold'), syntax: '<b>text</b>', result: <strong style={{ fontWeight: 'bold' }}>{t('blockEditor.resBoldText')}</strong> },
+                    { key: 2, func: t('blockEditor.fnItalic'), syntax: '<i>text</i>', result: <em style={{ fontStyle: 'italic' }}>{t('blockEditor.resItalicText')}</em> },
+                    { key: 3, func: t('blockEditor.fnUnderline'), syntax: '<u>text</u>', result: <u style={{ textDecoration: 'underline' }}>{t('blockEditor.resUnderlineText')}</u> },
+                    { key: 4, func: t('blockEditor.fnStrike'), syntax: '<s>text</s>', result: <del style={{ textDecoration: 'line-through' }}>{t('blockEditor.resStrikeText')}</del> },
+                    { key: 5, func: t('blockEditor.fnLink'), syntax: '<a href="http://example.com/">Link name</a>', result: <a href="#">{t('blockEditor.resLinkClickable')}</a> },
+                    { key: 6, func: t('blockEditor.fnInlineCode'), syntax: '<code>text</code>', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>{t('blockEditor.resInlineCodeCopy')}</code> },
+                    { key: 7, func: t('blockEditor.fnCodeBlock'), syntax: '<pre>text</pre>', result: t('blockEditor.resCodeBlockGray') },
+                    { key: 8, func: t('blockEditor.fnQuote'), syntax: '<blockquote>text</blockquote>', result: t('blockEditor.resQuoteIndent') },
+                    { key: 9, func: t('blockEditor.fnSpoiler'), syntax: '<tg-spoiler>text</tg-spoiler>', result: t('blockEditor.resSpoilerBlur') },
                   ]}
                 />
               </div>
@@ -2282,23 +2289,23 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <div style={{ padding: 24, flex: 1, background: 'var(--bg-base)', overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <MessageCircle size="1.5rem" color="var(--accent-primary)" />
-                <Title level={4} style={{ margin: 0 }}>Nội dung tin nhắn gửi đi</Title>
+                <Title level={4} style={{ margin: 0 }}>{t('blockEditor.telegramMsgContentTitle')}</Title>
               </div>
-              <Form.Item name="telegramMessage" rules={[{ required: true, message: 'Nhập nội dung tin nhắn' }]}>
-                <Input.TextArea rows={12} placeholder="Nhập nội dung tin nhắn gửi đi... (có thể dùng biến {{biến_toàn_cục}})" style={{ fontFamily: 'monospace' }} />
+              <Form.Item name="telegramMessage" rules={[{ required: true, message: t('blockEditor.telegramMsgRequired') }]}>
+                <Input.TextArea rows={12} placeholder={t('blockEditor.telegramMsgPlaceholder', { bien_toan_cuc: '{{bien_toan_cuc}}' })} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
-              
+
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, marginTop: 16 }}>
-                <Title level={5} style={{ margin: 0 }}>Hướng dẫn Định dạng Telegram ({telegramParseMode || 'HTML'})</Title>
+                <Title level={5} style={{ margin: 0 }}>{t('blockEditor.telegramFormatGuideTitle', { mode: telegramParseMode || 'HTML' })}</Title>
               </div>
-              
+
               <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 16, border: '1px solid var(--border-default)', marginBottom: 24, overflowX: 'auto' }}>
                 {(!telegramParseMode || telegramParseMode === 'None') ? (
-                  <Alert title="Chế độ định dạng đang tắt"
+                  <Alert title={t('blockEditor.formatOffTitle')}
                     description={
                       <Text>
-                        Tin nhắn sẽ hiển thị văn bản thuần túy (Raw Text).<br/>
-                        Hãy chọn HTML hoặc MarkdownV2 để sử dụng các tính năng in đậm, in nghiêng, chèn link,...
+                        {t('blockEditor.formatOffDescLine1')}<br/>
+                        {t('blockEditor.formatOffDescLine2')}
                       </Text>
                     }
                     type="warning"
@@ -2310,35 +2317,35 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     size="small"
                     pagination={false}
                     columns={[
-                      { title: 'Chức năng', dataIndex: 'func', key: 'func', width: '22%' },
-                      { title: telegramParseMode === 'MarkdownV2' ? 'Cú pháp MarkdownV2' : 'Cú pháp thẻ HTML', dataIndex: 'syntax', key: 'syntax', render: t => <code style={{ color: 'var(--accent-primary)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{t}</code> },
-                      { title: 'Kết quả hiển thị', dataIndex: 'result', key: 'result', width: '38%' }
+                      { title: t('blockEditor.tableFuncCol'), dataIndex: 'func', key: 'func', width: '22%' },
+                      { title: telegramParseMode === 'MarkdownV2' ? t('blockEditor.tableMarkdownSyntaxCol') : t('blockEditor.tableHtmlSyntaxCol'), dataIndex: 'syntax', key: 'syntax', render: t => <code style={{ color: 'var(--accent-primary)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{t}</code> },
+                      { title: t('blockEditor.tableResultCol'), dataIndex: 'result', key: 'result', width: '38%' }
                     ]}
                     dataSource={telegramParseMode === 'MarkdownV2' ? [
-                      { key: 1, func: 'In đậm (Bold)', syntax: '*chữ in đậm*', result: <strong style={{ fontWeight: 'bold' }}>chữ in đậm</strong> },
-                      { key: 2, func: 'In nghiêng (Italic)', syntax: '_chữ in nghiêng_', result: <em style={{ fontStyle: 'italic' }}>chữ in nghiêng</em> },
-                      { key: 3, func: 'Gạch chân (Underline)', syntax: '__chữ gạch chân__', result: <u style={{ textDecoration: 'underline' }}>chữ gạch chân</u> },
-                      { key: 4, func: 'Gạch ngang (Strikethrough)', syntax: '~gạch ngang~', result: <del style={{ textDecoration: 'line-through' }}>gạch ngang</del> },
-                      { key: 5, func: 'Chèn link ẩn (Hyperlink)', syntax: '[Tên link](http://example.com/)', result: <a href="#">Tên link (Click được)</a> },
-                      { key: 6, func: 'Link tài khoản (Mention)', syntax: '[Tên User](tg://user?id=123456789)', result: <a href="#">Click vào mở profile user</a> },
-                      { key: 7, func: 'Code một dòng', syntax: '`đoạn code ngắn`', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>đoạn code ngắn (Copy nhanh)</code> },
-                      { key: 8, func: 'Khối Code', syntax: '```\nkhối code nhiều dòng\n```', result: 'Khối code nền xám tách biệt' },
-                      { key: 9, func: 'Khối Code ngôn ngữ', syntax: '```python\nprint("Hello")\n```', result: 'Khối code highlight' },
-                      { key: 10, func: 'Trích dẫn', syntax: '>đoạn trích dẫn', result: 'Hiển thị dạng thanh dọc thụt lề' },
-                      { key: 11, func: 'Giấu nội dung', syntax: '||nội dung bí mật||', result: 'Bị mờ đi, bấm vào mới hiện chữ' },
+                      { key: 1, func: t('blockEditor.fnBold'), syntax: '*text*', result: <strong style={{ fontWeight: 'bold' }}>{t('blockEditor.resBoldText')}</strong> },
+                      { key: 2, func: t('blockEditor.fnItalic'), syntax: '_text_', result: <em style={{ fontStyle: 'italic' }}>{t('blockEditor.resItalicText')}</em> },
+                      { key: 3, func: t('blockEditor.fnUnderline'), syntax: '__text__', result: <u style={{ textDecoration: 'underline' }}>{t('blockEditor.resUnderlineText')}</u> },
+                      { key: 4, func: t('blockEditor.fnStrike'), syntax: '~text~', result: <del style={{ textDecoration: 'line-through' }}>{t('blockEditor.resStrikeText')}</del> },
+                      { key: 5, func: t('blockEditor.fnLink'), syntax: '[Link name](http://example.com/)', result: <a href="#">{t('blockEditor.resLinkClickable')}</a> },
+                      { key: 6, func: t('blockEditor.fnMention'), syntax: '[User Name](tg://user?id=123456789)', result: <a href="#">{t('blockEditor.resMentionClick')}</a> },
+                      { key: 7, func: t('blockEditor.fnInlineCode'), syntax: '`text`', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>{t('blockEditor.resInlineCodeCopy')}</code> },
+                      { key: 8, func: t('blockEditor.fnCodeBlock'), syntax: '```\ntext\n```', result: t('blockEditor.resCodeBlockGray') },
+                      { key: 9, func: t('blockEditor.fnCodeBlockLang'), syntax: '```python\nprint("Hello")\n```', result: t('blockEditor.resCodeBlockHighlight') },
+                      { key: 10, func: t('blockEditor.fnQuote'), syntax: '>text', result: t('blockEditor.resQuoteIndent') },
+                      { key: 11, func: t('blockEditor.fnSpoiler'), syntax: '||text||', result: t('blockEditor.resSpoilerBlur') },
                     ] : [
-                      { key: 1, func: 'In đậm (Bold)', syntax: '<b>chữ in đậm</b>', result: <strong style={{ fontWeight: 'bold' }}>chữ in đậm</strong> },
-                      { key: 2, func: 'In nghiêng (Italic)', syntax: '<i>chữ in nghiêng</i>', result: <em style={{ fontStyle: 'italic' }}>chữ in nghiêng</em> },
-                      { key: 3, func: 'Gạch chân (Underline)', syntax: '<u>chữ gạch chân</u>', result: <u style={{ textDecoration: 'underline' }}>chữ gạch chân</u> },
-                      { key: 4, func: 'Gạch ngang (Strikethrough)', syntax: '<s>gạch ngang</s>', result: <del style={{ textDecoration: 'line-through' }}>gạch ngang</del> },
-                      { key: 5, func: 'In đậm + In nghiêng', syntax: '<b><i>chữ đậm nghiêng</i></b>', result: <strong><em>chữ đậm nghiêng</em></strong> },
-                      { key: 6, func: 'Chèn link ẩn (Hyperlink)', syntax: '<a href="http://example.com/">Tên link</a>', result: <a href="#">Tên link (Click được)</a> },
-                      { key: 7, func: 'Link tài khoản (Mention)', syntax: '<a href="tg://user?id=123456789">Tên User</a>', result: <a href="#">Click vào mở profile user</a> },
-                      { key: 8, func: 'Code một dòng', syntax: '<code>đoạn code ngắn</code>', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>đoạn code ngắn (Copy nhanh)</code> },
-                      { key: 9, func: 'Khối Code', syntax: '<pre>khối code nhiều dòng</pre>', result: 'Khối code nền xám tách biệt' },
-                      { key: 10, func: 'Khối Code ngôn ngữ', syntax: '<pre><code class="language-python">print("Hello")</code></pre>', result: 'Khối code highlight' },
-                      { key: 11, func: 'Trích dẫn', syntax: '<blockquote>đoạn trích dẫn</blockquote>', result: 'Hiển thị dạng thanh dọc thụt lề' },
-                      { key: 12, func: 'Giấu nội dung', syntax: '<tg-spoiler>bí mật</tg-spoiler>', result: 'Bị mờ đi, bấm vào mới hiện chữ' },
+                      { key: 1, func: t('blockEditor.fnBold'), syntax: '<b>text</b>', result: <strong style={{ fontWeight: 'bold' }}>{t('blockEditor.resBoldText')}</strong> },
+                      { key: 2, func: t('blockEditor.fnItalic'), syntax: '<i>text</i>', result: <em style={{ fontStyle: 'italic' }}>{t('blockEditor.resItalicText')}</em> },
+                      { key: 3, func: t('blockEditor.fnUnderline'), syntax: '<u>text</u>', result: <u style={{ textDecoration: 'underline' }}>{t('blockEditor.resUnderlineText')}</u> },
+                      { key: 4, func: t('blockEditor.fnStrike'), syntax: '<s>text</s>', result: <del style={{ textDecoration: 'line-through' }}>{t('blockEditor.resStrikeText')}</del> },
+                      { key: 5, func: t('blockEditor.fnBoldItalic'), syntax: '<b><i>text</i></b>', result: <strong><em>{t('blockEditor.resBoldText')}</em></strong> },
+                      { key: 6, func: t('blockEditor.fnLink'), syntax: '<a href="http://example.com/">Link name</a>', result: <a href="#">{t('blockEditor.resLinkClickable')}</a> },
+                      { key: 7, func: t('blockEditor.fnMention'), syntax: '<a href="tg://user?id=123456789">User Name</a>', result: <a href="#">{t('blockEditor.resMentionClick')}</a> },
+                      { key: 8, func: t('blockEditor.fnInlineCode'), syntax: '<code>text</code>', result: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}>{t('blockEditor.resInlineCodeCopy')}</code> },
+                      { key: 9, func: t('blockEditor.fnCodeBlock'), syntax: '<pre>text</pre>', result: t('blockEditor.resCodeBlockGray') },
+                      { key: 10, func: t('blockEditor.fnCodeBlockLang'), syntax: '<pre><code class="language-python">print("Hello")</code></pre>', result: t('blockEditor.resCodeBlockHighlight') },
+                      { key: 11, func: t('blockEditor.fnQuote'), syntax: '<blockquote>text</blockquote>', result: t('blockEditor.resQuoteIndent') },
+                      { key: 12, func: t('blockEditor.fnSpoiler'), syntax: '<tg-spoiler>text</tg-spoiler>', result: t('blockEditor.resSpoilerBlur') },
                     ]}
                   />
                 )}
@@ -2348,42 +2355,42 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <div style={{ padding: 24, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
                 <Mail size="1.25rem" color="var(--accent-primary)" />
-                <Title level={5} style={{ margin: 0 }}>Nội dung Email</Title>
+                <Title level={5} style={{ margin: 0 }}>{t('blockEditor.emailContentTitle')}</Title>
               </div>
               <Form.Item
-                label="Người nhận (To)"
+                label={t('blockEditor.mailToLabel')}
                 name="mailTo"
-                rules={[{ required: true, message: 'Vui lòng nhập Email người nhận' }]}
+                rules={[{ required: true, message: t('blockEditor.mailToRequired') }]}
               >
-                <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email rồi bấm Enter..." />
+                <Select mode="tags" open={false} tokenSeparators={[',']} placeholder={t('blockEditor.mailToPlaceholder')} />
               </Form.Item>
-              <Alert title="Gõ Email (hoặc biến {email}) rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title={t('blockEditor.mailToHint', { email: '{email}' })} type="info" showIcon style={{ marginBottom: 16 }} />
               <Form.Item
-                label="Người nhận (CC)"
+                label={t('blockEditor.mailCcLabel')}
                 name="mailCc"
               >
-                <Select mode="tags" open={false} tokenSeparators={[',']} placeholder="Nhập Email CC rồi bấm Enter..." />
+                <Select mode="tags" open={false} tokenSeparators={[',']} placeholder={t('blockEditor.mailCcPlaceholder')} />
               </Form.Item>
-              <Alert title="Gõ Email rồi bấm Enter để thêm - có thể thêm nhiều người nhận" type="info" showIcon style={{ marginBottom: 16 }} />
-              <Form.Item label="Tiêu đề Email (Subject)" name="mailSubject" rules={[{ required: true, message: 'Vui lòng nhập Tiêu đề' }]}>
-                <Input placeholder="Nhập tiêu đề (Hỗ trợ định dạng biến {name})" />
+              <Alert title={t('blockEditor.mailCcHint')} type="info" showIcon style={{ marginBottom: 16 }} />
+              <Form.Item label={t('blockEditor.mailSubjectLabel')} name="mailSubject" rules={[{ required: true, message: t('blockEditor.mailSubjectRequired') }]}>
+                <Input placeholder={t('blockEditor.mailSubjectPlaceholder', { name: '{name}' })} />
               </Form.Item>
-              <Form.Item label="Nội dung Email (Body)" name="mailBody">
-                <Input.TextArea rows={12} placeholder="Nhập nội dung thư (Hỗ trợ định dạng biến {name})" style={{ fontFamily: 'var(--font-mono)' }} />
+              <Form.Item label={t('blockEditor.mailBodyLabel')} name="mailBody">
+                <Input.TextArea rows={12} placeholder={t('blockEditor.mailBodyPlaceholder', { name: '{name}' })} style={{ fontFamily: 'var(--font-mono)' }} />
               </Form.Item>
-              <Form.Item label="Đính kèm File" name="mailAttachments">
-                <Select mode="tags" loading={loadingFiles} placeholder="Chọn file có sẵn hoặc gõ tên file / {biến} và Enter" style={{ width: '100%' }}>
+              <Form.Item label={t('blockEditor.mailAttachLabel')} name="mailAttachments">
+                <Select mode="tags" loading={loadingFiles} placeholder={t('blockEditor.mailAttachPlaceholder', { bien: '{bien}' })} style={{ width: '100%' }}>
                   {availableFiles.map(f => (
                     <Select.Option key={f.name} value={f.name}>{f.name}</Select.Option>
                   ))}
                 </Select>
               </Form.Item>
-              <Alert title="Mẹo: Gõ tên file bất kỳ (VD: merged.xlsx, bao_cao.pdf) và bấm phím Enter. Hệ thống sẽ tự động tìm file đó ở thư mục Đầu vào hoặc Đầu ra khi chạy." type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title={t('blockEditor.mailAttachHint')} type="info" showIcon style={{ marginBottom: 16 }} />
             </div>
           ) : isMergeExcel ? (
             <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                <Title level={5} style={{ margin: 0 }}>Chọn file cần ghép</Title>
+                <Title level={5} style={{ margin: 0 }}>{t('blockEditor.mergeChooseFilesTitle')}</Title>
               </div>
 
               {/* 3 chế độ nguồn file: tất cả Input / tất cả Output / Tùy chọn */}
@@ -2401,24 +2408,24 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 buttonStyle="solid"
                 style={{ marginBottom: 16 }}
               >
-                <Radio.Button value="all_input">Tất cả Input</Radio.Button>
-                <Radio.Button value="all_output">Tất cả Output</Radio.Button>
-                <Radio.Button value="custom">Tùy chọn</Radio.Button>
+                <Radio.Button value="all_input">{t('blockEditor.mergeAllInput')}</Radio.Button>
+                <Radio.Button value="all_output">{t('blockEditor.mergeAllOutput')}</Radio.Button>
+                <Radio.Button value="custom">{t('blockEditor.mergeCustom')}</Radio.Button>
               </Radio.Group>
 
-              <Alert title={<span style={{ fontSize: '0.85rem' }}><b>Ghi chú:</b> File đầu tiên sẽ giữ nguyên dòng tiêu đề (Header). Các file theo sau bị bỏ dòng tiêu đề khi ghép để dữ liệu liên tục.</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
+              <Alert title={<span style={{ fontSize: '0.85rem' }}><b>{t('blockEditor.mergeNoteLabel')}</b> {t('blockEditor.mergeNoteText')}</span>} type="info" showIcon style={{ marginBottom: 16, padding: '8px 12px' }} />
 
               {/* Tùy chọn: multi-select từ cả 2 thư mục, hoặc nhập biến {{...}} */}
               {mergeMode === 'custom' && (
                 <Form.Item
                   name="selectedFiles"
-                  label="Chọn file (từ Input & Output) hoặc nhập biến {{...}}"
-                  rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 file' }]}
-                  extra="Gõ tên biến dạng {{ten_file}} rồi Enter — khi chạy sẽ tự tìm file trùng tên biến trong Input/Output. Thứ tự chọn = thứ tự ghép."
+                  label={<span>{t('blockEditor.mergeCustomLabel')} {'{{...}}'}</span>}
+                  rules={[{ required: true, message: t('blockEditor.mergeCustomRequired') }]}
+                  extra={t('blockEditor.mergeCustomExtra')}
                 >
                   <Select
                     mode="tags"
-                    placeholder="Chọn file hoặc gõ {{ten_bien}} rồi Enter"
+                    placeholder={t('blockEditor.mergeCustomPlaceholder')}
                     loading={loadingFiles}
                     options={availableFiles.map(f => ({ value: f.name, label: `${f.name} (${f.type === 'output' ? 'Output' : 'Input'})` }))}
                     style={{ width: '100%' }}
@@ -2434,13 +2441,13 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 return (
                   <div style={{ marginTop: 8 }}>
                     {loadingFiles ? (
-                      <Alert title="Đang tải..." type="info" showIcon />
+                      <Alert title={t('blockEditor.mergeLoadingFiles')} type="info" showIcon />
                     ) : files.length === 0 ? (
-                      <Alert title={`Chưa có file nào trong thư mục ${folderLabel}.`} type="warning" showIcon />
+                      <Alert title={t('blockEditor.mergeNoFilesInFolder', { folder: folderLabel })} type="warning" showIcon />
                     ) : (
                       <div style={{ background: 'rgba(14, 165, 233, 0.05)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '10px 14px', borderRadius: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0ea5e9', fontWeight: 600, fontSize: '0.85rem' }}>
-                          <Info size={14} /> File sẽ được ghép (tất cả {folderLabel}):
+                          <Info size={14} /> {t('blockEditor.mergeFilesToMerge', { folder: folderLabel })}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8, fontSize: '0.8rem' }}>
                           {files.map((f, i) => (
@@ -2460,25 +2467,25 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             <div style={{ padding: 24, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
                 <TableProperties size="1.25rem" color="var(--accent-primary)" />
-                <Title level={5} style={{ margin: 0 }}>Cấu hình PivotTable</Title>
+                <Title level={5} style={{ margin: 0 }}>{t('blockEditor.pivotConfigTitle')}</Title>
               </div>
 
               {columnError && (
                 <Alert title={columnError} type="warning" showIcon style={{ marginBottom: 16 }} />
               )}
-              
-              <Form.Item label="Trường Dòng (Rows)" name="pivotIndex">
-                <Select mode="tags" loading={loadingColumns} placeholder="Click để chọn cột hoặc gõ chữ cái A, B, C... và Enter">
+
+              <Form.Item label={t('blockEditor.pivotRowsLabel')} name="pivotIndex">
+                <Select mode="tags" loading={loadingColumns} placeholder={t('blockEditor.pivotColSelectPlaceholder')}>
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
-              <Alert title="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Khu Vực, A, B)" type="info" showIcon style={{ marginBottom: 16 }} />
-              
-              <Form.Item label="Trường Cột (Columns)" name="pivotColumns">
-                <Select 
-                  mode="tags" 
-                  loading={loadingColumns} 
-                  placeholder="Click để chọn cột hoặc gõ chữ cái A, B, C... và Enter"
+              <Alert title={t('blockEditor.pivotRowsHint')} type="info" showIcon style={{ marginBottom: 16 }} />
+
+              <Form.Item label={t('blockEditor.pivotColumnsLabel')} name="pivotColumns">
+                <Select
+                  mode="tags"
+                  loading={loadingColumns}
+                  placeholder={t('blockEditor.pivotColSelectPlaceholder')}
                   onChange={(val) => {
                     const currentSort = form.getFieldValue('pivotSortColumn')
                     if (currentSort && (!val || !val.includes(currentSort))) {
@@ -2489,37 +2496,37 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
-              <Alert title="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Nhóm Hàng, C)" type="info" showIcon style={{ marginBottom: 16 }} />
-              
-              <Form.Item label="Trường Giá trị (Values)" name="pivotValues" rules={[{ required: true, message: 'Nhập ít nhất 1 trường Giá trị' }]}>
-                <Select mode="tags" loading={loadingColumns} placeholder="Click để chọn cột hoặc gõ chữ cái A, B, C... và Enter">
+              <Alert title={t('blockEditor.pivotColumnsHint')} type="info" showIcon style={{ marginBottom: 16 }} />
+
+              <Form.Item label={t('blockEditor.pivotValuesLabel')} name="pivotValues" rules={[{ required: true, message: t('blockEditor.pivotValuesRequired') }]}>
+                <Select mode="tags" loading={loadingColumns} placeholder={t('blockEditor.pivotColSelectPlaceholder')}>
                   {availableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                 </Select>
               </Form.Item>
-              <Alert title="Hỗ trợ tên cột hoặc chữ cái A,B,C... (VD: Sản Lượng, D)" type="info" showIcon style={{ marginBottom: 16 }} />
+              <Alert title={t('blockEditor.pivotValuesHint')} type="info" showIcon style={{ marginBottom: 16 }} />
 
-              <Form.Item label="Phép tính (AggFunc)" name="pivotAgg">
+              <Form.Item label={t('blockEditor.pivotAggLabel')} name="pivotAgg">
                 <Select>
-                  <Select.Option value="sum">Tổng (Sum)</Select.Option>
-                  <Select.Option value="mean">Trung bình (Average)</Select.Option>
-                  <Select.Option value="count">Đếm (Count)</Select.Option>
-                  <Select.Option value="max">Lớn nhất (Max)</Select.Option>
-                  <Select.Option value="min">Nhỏ nhất (Min)</Select.Option>
+                  <Select.Option value="sum">{t('blockEditor.pivotAggSum')}</Select.Option>
+                  <Select.Option value="mean">{t('blockEditor.pivotAggMean')}</Select.Option>
+                  <Select.Option value="count">{t('blockEditor.pivotAggCount')}</Select.Option>
+                  <Select.Option value="max">{t('blockEditor.pivotAggMax')}</Select.Option>
+                  <Select.Option value="min">{t('blockEditor.pivotAggMin')}</Select.Option>
                 </Select>
               </Form.Item>
-              
+
               <div style={{ display: 'flex', gap: 24 }}>
-                <Form.Item label="Điền số 0 vào ô Trống (NaN)" name="pivotFillNa" valuePropName="checked">
+                <Form.Item label={t('blockEditor.pivotFillNaLabel')} name="pivotFillNa" valuePropName="checked">
                   <Switch />
                 </Form.Item>
-                <Form.Item label="Bật Tổng cộng (Grand Total)" name="pivotGrandTotal" valuePropName="checked">
+                <Form.Item label={t('blockEditor.pivotGrandTotalLabel')} name="pivotGrandTotal" valuePropName="checked">
                   <Switch />
                 </Form.Item>
               </div>
 
               <Divider style={{ margin: '24px 0' }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <Title level={5} style={{ margin: 0 }}>Cấu hình Sắp xếp (Nâng cao)</Title>
+                <Title level={5} style={{ margin: 0 }}>{t('blockEditor.pivotSortConfigTitle')}</Title>
                 <Form.Item name="pivotEnableSort" valuePropName="checked" style={{ margin: 0 }}>
                   <Switch size="small" />
                 </Form.Item>
@@ -2528,28 +2535,28 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               {pivotEnableSort && (
                 <div style={{ background: 'rgba(0,0,0,0.02)', padding: 16, borderRadius: 8, border: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'flex', gap: 16 }}>
-                    <Form.Item label="Cột cần sắp xếp" name="pivotSortColumn" style={{ flex: 1 }} rules={[{ required: true, message: 'Chọn cột để sắp xếp' }]}>
-                      <Select placeholder="Chọn 1 cột đã đưa vào Trường Cột">
+                    <Form.Item label={t('blockEditor.pivotSortColumnLabel')} name="pivotSortColumn" style={{ flex: 1 }} rules={[{ required: true, message: t('blockEditor.pivotSortColumnRequired') }]}>
+                      <Select placeholder={t('blockEditor.pivotSortColumnPlaceholder')}>
                         {sortableColumns.map(c => <Select.Option key={c} value={c}>{c}</Select.Option>)}
                       </Select>
                     </Form.Item>
-                    <Form.Item label="Kiểu sắp xếp" name="pivotSortOrder" style={{ flex: 1 }}>
+                    <Form.Item label={t('blockEditor.pivotSortOrderLabel')} name="pivotSortOrder" style={{ flex: 1 }}>
                       <Select>
-                        <Select.Option value="asc">Tăng dần (A-Z)</Select.Option>
-                        <Select.Option value="desc">Giảm dần (Z-A)</Select.Option>
-                        <Select.Option value="custom">Tùy chỉnh (Thủ công)</Select.Option>
+                        <Select.Option value="asc">{t('blockEditor.pivotSortAsc')}</Select.Option>
+                        <Select.Option value="desc">{t('blockEditor.pivotSortDesc')}</Select.Option>
+                        <Select.Option value="custom">{t('blockEditor.pivotSortCustomOpt')}</Select.Option>
                       </Select>
                     </Form.Item>
                   </div>
-                  
+
                   {pivotSortOrder === 'custom' && (
                     <>
-                      <Form.Item label="Thứ tự Tùy chỉnh (Kéo thả hoặc nhập tay)" name="pivotSortCustom">
-                        <Select mode="tags" loading={loadingCustomSort} placeholder={loadingCustomSort ? "Đang quét dữ liệu..." : "Nhập hoặc kéo thả thứ tự..."}>
+                      <Form.Item label={t('blockEditor.pivotSortCustomLabel')} name="pivotSortCustom">
+                        <Select mode="tags" loading={loadingCustomSort} placeholder={loadingCustomSort ? t('blockEditor.pivotSortCustomScanning') : t('blockEditor.pivotSortCustomPlaceholder')}>
                           {customSortValues.map(v => <Select.Option key={v} value={v}>{v}</Select.Option>)}
                         </Select>
                       </Form.Item>
-                      <Alert title="Hệ thống tự quét dữ liệu trong file. Bạn có thể xóa/sắp xếp lại các thẻ để định hình thứ tự." type="info" showIcon style={{ marginBottom: 16 }} />
+                      <Alert title={t('blockEditor.pivotSortCustomHint')} type="info" showIcon style={{ marginBottom: 16 }} />
                     </>
                   )}
                 </div>
@@ -2566,7 +2573,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                 <Sparkles size={12} color="var(--accent-primary)" />
-                Ctrl+I: AI viết code
+                {t('blockEditor.codeEditorAiHint')}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -2639,7 +2646,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <Sparkles size={16} color="var(--accent-primary)" style={{ marginRight: 8, flexShrink: 0 }} />
                   <Input.TextArea
                     autoFocus
-                    placeholder="VD: Viết hàm đọc file Excel và lọc các dòng bị trống..."
+                    placeholder={t('blockEditor.aiPromptPlaceholder')}
                     value={aiInstruction}
                     onChange={(e) => setAiInstruction(e.target.value)}
                     onKeyDown={handleAiKeyDown}
@@ -2653,7 +2660,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     icon={aiGenerating ? <Square size={16} /> : <Send size={16} />}
                     onClick={aiGenerating ? closeAiPrompt : handleAiSubmit}
                     style={{ marginLeft: 8, flexShrink: 0, color: aiGenerating ? 'var(--accent-danger)' : 'var(--accent-primary)' }}
-                    aria-label={aiGenerating ? 'Dừng sinh code AI' : 'Gửi yêu cầu sinh code AI'}
+                    aria-label={aiGenerating ? t('blockEditor.aiStopAria') : t('blockEditor.aiSendAria')}
                   />
                 </div>
 
@@ -2661,7 +2668,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 {aiGeneratedCode && (
                   <div style={{ padding: '8px 12px', background: 'var(--bg-surface)' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                      Preview (Nhấn Enter để chèn, Esc để huỷ)
+                      {t('blockEditor.aiPreviewHint')}
                     </div>
                     <div style={{ 
                       maxHeight: 200, 
@@ -2680,8 +2687,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                     
                     {!aiGenerating && (
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-                        <Button size="small" icon={<X size={14} />} onClick={closeAiPrompt}>Huỷ bỏ</Button>
-                        <Button size="small" type="primary" icon={<Check size={14} />} onClick={acceptAiCode}>Chấp nhận</Button>
+                        <Button size="small" icon={<X size={14} />} onClick={closeAiPrompt}>{t('blockEditor.aiCancelBtn')}</Button>
+                        <Button size="small" type="primary" icon={<Check size={14} />} onClick={acceptAiCode}>{t('blockEditor.aiAcceptBtn')}</Button>
                       </div>
                     )}
                   </div>

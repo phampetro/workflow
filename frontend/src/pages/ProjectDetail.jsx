@@ -9,6 +9,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App } from 'antd'
 const { Text, Title } = Typography
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
 const COLORS = ['#6c63ff','#00d4aa','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
@@ -29,6 +30,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
   // "Static function can not consume context like dynamic theme" ra console.
   const { modal } = App.useApp()
+  const { t, i18n } = useTranslation()
 
   const [workflows, setWorkflows] = useState([])
   const [packages, setPackages] = useState([])
@@ -86,7 +88,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         }
       }
     } catch (e) {
-      toast.error('Lỗi tải workflows: ' + e.message)
+      toast.error(t('projectDetail.loadWorkflowsError', { message: e.message }))
     } finally {
       setLoading(false)
     }
@@ -109,7 +111,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
       const res = await getPackages(proj.id)
       setPackages(res.data || [])
     } catch (e) {
-      toast.error('Lỗi tải packages: ' + e.message)
+      toast.error(t('projectDetail.loadPackagesError', { message: e.message }))
     } finally {
       setPkgLoading(false)
     }
@@ -125,7 +127,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
       const flat = allRuns.flat().sort((a, b) => new Date(b.started_at) - new Date(a.started_at))
       setRunHistory(flat.slice(0, 30))
     } catch (e) {
-      toast.error('Lỗi tải lịch sử: ' + e.message)
+      toast.error(t('projectDetail.loadHistoryError', { message: e.message }))
     } finally {
       setHistLoading(false)
     }
@@ -162,7 +164,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
           ? { ...w, ...payload }
           : w
         ))
-        toast.success('Cập nhật workflow thành công!')
+        toast.success(t('projectDetail.updateWorkflowSuccess'))
       } else {
         const res = await createWorkflow(proj.id, {
           name: values.name.trim(),
@@ -170,11 +172,13 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
           color: selectedWfColor,
         })
         setWorkflows((prev) => [res.data, ...prev])
-        toast.success('Đã tạo workflow mới')
+        toast.success(t('projectDetail.createWorkflowSuccess'))
       }
       handleCloseWfModal()
     } catch (e) {
-      toast.error((editingWf ? 'Lỗi cập nhật' : 'Lỗi tạo') + ' workflow: ' + e.message)
+      toast.error(editingWf
+        ? t('projectDetail.updateWorkflowError', { message: e.message })
+        : t('projectDetail.createWorkflowError', { message: e.message }))
     } finally {
       setCreating(false)
     }
@@ -182,19 +186,19 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
 
   const handleDeleteWorkflow = (id) => {
     modal.confirm({
-      title: 'Xóa Workflow',
-      content: 'Bạn có chắc muốn xóa workflow này không?',
-      okText: 'Xóa',
+      title: t('projectDetail.deleteWorkflowTitle'),
+      content: t('projectDetail.deleteWorkflowContent'),
+      okText: t('common.delete'),
       okType: 'danger',
-      cancelText: 'Hủy',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         setDeletingWf(id)
         try {
           await deleteWorkflow(id)
           setWorkflows((prev) => prev.filter((w) => w.id !== id))
-          toast.success('Đã xóa workflow')
+          toast.success(t('projectDetail.deleteWorkflowSuccess'))
         } catch (e) {
-          toast.error('Lỗi xóa workflow: ' + e.message)
+          toast.error(t('projectDetail.deleteWorkflowError', { message: e.message }))
         } finally {
           setDeletingWf(null)
         }
@@ -206,15 +210,15 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     try {
       const res = await duplicateWorkflow(id)
       setWorkflows((prev) => [res.data, ...prev])
-      toast.success('Đã sao chép workflow')
+      toast.success(t('projectDetail.duplicateSuccess'))
     } catch (e) {
-      toast.error('Lỗi sao chép workflow: ' + e.message)
+      toast.error(t('projectDetail.duplicateError', { message: e.message }))
     }
   }
 
   const handleExportWorkflow = (wf) => {
     window.location.href = `${API_BASE}/api/workflows/${wf.id}/export`
-    toast.success(`Đang tải xuống workflow ${wf.name}...`)
+    toast.success(t('projectDetail.exportingWorkflow', { name: wf.name }))
   }
 
   const wfFileInputRef = useRef(null)
@@ -235,9 +239,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     try {
       const res = await importWorkflow(proj.id, formData)
       setWorkflows((prev) => [res.data, ...prev])
-      toast.success('Import workflow thành công!')
+      toast.success(t('projectDetail.importSuccess'))
     } catch (err) {
-      toast.error('Lỗi import workflow: ' + err.message)
+      toast.error(t('projectDetail.importError', { message: err.message }))
     } finally {
       setImportingWf(false)
       if (wfFileInputRef.current) wfFileInputRef.current.value = ''
@@ -255,7 +259,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     try {
       await reorderWorkflows(proj.id, reordered.map((w, i) => ({ id: w.id, sort_order: i })))
     } catch {
-      toast.error('Lỗi lưu thứ tự workflow')
+      toast.error(t('projectDetail.reorderError'))
     }
   }
 
@@ -263,7 +267,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     e.stopPropagation()
     if (isWfRunning(wf.id)) return // chặn double-click
     if (!wf.graph_json) {
-      toast('Workflow chưa có nội dung. Vui lòng thêm blocks trước khi chạy.', { icon: '⚠️' })
+      toast(t('projectDetail.noGraphWarning'), { icon: '⚠️' })
       return
     }
     try {
@@ -273,9 +277,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         useStore.getState().clearLogs(run_id)
         useStore.getState().setActiveRun(wf.id, run_id)
       }
-      toast.success(`Đã kích hoạt chạy ${wf.name}`)
+      toast.success(t('projectDetail.runActivated', { name: wf.name }))
     } catch (err) {
-      toast.error('Lỗi chạy workflow: ' + err.message)
+      toast.error(t('projectDetail.runError', { message: err.message }))
       useStore.getState().clearActiveRun(wf.id)
     }
   }
@@ -285,9 +289,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     if (!isWfRunning(wf.id)) return
     try {
       await stopWorkflow(wf.id)
-      toast.success(`Đã gửi lệnh dừng ${wf.name}`)
+      toast.success(t('projectDetail.stopSent', { name: wf.name }))
     } catch (err) {
-      toast.error('Lỗi dừng workflow: ' + err.message)
+      toast.error(t('projectDetail.stopError', { message: err.message }))
     }
   }
 
@@ -297,10 +301,10 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     try {
       await installPackage(proj.id, pkgInput.trim())
       setPkgInput('')
-      toast.success(`Đã cài đặt package ${pkgInput.trim()}`)
+      toast.success(t('projectDetail.installSuccess', { name: pkgInput.trim() }))
       await loadPackages()
     } catch (e) {
-      toast.error('Lỗi cài package: ' + e.message)
+      toast.error(t('projectDetail.installError', { message: e.message }))
     } finally {
       setInstallingPkg(false)
     }
@@ -310,9 +314,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     try {
       await uninstallPackage(proj.id, pkgName)
       setPackages((prev) => prev.filter((p) => p.name !== pkgName))
-      toast.success(`Đã gỡ ${pkgName}`)
+      toast.success(t('projectDetail.uninstallSuccess', { name: pkgName }))
     } catch (e) {
-      toast.error('Lỗi gỡ package: ' + e.message)
+      toast.error(t('projectDetail.uninstallError', { message: e.message }))
     }
   }
 
@@ -325,14 +329,14 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
       if (st === 'creating') {
         // Venv đang được tạo ngầm (từ import/create) — để poll tự cập nhật khi xong
         setVenvCreating(true)
-        toast('Môi trường đang được tạo, vui lòng đợi…', { icon: '⏳' })
+        toast(t('projectDetail.venvCreatingToast'), { icon: '⏳' })
       } else {
-        toast.success('Khởi tạo Venv thành công!')
+        toast.success(t('projectDetail.venvInitSuccess'))
         if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true })
         await loadPackages()
       }
     } catch (e) {
-      toast.error('Lỗi tạo venv: ' + e.message)
+      toast.error(t('projectDetail.venvInitError', { message: e.message }))
     } finally {
       setInitingVenv(false)
     }
@@ -360,17 +364,18 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     return () => { cancelled = true; clearInterval(t) }
   }, [proj?.id, proj?.venv_ready])
 
+  const dateLocale = i18n.language === 'en' ? 'en-US' : 'vi-VN'
   const formatDate = (iso) => {
     if (!iso) return '-'
     try {
       const d = new Date(iso)
       const diff = Date.now() - d.getTime()
       if (diff <= 5 * 60 * 1000) {
-        if (diff < 60000) return 'Vừa xong'
-        return `${Math.floor(diff / 60000)} phút trước`
+        if (diff < 60000) return t('projectDetail.justNow')
+        return t('projectDetail.minutesAgo', { count: Math.floor(diff / 60000) })
       }
-      const time = d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      const time = d.toLocaleTimeString(dateLocale, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      const date = d.toLocaleDateString(dateLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
       return `${time} ${date}`
     } catch { return iso }
   }
@@ -383,40 +388,40 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }
 
   const pkgColumns = [
-    { title: 'STT', key: 'index', width: 60, align: 'center', render: (_, __, index) => <Text type="secondary" style={{ fontSize: '0.8rem' }}>{index + 1}</Text> },
-    { title: 'Package', dataIndex: 'name', key: 'name', render: text => <Text strong style={{ fontSize: '0.875rem' }}>{text}</Text> },
+    { title: t('projectDetail.colIndex'), key: 'index', width: 60, align: 'center', render: (_, __, index) => <Text type="secondary" style={{ fontSize: '0.8rem' }}>{index + 1}</Text> },
+    { title: t('projectDetail.colPackage'), dataIndex: 'name', key: 'name', render: text => <Text strong style={{ fontSize: '0.875rem' }}>{text}</Text> },
     {
-      title: 'Phiên bản', dataIndex: 'version', key: 'version', width: 140, align: 'center',
+      title: t('projectDetail.colVersion'), dataIndex: 'version', key: 'version', width: 140, align: 'center',
       render: text => <Text style={{ fontSize: '0.8125rem', color: 'var(--text-primary)' }}>{text || '-'}</Text>
     },
-    { title: 'Thao tác', key: 'action', width: 80, align: 'center', render: (_, record) => (
+    { title: t('projectDetail.colAction'), key: 'action', width: 80, align: 'center', render: (_, record) => (
       <Popconfirm
-        title="Gỡ package này?"
-        description="Package sẽ bị xóa khỏi môi trường."
+        title={t('projectDetail.uninstallConfirmTitle')}
+        description={t('projectDetail.uninstallConfirmDesc')}
         onConfirm={() => handleUninstall(record.name)}
-        okText="Gỡ"
-        cancelText="Hủy"
+        okText={t('projectDetail.uninstallOk')}
+        cancelText={t('common.cancel')}
         okButtonProps={{ danger: true }}
       >
-        <Button type="text" size="small" danger icon={<Trash2 size="0.875rem" />} style={{ height: 22, padding: '0 6px', lineHeight: 1 }} aria-label="Gỡ package" />
+        <Button type="text" size="small" danger icon={<Trash2 size="0.875rem" />} style={{ height: 22, padding: '0 6px', lineHeight: 1 }} aria-label={t('projectDetail.uninstallAria')} />
       </Popconfirm>
     )}
   ]
 
   const historyColumns = [
-    { title: 'STT', key: 'index', width: 50, align: 'center', render: (_, __, index) => <Text type="secondary" style={{ fontSize: '0.8rem' }}>{index + 1}</Text> },
-    { title: 'Workflow', key: 'workflow', render: (_, r) => <Text strong style={{ fontSize: '0.875rem' }}>{workflows.find(w => w.id === r.workflow_id)?.name || r.workflow_id}</Text> },
+    { title: t('projectDetail.colIndex'), key: 'index', width: 50, align: 'center', render: (_, __, index) => <Text type="secondary" style={{ fontSize: '0.8rem' }}>{index + 1}</Text> },
+    { title: t('projectDetail.colWorkflow'), key: 'workflow', render: (_, r) => <Text strong style={{ fontSize: '0.875rem' }}>{workflows.find(w => w.id === r.workflow_id)?.name || r.workflow_id}</Text> },
     {
-      title: 'Trạng thái', dataIndex: 'status', key: 'status', align: 'center',
+      title: t('projectDetail.colStatus'), dataIndex: 'status', key: 'status', align: 'center',
       render: s => {
         const statusMap = {
-          running: { color: 'processing', text: 'Đang chạy', icon: <Loader size="0.75rem" className="spinning" /> },
-          success: { color: 'success', text: 'Thành công', icon: <CheckCircle size="0.75rem" /> },
-          error: { color: 'error', text: 'Lỗi', icon: <XCircle size="0.75rem" /> },
-          scheduled: { color: 'warning', text: 'Đã lên lịch', icon: <Clock size="0.75rem" /> },
-          idle: { color: 'default', text: 'Chờ', icon: null },
-          pending: { color: 'default', text: 'Chờ', icon: null },
-          stopped: { color: 'default', text: 'Đã dừng', icon: null },
+          running: { color: 'processing', text: t('projectDetail.historyStatusRunning'), icon: <Loader size="0.75rem" className="spinning" /> },
+          success: { color: 'success', text: t('projectDetail.historyStatusSuccess'), icon: <CheckCircle size="0.75rem" /> },
+          error: { color: 'error', text: t('projectDetail.historyStatusError'), icon: <XCircle size="0.75rem" /> },
+          scheduled: { color: 'warning', text: t('projectDetail.historyStatusScheduled'), icon: <Clock size="0.75rem" /> },
+          idle: { color: 'default', text: t('projectDetail.historyStatusIdle'), icon: null },
+          pending: { color: 'default', text: t('projectDetail.historyStatusIdle'), icon: null },
+          stopped: { color: 'default', text: t('projectDetail.historyStatusStopped'), icon: null },
         }
         const cfg = statusMap[s] || statusMap.idle
         return (
@@ -427,9 +432,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
       }
     },
     {
-      title: 'Kích hoạt bởi', key: 'trigger', align: 'center',
+      title: t('projectDetail.colTrigger'), key: 'trigger', align: 'center',
       render: (_, r) => {
-        const type = r.triggered_by?.startsWith('schedule:') ? 'Lịch hẹn' : 'Thủ công'
+        const type = r.triggered_by?.startsWith('schedule:') ? t('projectDetail.triggerSchedule') : t('projectDetail.triggerManual')
         const icon = r.triggered_by?.startsWith('schedule:') ? <Clock size="0.75rem" /> : <Play size="0.75rem" />
         return (
           <Text type="secondary" style={{ fontSize: '0.8rem' }}>
@@ -441,7 +446,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
       }
     },
     {
-      title: 'Thời gian chạy', dataIndex: 'duration_ms', key: 'duration', align: 'center',
+      title: t('projectDetail.colDuration'), dataIndex: 'duration_ms', key: 'duration', align: 'center',
       render: ms => (
         <Text type="secondary" style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>
           {formatDuration(ms)}
@@ -461,7 +466,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             icon={<ArrowLeft size="0.875rem" />}
             style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
           >
-            Quay lại
+            {t('projectDetail.back')}
           </Button>
           <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
           <Button
@@ -470,7 +475,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             onClick={() => setIsWfModalOpen(true)}
             style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
           >
-            Workflow mới
+            {t('projectDetail.newWorkflow')}
           </Button>
           <input type="file" accept=".zip" style={{ display: 'none' }} ref={wfFileInputRef} onChange={handleWfFileChange} />
           <Button
@@ -480,10 +485,10 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             loading={importingWf}
             style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
           >
-            Import
+            {t('projectDetail.import')}
           </Button>
           <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
-          <Tooltip title={(initingVenv || venvCreating) ? 'Đang tạo môi trường, vui lòng đợi…' : ''}>
+          <Tooltip title={(initingVenv || venvCreating) ? t('projectDetail.creatingEnvTooltip') : ''}>
             <Button
               type="default"
               icon={<Package size="0.875rem" />}
@@ -491,7 +496,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
               disabled={initingVenv || venvCreating}
               style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
             >
-              Packages
+              {t('projectDetail.packages')}
             </Button>
           </Tooltip>
           <Button
@@ -500,7 +505,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             onClick={() => { loadHistory(); setHistoryModalOpen(true); }}
             style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
           >
-            Lịch sử
+            {t('projectDetail.history')}
           </Button>
           <div style={{ width: 1, height: '1.125rem', background: 'var(--border-default)' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -524,7 +529,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
               disabled={initingVenv || venvCreating}
               style={{ fontWeight: 500 }}
             >
-              {(initingVenv || venvCreating) ? 'Đang tạo môi trường…' : 'Khởi tạo Venv'}
+              {(initingVenv || venvCreating) ? t('projectDetail.creatingEnv') : t('projectDetail.initVenv')}
             </Button>
           )}
           <Button
@@ -532,7 +537,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             onClick={() => setShowAutoInstall(true)}
             disabled={initingVenv || venvCreating}
           >
-            Tự động cài thư viện
+            {t('projectDetail.autoInstall')}
           </Button>
         </Space>
       </div>
@@ -548,7 +553,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                     image={Empty.PRESENTED_IMAGE_SIMPLE} 
                     description={
                       <span style={{ color: 'var(--text-muted)' }}>
-                        Chưa có workflow nào. Nhấn <strong>Workflow mới</strong> để tạo.
+                        {t('projectDetail.emptyWorkflowsPrefix')} <strong>{t('projectDetail.newWorkflow')}</strong> {t('projectDetail.emptyWorkflowsSuffix')}
                       </span>
                     }
                     style={{ gridColumn: '1 / -1', padding: '3rem' }}
@@ -584,7 +589,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <div style={{ width:26, height:26, background:`linear-gradient(135deg,${selectedWfColor},${selectedWfColor}99)`, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>
               {editingWf ? <Settings size="0.875rem" /> : <Plus size="0.875rem" />}
             </div>
-            {editingWf ? 'Chỉnh sửa Workflow' : 'Tạo Workflow Mới'}
+            {editingWf ? t('projectDetail.editWorkflow') : t('projectDetail.newWorkflowModalTitle')}
           </Space>
         }
         open={isWfModalOpen}
@@ -593,13 +598,13 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         destroyOnHidden
       >
         <Form form={wfForm} layout="vertical" onFinish={handleSubmitWf} style={{ marginTop: 24 }}>
-          <Form.Item name="name" label="Tên Workflow" rules={[{ required: true, message: 'Nhập tên workflow' }]}>
-            <Input placeholder="VD: Fetch Data" autoFocus />
+          <Form.Item name="name" label={t('projectDetail.nameLabel')} rules={[{ required: true, message: t('projectDetail.nameRequired') }]}>
+            <Input placeholder={t('projectDetail.namePlaceholder')} autoFocus />
           </Form.Item>
-          <Form.Item name="description" label="Mô tả">
-            <Input.TextArea placeholder="Mô tả công việc của workflow..." rows={3} />
+          <Form.Item name="description" label={t('projectDetail.descLabel')}>
+            <Input.TextArea placeholder={t('projectDetail.descPlaceholder')} rows={3} />
           </Form.Item>
-          <Form.Item label="Màu sắc">
+          <Form.Item label={t('projectDetail.colorLabel')}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {COLORS.map((c) => (
                 <div
@@ -617,9 +622,9 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             </div>
           </Form.Item>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-            <Button onClick={handleCloseWfModal}>Hủy</Button>
+            <Button onClick={handleCloseWfModal}>{t('common.cancel')}</Button>
             <Button type="primary" htmlType="submit" loading={creating}>
-              {editingWf ? 'Lưu thay đổi' : 'Tạo mới'}
+              {editingWf ? t('projectDetail.saveChanges') : t('projectDetail.createNew')}
             </Button>
           </div>
         </Form>
@@ -639,15 +644,15 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Package size="1.125rem" />
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>Quản lý Packages</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, lineHeight: 1.3 }}>Python Environment</div>
+                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{t('projectDetail.packagesTitle')}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, lineHeight: 1.3 }}>{t('projectDetail.packagesSubtitle')}</div>
               </div>
             </div>
 
             {/* Input + nút Cài đặt — nằm trong title, ngang hàng icon */}
             <Space.Compact style={{ width: 320, flexShrink: 0, marginLeft: 'auto' }} onKeyDown={(e) => e.stopPropagation()}>
               <Input
-                placeholder="Cài package, ví dụ: pandas"
+                placeholder={t('projectDetail.installPlaceholder')}
                 value={pkgInput}
                 onChange={e => setPkgInput(e.target.value)}
                 onPressEnter={handleInstall}
@@ -669,7 +674,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                   boxShadow: 'var(--shadow-sm)'
                 }}
               >
-                Cài đặt
+                {t('projectDetail.installBtn')}
               </Button>
             </Space.Compact>
           </div>
@@ -689,12 +694,12 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             }}>
               <Terminal size="2rem" style={{ color: 'var(--accent-warning)' }} />
             </div>
-            <Title level={5} style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Python Environment chưa sẵn sàng</Title>
+            <Title level={5} style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>{t('projectDetail.venvNotReadyTitle')}</Title>
             <Text type="secondary" style={{ display: 'block', marginBottom: '1.5rem' }}>
-              Cần khởi tạo Virtual Environment trước khi quản lý packages.
+              {t('projectDetail.venvNotReadyDesc')}
             </Text>
             <Button type="primary" danger icon={<Terminal size="0.875rem" />} onClick={handleInitVenv} loading={initingVenv || venvCreating} disabled={initingVenv || venvCreating}>
-              {(initingVenv || venvCreating) ? 'Đang tạo môi trường…' : 'Khởi tạo Venv'}
+              {(initingVenv || venvCreating) ? t('projectDetail.creatingEnv') : t('projectDetail.initVenv')}
             </Button>
           </div>
         ) : (
@@ -705,7 +710,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Col span={8}>
                   <div style={{ textAlign: 'center' }}>
                     <Statistic
-                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tổng packages</span>}
+                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('projectDetail.totalPackages')}</span>}
                       value={packages.length}
                       styles={{ content: { fontSize: '1.5rem', color: 'var(--text-primary)' } }}
                       prefix={<Package size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
@@ -715,7 +720,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Col span={8}>
                   <div style={{ textAlign: 'center' }}>
                     <Statistic
-                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Môi trường</span>}
+                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('projectDetail.environment')}</span>}
                       value="Active"
                       styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-success)' } }}
                       prefix={<CheckCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
@@ -725,7 +730,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 <Col span={8}>
                   <div style={{ textAlign: 'center' }}>
                     <Statistic
-                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Python</span>}
+                      title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('projectDetail.python')}</span>}
                       value="3.x"
                       styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-primary)' } }}
                       prefix={<Terminal size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
@@ -739,7 +744,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <div style={{ padding: '16px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <Text type="secondary" style={{ fontSize: '0.8rem' }}>
-                  Đã cài đặt {packages.length} package{packages.length !== 1 ? 's' : ''}
+                  {t('projectDetail.installedCount', { count: packages.length })}
                 </Text>
                 <Button
                   type="text"
@@ -749,7 +754,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                   loading={pkgLoading}
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Làm mới
+                  {t('projectDetail.refresh')}
                 </Button>
               </div>
 
@@ -761,7 +766,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                 pagination={{
                   pageSize: 10,
                   showSizeChanger: false,
-                  showTotal: (total) => `${total} packages`,
+                  showTotal: (total) => t('projectDetail.packagesTotal', { count: total }),
                 }}
                 size="small"
                 style={{ marginTop: 8 }}
@@ -784,8 +789,8 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
               <History size="1.125rem" />
             </div>
             <div>
-              <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Lịch sử chạy</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>Run History</div>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{t('projectDetail.historyTitle')}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>{t('projectDetail.historySubtitle')}</div>
             </div>
           </div>
         }
@@ -802,7 +807,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <Col span={8}>
               <div style={{ textAlign: 'center' }}>
                 <Statistic
-                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tổng lần chạy</span>}
+                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('projectDetail.totalRuns')}</span>}
                   value={runHistory.length}
                   styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-secondary)' } }}
                   prefix={<History size="1rem" style={{ marginRight: 8, opacity: 0.6, color: 'var(--accent-secondary)' }} />}
@@ -812,7 +817,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <Col span={8}>
               <div style={{ textAlign: 'center' }}>
                 <Statistic
-                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Thành công</span>}
+                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('projectDetail.success')}</span>}
                   value={runHistory.filter(r => r.status === 'success').length}
                   styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-success)' } }}
                   prefix={<CheckCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
@@ -822,7 +827,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             <Col span={8}>
               <div style={{ textAlign: 'center' }}>
                 <Statistic
-                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Lỗi</span>}
+                  title={<span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('projectDetail.errorLabel')}</span>}
                   value={runHistory.filter(r => r.status === 'error').length}
                   styles={{ content: { fontSize: '1.5rem', color: 'var(--accent-danger)' } }}
                   prefix={<XCircle size="1rem" style={{ marginRight: 8, opacity: 0.6 }} />}
@@ -836,7 +841,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         <div style={{ padding: '16px 24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <Text type="secondary" style={{ fontSize: '0.8rem' }}>
-              {runHistory.length} bản ghi
+              {t('projectDetail.recordsCount', { count: runHistory.length })}
             </Text>
             <Button
               type="text"
@@ -846,7 +851,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
               loading={histLoading}
               style={{ color: 'var(--text-muted)' }}
             >
-              Làm mới
+              {t('projectDetail.refresh')}
             </Button>
           </div>
 
@@ -858,7 +863,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             pagination={{
               pageSize: 10,
               showSizeChanger: false,
-              showTotal: (total) => `${total} bản ghi`,
+              showTotal: (total) => t('projectDetail.recordsTotal', { count: total }),
             }}
             size="small"
             style={{ marginTop: 8 }}
@@ -878,6 +883,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
 
 // WorkflowCard component với drag-drop tích hợp
 function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, onDelete, isRunning, onRun, onStop }) {
+  const { t, i18n } = useTranslation()
   const {
     attributes,
     listeners,
@@ -898,7 +904,8 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
     if (!iso) return '-'
     try {
       const d = new Date(iso)
-      return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      const locale = i18n.language === 'en' ? 'en-US' : 'vi-VN'
+      return d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     } catch { return iso }
   }
 
@@ -906,23 +913,23 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
   const lastStatus = workflow.last_run_status
   let statusBadge = null
   if (isRunning) {
-    statusBadge = { text: 'Đang chạy', color: 'var(--accent-secondary)', bg: 'var(--accent-secondary-bg)', dot: <Loader size="0.75rem" className="spinning"/> }
+    statusBadge = { text: t('projectDetail.cardStatusRunning'), color: 'var(--accent-secondary)', bg: 'var(--accent-secondary-bg)', dot: <Loader size="0.75rem" className="spinning"/> }
   } else if (lastStatus === 'error') {
-    statusBadge = { text: 'Lỗi gần đây', color: 'var(--accent-danger)', bg: 'var(--accent-danger-bg)', dot: <XCircle size="0.75rem"/> }
+    statusBadge = { text: t('projectDetail.cardStatusRecentError'), color: 'var(--accent-danger)', bg: 'var(--accent-danger-bg)', dot: <XCircle size="0.75rem"/> }
   } else if (lastStatus === 'success') {
-    statusBadge = { text: 'Thành công', color: 'var(--accent-success)', bg: 'var(--accent-success-bg)', dot: <CheckCircle size="0.75rem"/> }
+    statusBadge = { text: t('projectDetail.cardStatusSuccess'), color: 'var(--accent-success)', bg: 'var(--accent-success-bg)', dot: <CheckCircle size="0.75rem"/> }
   } else if (lastStatus === 'stopped') {
-    statusBadge = { text: 'Đã dừng', color: 'var(--accent-warning)', bg: 'var(--accent-warning-bg)', dot: <AlertCircle size="0.75rem"/> }
+    statusBadge = { text: t('projectDetail.cardStatusStopped'), color: 'var(--accent-warning)', bg: 'var(--accent-warning-bg)', dot: <AlertCircle size="0.75rem"/> }
   } else {
-    statusBadge = { text: 'Sẵn sàng', color: 'var(--text-muted)', bg: 'var(--accent-muted-bg)', dot: <CheckCircle size="0.75rem"/> }
+    statusBadge = { text: t('projectDetail.cardStatusReady'), color: 'var(--text-muted)', bg: 'var(--accent-muted-bg)', dot: <CheckCircle size="0.75rem"/> }
   }
 
   const items = [
-    { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
-    { key: 'duplicate', label: 'Sao chép', icon: <Copy size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onDuplicate(); } },
-    { key: 'export', label: 'Export ZIP', icon: <Download size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
+    { key: 'edit', label: t('projectDetail.cardMenuSettings'), icon: <Settings size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
+    { key: 'duplicate', label: t('projectDetail.cardMenuDuplicate'), icon: <Copy size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onDuplicate(); } },
+    { key: 'export', label: t('projectDetail.cardMenuExport'), icon: <Download size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
     { type: 'divider' },
-    { key: 'delete', label: 'Xóa Workflow', icon: <Trash2 size="0.938rem"/>, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } }
+    { key: 'delete', label: t('projectDetail.cardMenuDelete'), icon: <Trash2 size="0.938rem"/>, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } }
   ]
 
   return (
@@ -937,7 +944,7 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
       // nên bàn phím không mở được workflow nào.
       role="button"
       tabIndex={0}
-      aria-label={`Mở workflow ${workflow.name}`}
+      aria-label={t('projectDetail.cardOpenAria', { name: workflow.name })}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
       }}
@@ -958,15 +965,15 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
               {workflow.name}
             </h3>
           </Tooltip>
-          <Tooltip title={workflow.description || 'Chưa có mô tả'} placement="top" mouseEnterDelay={0.5}>
+          <Tooltip title={workflow.description || t('projectDetail.cardNoDescription')} placement="top" mouseEnterDelay={0.5}>
             <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {workflow.description || 'Chưa có mô tả'}
+              {workflow.description || t('projectDetail.cardNoDescription')}
             </p>
           </Tooltip>
         </div>
 
         <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
-          <Button className="project-menu-btn" type="text" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} aria-label="Mở menu thao tác Workflow" />
+          <Button className="project-menu-btn" type="text" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} aria-label={t('projectDetail.cardMenuAria')} />
         </Dropdown>
       </div>
 
@@ -1001,7 +1008,7 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
             danger={isRunning}
             style={{ borderRadius: 6, fontWeight: 500 }}
           >
-            {isRunning ? 'Dừng' : 'Chạy'}
+            {isRunning ? t('projectDetail.cardStop') : t('projectDetail.cardRun')}
           </Button>
         </div>
       </div>

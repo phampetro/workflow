@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { User, Plus, Trash2, LogIn, FolderOpen, Workflow, Clock, CheckCircle } from 'lucide-react'
 import { Modal, Button, Input, Spin, Empty, App } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { getUsers, createUser, deleteUser, activateUser, getUserStats } from '../api/client'
 import toast from 'react-hot-toast'
 import useStore from '../store/useStore'
@@ -19,6 +20,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
   // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
   // "Static function can not consume context like dynamic theme" ra console.
   const { modal } = App.useApp()
+  const { t } = useTranslation()
 
   const currentUser = useStore((s) => s.currentUser)
   const [users, setUsers] = useState([])
@@ -69,7 +71,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
       setUserStats((prev) => ({ ...prev, [newUser.id]: { project_count: 0, workflow_count: 0, schedule_count: 0 } }))
       setNewName('')
       setShowInput(false)
-      toast.success(`Đã tạo người dùng "${name}"`)
+      toast.success(t('userPicker.createdToast', { name }))
     } catch (e) {
       toast.error(e.message)
     } finally {
@@ -86,16 +88,16 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
       onSelect(user)
       toast.success(
         <div>
-          <div style={{ fontWeight: 600 }}>Xin chào, {user.name}! 👋</div>
+          <div style={{ fontWeight: 600 }}>{t('userPicker.welcome', { name: user.name })}</div>
           {loaded > 0
-            ? <div style={{ fontSize: '0.8rem', opacity: 0.85 }}>{loaded} lịch chạy đã được kích hoạt</div>
-            : <div style={{ fontSize: '0.8rem', opacity: 0.85 }}>Không gian làm việc riêng của bạn đã sẵn sàng</div>
+            ? <div style={{ fontSize: '0.8rem', opacity: 0.85 }}>{t('userPicker.schedulesActivated', { count: loaded })}</div>
+            : <div style={{ fontSize: '0.8rem', opacity: 0.85 }}>{t('userPicker.workspaceReady')}</div>
           }
         </div>,
         { duration: 4000 }
       )
     } catch (e) {
-      toast.error('Lỗi kích hoạt người dùng: ' + e.message)
+      toast.error(t('userPicker.activateError', { message: e.message }))
     } finally {
       setActivating(null)
     }
@@ -104,11 +106,11 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
   const handleDelete = async (e, user) => {
     e.stopPropagation()
     modal.confirm({
-      title: `Xóa "${user.name}"?`,
-      content: 'Tất cả projects, workflows và lịch chạy của người dùng này sẽ bị xóa vĩnh viễn.',
-      okText: 'Xóa',
+      title: t('userPicker.deleteConfirmTitle', { name: user.name }),
+      content: t('userPicker.deleteConfirmContent'),
+      okText: t('common.delete'),
       okType: 'danger',
-      cancelText: 'Hủy',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await deleteUser(user.id)
@@ -118,7 +120,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
             delete next[user.id]
             return next
           })
-          toast.success(`Đã xóa "${user.name}"`)
+          toast.success(t('userPicker.deletedToast', { name: user.name }))
         } catch (e) {
           toast.error(e.message)
         }
@@ -145,9 +147,9 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
             <User size="1rem" />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Chọn người dùng</div>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{t('userPicker.title')}</div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-              Mỗi người dùng có không gian làm việc và lịch chạy riêng biệt
+              {t('userPicker.subtitle')}
             </div>
           </div>
         </div>
@@ -157,7 +159,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
         {!loading && users.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="Chưa có người dùng nào — hãy tạo người dùng đầu tiên!"
+            description={t('userPicker.empty')}
             style={{ margin: '24px 0 16px 0' }}
           />
         ) : (
@@ -222,7 +224,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                           border: '1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)',
                         }}>
                           <CheckCircle size="0.562rem" style={{ flexShrink: 0 }} />
-                          Đang dùng
+                          {t('userPicker.active')}
                         </span>
                       )}
                     </div>
@@ -231,19 +233,19 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                       <div style={{ display: 'flex', gap: 10, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                           <FolderOpen size="0.688rem" style={{ color: '#a78bfa' }} />
-                          {stats.project_count} project
+                          {t('userPicker.statProject', { count: stats.project_count })}
                         </span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Workflow size="0.688rem" style={{ color: '#2dd4bf' }} />
-                          {stats.workflow_count} workflow
+                          {t('userPicker.statWorkflow', { count: stats.workflow_count })}
                         </span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Clock size="0.688rem" style={{ color: '#f59e0b' }} />
-                          {stats.schedule_count} lịch
+                          {t('userPicker.statSchedule', { count: stats.schedule_count })}
                         </span>
                       </div>
                     ) : (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Đang tải...</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('common.loading')}</div>
                     )}
                   </div>
 
@@ -263,7 +265,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
                           display: 'flex', alignItems: 'center',
                           transition: 'color 0.15s, background 0.15s',
                         }}
-                        title="Xóa người dùng"
+                        title={t('userPicker.deleteTooltip')}
                         className="user-delete-btn"
                       >
                         <Trash2 size="0.875rem" />
@@ -281,7 +283,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
       {showInput ? (
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <Input
-            placeholder="Nhập tên người dùng..."
+            placeholder={t('userPicker.namePlaceholder')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onPressEnter={handleCreate}
@@ -289,9 +291,9 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
             size="middle"
           />
           <Button type="primary" loading={creating} onClick={handleCreate} disabled={!newName.trim()}>
-            Tạo
+            {t('common.create')}
           </Button>
-          <Button onClick={() => { setShowInput(false); setNewName('') }}>Hủy</Button>
+          <Button onClick={() => { setShowInput(false); setNewName('') }}>{t('common.cancel')}</Button>
         </div>
       ) : (
         <Button
@@ -301,7 +303,7 @@ export default function UserPickerModal({ open, onClose, onSelect, allowClose = 
           onClick={() => setShowInput(true)}
           style={{ marginTop: 4 }}
         >
-          Thêm người dùng mới
+          {t('userPicker.addNew')}
         </Button>
       )}
 

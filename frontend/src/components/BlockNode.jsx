@@ -2,6 +2,7 @@ import React, { memo, useState, useEffect, useRef, useContext, createContext } f
 import { Handle, useUpdateNodeInternals } from '@xyflow/react'
 import './BlockNode.css'
 import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 // Handler Sửa/Xóa/Nhân bản được cấp qua Context (value ổn định, memo hóa ở
 // WorkflowEditor) thay vì tiêm closure mới vào data từng node mỗi render.
@@ -158,6 +159,15 @@ const BLOCK_TYPES = {
   },
 }
 
+// label/description trong BLOCK_TYPES ở trên là giá trị GỐC (tiếng Việt) — dùng
+// làm fallback và làm nội dung mặc định khi tạo instance mới (xem onDrop ở
+// WorkflowEditor.jsx). Hiển thị trên UI (palette, node canvas) phải qua hàm này
+// để tự đổi theo ngôn ngữ; khoá i18n nằm ở namespace `blockTypes`.
+export function tBlockType(t, key, field) {
+  const safeKey = BLOCK_TYPES[key] ? key : 'python'
+  return t(`blockTypes.${safeKey}.${field}`, BLOCK_TYPES[safeKey][field])
+}
+
 const STATUS_STYLES = {
   idle:    { border: 'var(--border-default)', glow: 'none' },
   running: { border: '#22c55e', glow: '0 0 16px rgba(34,197,94,0.4)' },
@@ -185,8 +195,10 @@ const HANDLE_TRANSLATES = {
 }
 
 const BlockNode = memo(({ id, data, selected }) => {
+  const { t } = useTranslation()
   const actions = useContext(NodeActionsContext)
   const type = BLOCK_TYPES[data.type] || BLOCK_TYPES.python
+  const typeLabel = tBlockType(t, data.type, 'label')
   const runStatus = data.runStatus || 'idle'
   const style = STATUS_STYLES[runStatus] || STATUS_STYLES.idle
 
@@ -246,14 +258,14 @@ const BlockNode = memo(({ id, data, selected }) => {
             background: type.color, 
             '--handle-translate': HANDLE_TRANSLATES[inPos] || HANDLE_TRANSLATES.left
           }}
-          title="Cổng vào (IN)"
+          title={t('blockNode.handleIn')}
         />
       )}
 
       {/* Header */}
       <div className="block-header" style={{ background: type.gradient }}>
         <div className="block-type-icon">{type.icon}</div>
-        <span className="block-type-label">{type.label}</span>
+        <span className="block-type-label">{typeLabel}</span>
         <div className="block-status-icon">
           {runStatus === 'running' && <Loader size="0.75rem" className="spinning" />}
           {runStatus === 'success' && <CheckCircle size="0.75rem" color="white" />}
@@ -264,11 +276,11 @@ const BlockNode = memo(({ id, data, selected }) => {
       {/* Body */}
       <div className="block-body">
         {!['browser', 'merge_excel', 'pivot_excel', 'input_vars', 'sql_to_excel', 'delay', 'condition', 'loop'].includes(data.type) && (
-          <div className="block-name">{data.label || `${type.label} Block`}</div>
+          <div className="block-name">{data.label || `${typeLabel} Block`}</div>
         )}
         {data.type === 'delay' ? (
           <div className="block-desc" style={{ color: 'var(--accent-warning)', fontWeight: 600 }}>
-            Dừng chờ {data.delaySeconds || 3} giây
+            {t('blockNode.delayDesc', { seconds: data.delaySeconds || 3 })}
           </div>
         ) : data.type === 'sql_to_excel' ? (
           <div className="block-desc" style={{ color: 'var(--accent-success)', fontWeight: 600 }}>
@@ -284,11 +296,11 @@ const BlockNode = memo(({ id, data, selected }) => {
           </div>
         ) : data.type === 'browser' ? (
           <div className="block-desc" style={{ color: '#0ea5e9', fontWeight: 600 }}>
-            {data.debugMode ? '🔍 Debug Mode' : '🤖'} {data.steps?.length || 0} bước
+            {data.debugMode ? '🔍 Debug Mode' : '🤖'} {t('blockNode.browserSteps', { count: data.steps?.length || 0 })}
           </div>
         ) : data.type === 'input_vars' ? (
           <div className="block-desc" style={{ color: '#f97316', fontWeight: 600 }}>
-            ✍️ {data.inputFields?.length || 0} biến · chờ {data.inputTimeout || 120}s
+            ✍️ {t('blockNode.inputVarsDesc', { count: data.inputFields?.length || 0, timeout: data.inputTimeout || 120 })}
           </div>
         ) : null}
 
@@ -318,8 +330,8 @@ const BlockNode = memo(({ id, data, selected }) => {
             <code style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', borderColor: 'rgba(236, 72, 153, 0.2)' }}>
               {(() => {
                 const mode = data.loopMode || 'count';
-                if (mode === 'count') return `${data.loopCount || 0} lần`;
-                if (mode === 'array') return `Mảng: ${data.loopArrayVar || 'sheets_data'}`;
+                if (mode === 'count') return t('blockNode.loopCount', { count: data.loopCount || 0 });
+                if (mode === 'array') return t('blockNode.loopArray', { name: data.loopArrayVar || 'sheets_data' });
                 const conds = data.conditions || [];
                 if (!conds[0]?.condVariable) return '? == ?';
                 if (conds.length === 1) return `${conds[0].condVariable} ${conds[0].condOperator} ${conds[0].condValue}`;
@@ -335,16 +347,16 @@ const BlockNode = memo(({ id, data, selected }) => {
         <button
           className="block-action-btn"
           onClick={() => actions?.onEdit?.(id)}
-          title="Chỉnh sửa"
-          aria-label="Chỉnh sửa khối"
+          title={t('blockNode.edit')}
+          aria-label={t('blockNode.editAria')}
         >
           <Settings size="0.875rem" />
         </button>
         <button
           className="block-action-btn"
           onClick={(e) => { e.stopPropagation(); actions?.onDuplicate?.(id) }}
-          title="Sao chép khối"
-          aria-label="Sao chép khối"
+          title={t('blockNode.duplicateAria')}
+          aria-label={t('blockNode.duplicateAria')}
           style={{ color: 'var(--accent-primary)' }}
         >
           <Copy size="0.875rem" />
@@ -352,8 +364,8 @@ const BlockNode = memo(({ id, data, selected }) => {
         <button
           className="block-action-btn danger"
           onClick={() => actions?.onDelete?.(id)}
-          title="Xóa"
-          aria-label="Xóa khối"
+          title={t('blockNode.delete')}
+          aria-label={t('blockNode.deleteAria')}
         >
           <Trash2 size="0.875rem" />
         </button>
@@ -364,14 +376,14 @@ const BlockNode = memo(({ id, data, selected }) => {
         const sourceHandles = []
         if (hasSource) {
           if (data.type === 'condition') {
-            sourceHandles.push({ id: 'true', pos: loopPos, color: '#22c55e', title: 'Đúng điều kiện (TRUE)' })
-            sourceHandles.push({ id: 'false', pos: donePos, color: '#ef4444', title: 'Sai điều kiện (FALSE)' })
+            sourceHandles.push({ id: 'true', pos: loopPos, color: '#22c55e', title: t('blockNode.handleTrue') })
+            sourceHandles.push({ id: 'false', pos: donePos, color: '#ef4444', title: t('blockNode.handleFalse') })
           } else if (data.type === 'loop') {
-            sourceHandles.push({ id: 'loop', pos: loopPos, color: '#f59e0b', title: 'Lặp lại (LOOP)' })
-            sourceHandles.push({ id: 'true', pos: outPos, color: '#22c55e', title: 'Đúng điều kiện (TRUE)' })
-            sourceHandles.push({ id: 'endloop', pos: donePos, color: '#ef4444', title: 'Kết thúc lặp (ENDLOOP)' })
+            sourceHandles.push({ id: 'loop', pos: loopPos, color: '#f59e0b', title: t('blockNode.handleLoop') })
+            sourceHandles.push({ id: 'true', pos: outPos, color: '#22c55e', title: t('blockNode.handleTrue') })
+            sourceHandles.push({ id: 'endloop', pos: donePos, color: '#ef4444', title: t('blockNode.handleEndloop') })
           } else {
-            sourceHandles.push({ id: 'default', pos: outPos, color: type.color, title: 'Cổng ra (OUT)' })
+            sourceHandles.push({ id: 'default', pos: outPos, color: type.color, title: t('blockNode.handleOut') })
           }
 
           const posCounts = {}

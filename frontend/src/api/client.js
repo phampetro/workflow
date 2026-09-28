@@ -56,6 +56,7 @@ export const createUser      = (data)       => api.post('/api/users', data)
 export const deleteUser      = (id)         => api.delete(`/api/users/${id}`)
 export const activateUser    = (id)         => api.post(`/api/users/${id}/activate`)
 export const getUserStats    = (id)         => api.get(`/api/users/${id}/stats`)
+export const updateUserLanguage = (id, language) => api.patch(`/api/users/${id}/language`, { language })
 
 // ── License ───────────────────────────────────────────────
 export const getLicenseStatus  = ()          => api.get('/api/license/status')
