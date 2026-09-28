@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Form, Input, Switch, Button, Select, Space, Typography } from 'antd';
 import { Sparkles, CheckCircle2, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { getAiSettings, saveAiSettings, testAiSettings } from '../api/client';
 
 const { Text } = Typography;
@@ -30,6 +31,7 @@ const PRESETS = {
 };
 
 export default function AiSettingsModal({ open, onClose }) {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -66,7 +68,7 @@ export default function AiSettingsModal({ open, onClose }) {
         })
         .catch(err => {
           console.error(err);
-          toast.error("Không thể tải cấu hình AI");
+          toast.error(t('aiSettings.loadConfigError'));
         })
         .finally(() => setLoading(false));
     }
@@ -100,7 +102,7 @@ export default function AiSettingsModal({ open, onClose }) {
       setTestResult({ success: true, message: res.data.message });
       setHasKey(true); // If test passed, we definitely have a key
     } catch (err) {
-      setTestResult({ success: false, message: err.message || "Kết nối thất bại" });
+      setTestResult({ success: false, message: err.message || t('aiSettings.connectionFailed') });
     } finally {
       setTesting(false);
     }
@@ -118,11 +120,11 @@ export default function AiSettingsModal({ open, onClose }) {
         ai_enabled: values.ai_enabled,
       });
       
-      toast.success("Đã lưu cấu hình AI");
+      toast.success(t('aiSettings.saveConfigSuccess'));
       onClose();
     } catch (err) {
       if (err.name !== 'ValidationError') {
-        toast.error("Lỗi: " + (err.message || "Không thể lưu"));
+        toast.error(t('aiSettings.saveConfigError', { message: err.message || t('aiSettings.saveConfigErrorFallback') }));
       }
     } finally {
       setLoading(false);
@@ -134,15 +136,15 @@ export default function AiSettingsModal({ open, onClose }) {
       title={
         <Space>
           <Sparkles size={20} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 600 }}>Cài đặt AI Assistant (Ctrl+I)</span>
+          <span style={{ fontWeight: 600 }}>{t('aiSettings.title')}</span>
         </Space>
       }
       open={open}
       onCancel={onClose}
       onOk={handleSave}
       confirmLoading={loading}
-      okText="Lưu lại"
-      cancelText="Hủy"
+      okText={t('aiSettings.saveBtn')}
+      cancelText={t('common.cancel')}
       width={500}
       styles={{ body: { paddingTop: 16 } }}
     >
@@ -157,50 +159,50 @@ export default function AiSettingsModal({ open, onClose }) {
         }}
       >
         <Form.Item name="ai_enabled" valuePropName="checked">
-          <Switch checkedChildren="Đã bật AI" unCheckedChildren="Đã tắt AI" />
+          <Switch checkedChildren={t('aiSettings.aiEnabledOn')} unCheckedChildren={t('aiSettings.aiEnabledOff')} />
         </Form.Item>
 
-        <Form.Item label="Nhà cung cấp (Preset)" name="preset">
+        <Form.Item label={t('aiSettings.providerLabel')} name="preset">
           <Select onChange={handlePresetChange}>
             {Object.entries(PRESETS).map(([k, v]) => (
-              <Select.Option key={k} value={k}>{v.label}</Select.Option>
+              <Select.Option key={k} value={k}>{k === 'custom' ? t('aiSettings.customProvider') : v.label}</Select.Option>
             ))}
           </Select>
         </Form.Item>
 
         <Form.Item
-          label="Base URL (OpenAI Compatible)"
+          label={t('aiSettings.baseUrlLabel')}
           name="ai_base_url"
-          rules={[{ required: true, message: 'Vui lòng nhập Base URL' }]}
+          rules={[{ required: true, message: t('aiSettings.baseUrlRequired') }]}
         >
-          <Input placeholder="VD: https://api.openai.com/v1" />
+          <Input placeholder={t('aiSettings.baseUrlPlaceholder')} />
         </Form.Item>
 
         <Form.Item
-          label="Tên Model"
+          label={t('aiSettings.modelNameLabel')}
           name="ai_model"
-          rules={[{ required: true, message: 'Vui lòng nhập Tên Model' }]}
+          rules={[{ required: true, message: t('aiSettings.modelNameRequired') }]}
         >
-          <Input placeholder="VD: gpt-4o-mini" />
+          <Input placeholder={t('aiSettings.modelNamePlaceholder')} />
         </Form.Item>
 
         <Form.Item
           label={
             <span>
-              API Key 
-              {hasKey && <Text type="success" style={{ marginLeft: 8, fontSize: '0.8rem' }}>(Đã lưu sẵn)</Text>}
+              {t('aiSettings.apiKeyLabel')}
+              {hasKey && <Text type="success" style={{ marginLeft: 8, fontSize: '0.8rem' }}>{t('aiSettings.apiKeySaved')}</Text>}
             </span>
           }
           name="ai_api_key"
-          rules={[{ required: !hasKey && selectedPreset !== 'ollama', message: 'Vui lòng nhập API Key' }]}
-          extra={selectedPreset === 'ollama' ? "Ollama thường không yêu cầu API Key." : "Để trống nếu không muốn thay đổi Key đã lưu."}
+          rules={[{ required: !hasKey && selectedPreset !== 'ollama', message: t('aiSettings.apiKeyRequired') }]}
+          extra={selectedPreset === 'ollama' ? t('aiSettings.ollamaNoKeyHint') : t('aiSettings.keepOldKeyHint')}
         >
-          <Input.Password placeholder={hasKey ? "Nhập key mới để thay đổi..." : "Nhập API Key..."} />
+          <Input.Password placeholder={hasKey ? t('aiSettings.apiKeyPlaceholderChange') : t('aiSettings.apiKeyPlaceholderNew')} />
         </Form.Item>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
           <Button onClick={handleTest} loading={testing} disabled={loading}>
-            Kiểm tra kết nối
+            {t('aiSettings.testConnectionBtn')}
           </Button>
           
           {testResult && (

@@ -19,6 +19,7 @@ class User(Base):
     name = Column(String, nullable=False, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=False)
+    language = Column(String, default="vi")
 
     def to_dict(self):
         return {
@@ -26,6 +27,7 @@ class User(Base):
             "name": self.name,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "is_active": self.is_active,
+            "language": self.language or "vi",
         }
 
 

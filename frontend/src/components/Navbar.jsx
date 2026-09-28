@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, UserCog, Upload, Sparkles, Info } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, Languages, UserCog, Upload, Sparkles, Info } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import isoWeek from 'dayjs/plugin/isoWeek'
+import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
 dayjs.extend(utc)
@@ -13,24 +14,31 @@ dayjs.extend(isoWeek)
 
 const VN_TZ = 'Asia/Ho_Chi_Minh'
 const WEEKDAY_VI = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
+const WEEKDAY_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-function getVnTodayInfo() {
+// Thứ/tuần LUÔN tính theo giờ Việt Nam bất kể múi giờ hệ điều hành client
+// (business rule của lịch chạy) — chỉ NHÃN hiển thị đổi theo ngôn ngữ.
+function getVnTodayInfo(isEn) {
   const now = dayjs().tz(VN_TZ)
+  const weekday = (isEn ? WEEKDAY_EN : WEEKDAY_VI)[now.day()]
   return {
-    label: `${WEEKDAY_VI[now.day()]} ${now.format('DD/MM/YYYY')} - Tuần ${now.isoWeek()}`,
-    full: `${WEEKDAY_VI[now.day()]}, ngày ${now.format('DD/MM/YYYY')} · Tuần thứ ${now.isoWeek()} năm ${now.isoWeekYear()} (giờ Việt Nam)`,
+    label: `${weekday} ${now.format('DD/MM/YYYY')} - ${isEn ? 'Week' : 'Tuần'} ${now.isoWeek()}`,
+    full: isEn
+      ? `${weekday}, ${now.format('DD/MM/YYYY')} · Week ${now.isoWeek()} of ${now.isoWeekYear()} (Vietnam time)`
+      : `${weekday}, ngày ${now.format('DD/MM/YYYY')} · Tuần thứ ${now.isoWeek()} năm ${now.isoWeekYear()} (giờ Việt Nam)`,
   }
 }
 
 /** Pill hiển thị thứ/ngày/tuần lịch hiện tại, luôn tính theo giờ Việt Nam
  *  (Asia/Ho_Chi_Minh) bất kể múi giờ hệ điều hành client. */
-function NavbarDate() {
-  const [info, setInfo] = useState(getVnTodayInfo)
+function NavbarDate({ isEn }) {
+  const [info, setInfo] = useState(() => getVnTodayInfo(isEn))
 
   useEffect(() => {
-    const timer = setInterval(() => setInfo(getVnTodayInfo()), 60000)
+    setInfo(getVnTodayInfo(isEn))
+    const timer = setInterval(() => setInfo(getVnTodayInfo(isEn)), 60000)
     return () => clearInterval(timer)
-  }, [])
+  }, [isEn])
 
   return (
     <Tooltip title={info.full}>
@@ -56,9 +64,13 @@ export default function Navbar({
   onOpenAiSettings,
   onOpenAbout,
 }) {
+  const { t } = useTranslation()
   const theme = useStore((state) => state.theme)
   const setTheme = useStore((state) => state.setTheme)
+  const language = useStore((state) => state.language)
+  const setLanguage = useStore((state) => state.setLanguage)
   const currentUser = useStore((state) => state.currentUser)
+  const isEn = language === 'en'
 
   const settingsItems = [
     {
@@ -66,7 +78,7 @@ export default function Navbar({
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <UserCog size="0.875rem" />
-          Chuyển người dùng
+          {t('navbar.switchUser')}
         </span>
       ),
       onClick: onSwitchUser,
@@ -77,7 +89,7 @@ export default function Navbar({
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Sparkles size="0.875rem" />
-          Cài đặt AI
+          {t('navbar.aiSettings')}
         </span>
       ),
       onClick: onOpenAiSettings,
@@ -88,10 +100,20 @@ export default function Navbar({
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {theme === 'light' ? <Moon size="0.875rem" /> : <Sun size="0.875rem" />}
-          {theme === 'light' ? 'Giao diện Tối' : 'Giao diện Sáng'}
+          {theme === 'light' ? t('navbar.darkTheme') : t('navbar.lightTheme')}
         </span>
       ),
       onClick: () => setTheme(theme === 'light' ? 'dark' : 'light'),
+    },
+    {
+      key: 'language',
+      label: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Languages size="0.875rem" />
+          {isEn ? t('navbar.switchToVietnamese') : t('navbar.switchToEnglish')}
+        </span>
+      ),
+      onClick: () => setLanguage(isEn ? 'vi' : 'en'),
     },
     { type: 'divider' },
     {
@@ -99,7 +121,7 @@ export default function Navbar({
       label: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Info size="0.875rem" />
-          Thông tin
+          {t('navbar.about')}
         </span>
       ),
       onClick: onOpenAbout,
@@ -124,7 +146,7 @@ export default function Navbar({
         </div>
 
         <div className="navbar-sep" />
-        <NavbarDate />
+        <NavbarDate isEn={isEn} />
 
         {isDashboard && (
           <>
@@ -136,19 +158,19 @@ export default function Navbar({
                 icon={<Plus size="0.875rem" />}
                 className="nav-btn-create"
               >
-                Tạo Project
+                {t('navbar.createProject')}
               </Button>
-              <Tooltip title="Import project từ file ZIP">
+              <Tooltip title={t('navbar.importTooltip')}>
                 <Button
                   type="default"
                   onClick={onImport}
                   icon={<Upload size="0.875rem" />}
                   style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
                 >
-                  Import
+                  {t('navbar.import')}
                 </Button>
               </Tooltip>
-              <Tooltip title="Làm mới dữ liệu">
+              <Tooltip title={t('navbar.refreshTooltip')}>
                 <Button
                   type="text"
                   onClick={onRefresh}
@@ -176,21 +198,21 @@ export default function Navbar({
       <div className="navbar-right">
         {stats && (
           <div className="navbar-stats">
-            <Tooltip title="Số dự án">
+            <Tooltip title={t('navbar.statProjects')}>
               <div className="stat-chip">
                 <FolderOpen size="0.875rem" style={{ color: '#f97316' }} />
                 <span className="stat-val" style={{ color: '#f97316' }}>{stats.total_projects ?? 0}</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
-            <Tooltip title="Tổng workflows">
+            <Tooltip title={t('navbar.statWorkflows')}>
               <div className="stat-chip">
                 <Workflow size="0.875rem" style={{ color: 'var(--accent-secondary)' }} />
                 <span className="stat-val" style={{ color: 'var(--accent-secondary)' }}>{stats.total_workflows ?? 0}</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
-            <Tooltip title="Đang chạy">
+            <Tooltip title={t('navbar.statRunning')}>
               <div className={`stat-chip ${stats.running > 0 ? 'stat-running' : ''}`}>
                 <Clock size="0.875rem" className={stats.running > 0 ? 'spinning' : ''} style={{ color: '#52c41a' }} />
                 <span className="stat-val" style={{ color: '#52c41a' }}>
@@ -199,7 +221,7 @@ export default function Navbar({
               </div>
             </Tooltip>
             <div className="stat-divider" />
-            <Tooltip title="Hôm nay (của bạn): Lỗi + Dừng / Thành công / Tất cả">
+            <Tooltip title={t('navbar.statToday')}>
               <div className="stat-chip">
                 <CalendarCheck size="0.875rem" style={{ color: '#eab308' }} />
                 <span className="stat-val" style={{ color: '#ff4d4f' }}>{(stats.failed_today || 0) + (stats.stopped_today || 0)}</span>
@@ -227,8 +249,8 @@ export default function Navbar({
         </div>
 
         <Dropdown menu={{ items: settingsItems }} placement="bottomRight" trigger={['click']}>
-          <Tooltip title="Cài đặt hệ thống">
-            <Button type="text" icon={<Settings size="1rem" />} className="nav-btn-ghost" aria-label="Cài đặt" />
+          <Tooltip title={t('navbar.settingsTooltip')}>
+            <Button type="text" icon={<Settings size="1rem" />} className="nav-btn-ghost" aria-label={t('navbar.settingsAriaLabel')} />
           </Tooltip>
         </Dropdown>
       </div>

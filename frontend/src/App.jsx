@@ -10,13 +10,14 @@ import LicenseGate from './components/LicenseGate'
 import { Toaster } from 'react-hot-toast'
 import { ConfigProvider, theme as antdTheme, Spin, App as AntApp } from 'antd'
 import viVN from 'antd/locale/vi_VN'
+import enUS from 'antd/locale/en_US'
 import 'dayjs/locale/vi'
+import 'dayjs/locale/en'
 import dayjs from 'dayjs'
+import { useTranslation } from 'react-i18next'
 import useStore from './store/useStore'
 import { checkHealth, getUsers, getDashboardStats, importProject, getLicenseStatus, getProject } from './api/client'
 import toast from 'react-hot-toast'
-
-dayjs.locale('vi')
 
 const VIEWS = {
   DASHBOARD: 'dashboard',
@@ -25,9 +26,17 @@ const VIEWS = {
 }
 
 export default function App() {
+  const { t } = useTranslation()
   const theme = useStore((state) => state.theme)
+  const language = useStore((state) => state.language)
   const currentUser = useStore((state) => state.currentUser)
   const setCurrentUser = useStore((state) => state.setCurrentUser)
+
+  // dayjs không tự đổi locale theo i18next — đồng bộ thủ công mỗi khi user đổi
+  // ngôn ngữ (kể cả lúc đổi user sang người có ngôn ngữ khác).
+  useEffect(() => {
+    dayjs.locale(language === 'en' ? 'en' : 'vi')
+  }, [language])
 
   const [view, setView] = useState(VIEWS.DASHBOARD)
   const [selectedProject, setSelectedProject] = useState(null)
@@ -72,10 +81,10 @@ export default function App() {
     formData.append('file', file)
     try {
       await importProject(formData)
-      toast.success('Import project thành công!')
-      setRefreshTick((t) => t + 1)
+      toast.success(t('app.importSuccess'))
+      setRefreshTick((tick) => tick + 1)
     } catch (err) {
-      toast.error('Lỗi import: ' + err.message)
+      toast.error(t('app.importError', { message: err.message }))
     } finally {
       setImporting(false)
       if (importInputRef.current) importInputRef.current.value = ''
@@ -163,7 +172,7 @@ export default function App() {
     setCurrentUser(user)
     setShowUserPicker(false)
     setNoUsersExist(false)
-    setRefreshTick((t) => t + 1)
+    setRefreshTick((tick) => tick + 1)
     
     // Reset view to dashboard when switching users
     setSelectedProject(null)
@@ -172,7 +181,7 @@ export default function App() {
   }
 
   const handleNavRefresh = () => {
-    setRefreshTick((t) => t + 1)
+    setRefreshTick((tick) => tick + 1)
     loadStats()
   }
 
@@ -211,7 +220,7 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────
   return (
     <ConfigProvider
-      locale={viVN}
+      locale={language === 'en' ? enUS : viVN}
       theme={{
         algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
@@ -307,7 +316,7 @@ export default function App() {
               <span style={{ fontSize: '1.5rem' }}>⚡</span>
             </div>
             <Spin size="large" />
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Đang khởi động PyFlow Studio…</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('app.bootstrapping')}</p>
           </div>
         )}
 
@@ -351,7 +360,7 @@ export default function App() {
                 />
                 <Navbar
                   title={view === VIEWS.PROJECT ? selectedProject?.name : null}
-                  subtitle={view === VIEWS.PROJECT ? `${selectedProject?.workflows_count || 0} workflows` : null}
+                  subtitle={view === VIEWS.PROJECT ? t('app.projectSubtitle', { count: selectedProject?.workflows_count || 0 }) : null}
                   onLogoClick={() => { setView(VIEWS.DASHBOARD); setSelectedProject(null) }}
                   isDashboard={view === VIEWS.DASHBOARD}
                   stats={stats}

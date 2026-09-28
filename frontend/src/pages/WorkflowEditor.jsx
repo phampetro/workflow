@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { ReactFlow, Background, Controls, MiniMap, addEdge, useNodesState, useEdgesState, BackgroundVariant, MarkerType, ReactFlowProvider, useReactFlow, useNodesInitialized } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import BlockNode, { BLOCK_TYPES, NodeActionsContext } from '../components/BlockNode'
+import BlockNode, { BLOCK_TYPES, NodeActionsContext, tBlockType } from '../components/BlockNode'
 import DeleteEdge from '../components/DeleteEdge'
 import BlockEditorModal from '../components/BlockEditorModal'
 import LogViewer, { formatLogTime } from '../components/LogViewer'
@@ -11,6 +11,7 @@ import InputJsonModal from '../components/InputJsonModal'
 import { ArrowLeft, Play, Square, Calendar, Terminal, History, Save, Loader, CheckCircle, AlertCircle, Database, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Drawer, Space, Input, Popconfirm, Tag, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import { getWorkflow, updateWorkflow, runWorkflow, stopWorkflow, getWorkflowInput, getRunHistory, deleteRunHistory, getPendingInput } from '../api/client'
 import { createLogStream } from '../api/client'
 import InputVarsModal from '../components/InputVarsModal'
@@ -21,15 +22,15 @@ import { canAddBlock, isFeatureDisabled } from '../config/blockRules'
 const nodeTypes = { block: BlockNode }
 const edgeTypes = { custom: DeleteEdge }
 
-const BLOCK_GROUPS = [
-  { title: 'Bắt đầu - Kết thúc', items: ['start', 'end'] },
-  { title: 'Rẽ nhánh', items: ['condition', 'loop', 'delay', 'queue', 'input_vars'] },
-  { title: 'Python Code', items: ['python'] },
-  { title: 'Tự động hóa Web', items: ['browser'] },
-  { title: 'Xử lý Dữ liệu', items: ['google_sheets_read', 'excel_read', 'merge_excel', 'pivot_excel'] },
-  { title: 'Cơ sở dữ liệu', items: ['sql_to_excel', 'excel_to_sql', 'run_sql_exec'] },
-  { title: 'Gửi tin nhắn', items: ['telegram', 'telegram_listener', 'email'] },
-  { title: 'Hệ thống', items: ['error_trigger', 'delete_files'] }
+const getBlockGroups = (t) => [
+  { title: t('workflowEditor.groupStartEnd'), items: ['start', 'end'] },
+  { title: t('workflowEditor.groupBranching'), items: ['condition', 'loop', 'delay', 'queue', 'input_vars'] },
+  { title: t('workflowEditor.groupPythonCode'), items: ['python'] },
+  { title: t('workflowEditor.groupWebAutomation'), items: ['browser'] },
+  { title: t('workflowEditor.groupDataProcessing'), items: ['google_sheets_read', 'excel_read', 'merge_excel', 'pivot_excel'] },
+  { title: t('workflowEditor.groupDatabase'), items: ['sql_to_excel', 'excel_to_sql', 'run_sql_exec'] },
+  { title: t('workflowEditor.groupMessaging'), items: ['telegram', 'telegram_listener', 'email'] },
+  { title: t('workflowEditor.groupSystem'), items: ['error_trigger', 'delete_files'] }
 ];
 
 const DEFAULT_GRAPH = {
@@ -46,6 +47,8 @@ let nodeIdCounter = 100
 
 function WorkflowEditorInner({ workflow, project, onBack }) {
   const { message, modal } = App.useApp()
+  const { t } = useTranslation()
+  const BLOCK_GROUPS = useMemo(() => getBlockGroups(t), [t])
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [editingNode, setEditingNode] = useState(null)
@@ -152,7 +155,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         setNodesFromDefault()
       }
     }).catch(e => {
-      toast.error('Lỗi tải workflow: ' + e.message)
+      toast.error(t('workflowEditor.loadError', { message: e.message }))
     })
 
     getWorkflowInput(workflow.id).then((res) => {
@@ -259,10 +262,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const handleDeleteHistory = async () => {
     try {
       await deleteRunHistory(wfData?.id)
-      message.success('Đã xóa lịch sử chạy')
+      message.success(t('workflowEditor.historyDeleted'))
       historyPanelRef.current?.loadHistory()
     } catch (err) {
-      toast.error('Lỗi xóa lịch sử: ' + err.message)
+      toast.error(t('workflowEditor.historyDeleteError', { message: err.message }))
     }
   }
 
@@ -379,15 +382,15 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         if (conflictDialogOpenRef.current) return { ok: false }
         conflictDialogOpenRef.current = true
         modal.confirm({
-          title: 'Xung đột khi lưu',
-          content: 'Ai đó (hoặc tab khác của bạn) đã lưu workflow này trong lúc bạn đang sửa. Chọn Ghi đè để đè bản của bạn lên server (mất thay đổi của người kia), hoặc Tải lại để lấy bản mới nhất (mất thay đổi hiện tại của bạn).',
+          title: t('workflowEditor.conflictTitle'),
+          content: t('workflowEditor.conflictContent'),
           // Ghi đè là hành động PHÁ HUỶ nên phải là lựa chọn chủ động (nút chính,
           // tô đỏ). Trước đây nó nằm ở onCancel — mà Modal.confirm mặc định
           // keyboard:true + maskClosable nên bấm Esc hoặc lỡ click ra ngoài là
           // ghi đè cưỡng bức, xoá mất công việc của tab kia mà không hỏi lại.
-          okText: 'Ghi đè',
+          okText: t('workflowEditor.conflictOverwrite'),
           okButtonProps: { danger: true },
-          cancelText: 'Tải lại',
+          cancelText: t('workflowEditor.conflictReload'),
           closable: false,
           keyboard: false,
           maskClosable: false,
@@ -526,7 +529,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     // tô sáng sai khối, kết quả sai, rất khó lần ra nguyên nhân.
     const saved = await saveGraph(nodes, edges)
     if (saved && !saved.ok) {
-      toast.error('Chưa chạy được: workflow chưa lưu xong. Hãy xử lý xung đột rồi bấm Chạy lại.')
+      toast.error(t('workflowEditor.runBlockedUnsaved'))
       return
     }
 
@@ -536,9 +539,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       const run_id = res.data.run_id
       useStore.getState().clearLogs(run_id)
       useStore.getState().setActiveRun(wfData.id, run_id)
-      toast.success('Đã kích hoạt chạy workflow!')
+      toast.success(t('workflowEditor.runActivated'))
     } catch (e) {
-      toast.error('Lỗi chạy workflow: ' + e.message)
+      toast.error(t('workflowEditor.runError', { message: e.message }))
       useStore.getState().clearActiveRun(wfData.id)
     }
   }
@@ -556,7 +559,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     const currentActiveRun = useStore.getState().activeRuns[wfData?.id];
     if (wfData?.id && currentActiveRun === finishedRunId) {
       useStore.getState().clearActiveRun(wfData.id)
-      message.success('Chạy Workflow hoàn tất!')
+      message.success(t('workflowEditor.runFinished'))
     }
   }, [wfData?.id])
 
@@ -666,8 +669,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         position,
         data: {
           type,
-          label: BLOCK_TYPES[type].label,
-          description: BLOCK_TYPES[type].description,
+          label: tBlockType(t, type, 'label'),
+          description: tBlockType(t, type, 'description'),
           code: type === 'python' ? '# Viết code Python của bạn\noutput_data = input_data\nprint("Done!")' : undefined,
           condition: type === 'condition' ? 'input_data is not None' : undefined,
           delaySeconds: type === 'delay' ? 3 : undefined,
@@ -691,7 +694,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       setNodes(nds => [...nds, newNode])
       triggerAutoSave()
     },
-    [screenToFlowPosition, triggerAutoSave]
+    [screenToFlowPosition, triggerAutoSave, t]
   )
 
   // Cấp 3 handler qua Context với value ổn định (chỉ đổi khi handler đổi — mà chúng
@@ -723,14 +726,14 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       <div className="editor-toolbar">
         <div className="toolbar-left">
           <Button type="text" onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            <ArrowLeft size="0.875rem" /> Quay lại
+            <ArrowLeft size="0.875rem" /> {t('workflowEditor.back')}
           </Button>
           <div className="toolbar-sep" />
           <div className="toolbar-info" style={{ overflow: 'hidden', paddingLeft: '0.375rem' }}>
             <div className="toolbar-dot" style={{ background: proj.color, flexShrink: 0 }} />
             <span className="text-secondary text-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '9.375rem' }}>{proj.name}</span>
             <span className="text-muted" style={{ flexShrink: 0 }}>/</span>
-            <span className="font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '12.5rem' }}>{wfData?.name || 'Workflow'}</span>
+            <span className="font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '12.5rem' }}>{wfData?.name || t('workflowEditor.untitled')}</span>
           </div>
         </div>
 
@@ -741,13 +744,13 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         <div className="toolbar-right">
           <div className="save-status">
             {SaveIcon && <SaveIcon size="0.875rem" className={saveStatus === 'saving' ? 'spinning' : ''} />}
-            <span style={{ whiteSpace: 'nowrap' }}>{saveStatus === 'saving' ? 'Đang lưu...' : saveStatus === 'saved' ? 'Đã lưu' : saveStatus === 'error' ? 'Lỗi lưu' : 'Chưa lưu'}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{saveStatus === 'saving' ? t('workflowEditor.saveSaving') : saveStatus === 'saved' ? t('workflowEditor.saveSaved') : saveStatus === 'error' ? t('workflowEditor.saveErrorText') : t('workflowEditor.saveUnsaved')}</span>
           </div>
           <Space>
-            <Button icon={<Database size="0.875rem" />} onClick={() => setShowInputModal(true)}>Dữ liệu Workflow</Button>
-            <Button icon={<History size="0.875rem" />} onClick={() => setShowHistory(true)}>Lịch sử</Button>
-            <Tooltip title={schedulerDisabled ? 'Workflow có khối "Biến đầu vào" (chờ người nhập) nên không thể đặt lịch tự động.' : ''}>
-              <Button icon={<Calendar size="0.875rem" />} onClick={() => setShowScheduler(true)} disabled={schedulerDisabled}>Lịch chạy</Button>
+            <Button icon={<Database size="0.875rem" />} onClick={() => setShowInputModal(true)}>{t('workflowEditor.workflowData')}</Button>
+            <Button icon={<History size="0.875rem" />} onClick={() => setShowHistory(true)}>{t('workflowEditor.history')}</Button>
+            <Tooltip title={schedulerDisabled ? t('workflowEditor.schedulerDisabledTooltip') : ''}>
+              <Button icon={<Calendar size="0.875rem" />} onClick={() => setShowScheduler(true)} disabled={schedulerDisabled}>{t('workflowEditor.schedule')}</Button>
             </Tooltip>
             <Button
               icon={<Terminal size="0.875rem" />}
@@ -758,12 +761,12 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
                 borderColor: 'var(--accent-primary)',
               } : {}}
             >Logs</Button>
-            <Button icon={<Save size="0.875rem" />} onClick={handleManualSave} disabled={saveStatus === 'saving'}>Lưu</Button>
+            <Button icon={<Save size="0.875rem" />} onClick={handleManualSave} disabled={saveStatus === 'saving'}>{t('common.save')}</Button>
             {isRunning ? (
-              <Button danger icon={<Square size="0.875rem" />} onClick={handleStop}>Dừng</Button>
+              <Button danger icon={<Square size="0.875rem" />} onClick={handleStop}>{t('workflowEditor.stop')}</Button>
             ) : (
               <Button type="primary" icon={<Play size="0.875rem" />} onClick={handleRun} disabled={!wfData?.id || checkingStatus}>
-                {checkingStatus ? 'Đang tải...' : 'Chạy'}
+                {checkingStatus ? t('common.loading') : t('workflowEditor.run')}
               </Button>
             )}
           </Space>
@@ -773,11 +776,11 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       <div className="editor-body">
         {/* Left Sidebar Palette */}
         <div className="sidebar-palette">
-          <div className="palette-title">Khối chức năng</div>
-          <div className="palette-desc">Kéo thả vào vùng vẽ</div>
+          <div className="palette-title">{t('workflowEditor.paletteTitle')}</div>
+          <div className="palette-desc">{t('workflowEditor.paletteDesc')}</div>
           <div style={{ padding: '0 0.75rem 0.5rem 0.75rem' }}>
-            <Input 
-              placeholder="Tìm khối..." 
+            <Input
+              placeholder={t('workflowEditor.paletteSearchPlaceholder')}
               value={searchBlock}
               onChange={e => setSearchBlock(e.target.value)}
               size="small"
@@ -792,7 +795,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
                   group,
                   items: group.items.filter(key => {
                     const bt = BLOCK_TYPES[key];
-                    return bt && (bt.label.toLowerCase().includes(q) || (bt.description && bt.description.toLowerCase().includes(q)));
+                    if (!bt) return false;
+                    const label = tBlockType(t, key, 'label').toLowerCase();
+                    const desc = tBlockType(t, key, 'description').toLowerCase();
+                    return label.includes(q) || desc.includes(q);
                   }),
                 }))
                 .filter(g => g.items.length > 0);
@@ -800,16 +806,20 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
               if (groupsWithItems.length === 0) {
                 return (
                   <div className="palette-empty">
-                    Không tìm thấy khối phù hợp với “{searchBlock}”.
+                    {t('workflowEditor.paletteEmpty', { query: searchBlock })}
                   </div>
                 );
               }
               return null;
             })()}
             {BLOCK_GROUPS.map(group => {
+              const q2 = searchBlock.toLowerCase();
               const groupItems = group.items.filter(key => {
                 const bt = BLOCK_TYPES[key];
-                return bt && (bt.label.toLowerCase().includes(searchBlock.toLowerCase()) || (bt.description && bt.description.toLowerCase().includes(searchBlock.toLowerCase())));
+                if (!bt) return false;
+                const label = tBlockType(t, key, 'label').toLowerCase();
+                const desc = tBlockType(t, key, 'description').toLowerCase();
+                return label.includes(q2) || desc.includes(q2);
               });
 
               if (groupItems.length === 0) return null;
@@ -829,8 +839,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
                       >
                         <div className="palette-icon" style={{ color: bt.color }}>{bt.icon}</div>
                         <div className="palette-info">
-                          <div className="palette-label">{bt.label}</div>
-                          <div className="palette-desc-text">{bt.description}</div>
+                          <div className="palette-label">{tBlockType(t, key, 'label')}</div>
+                          <div className="palette-desc-text">{tBlockType(t, key, 'description')}</div>
                         </div>
                       </div>
                     );
@@ -899,7 +909,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         title={
           <Space>
             <History size={16} color="var(--accent-warning)" />
-            <span style={{ fontWeight: 600 }}>Lịch sử chạy</span>
+            <span style={{ fontWeight: 600 }}>{t('workflowEditor.historyDrawerTitle')}</span>
             <Tag variant="filled" style={{ margin: 0 }}>{wfData?.name}</Tag>
           </Space>
         }
@@ -911,11 +921,11 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         extra={
           <Space>
             <Button type="default" icon={<RefreshCw size={14} />} size="small" onClick={() => historyPanelRef.current?.loadHistory()}>
-              Làm mới
+              {t('workflowEditor.refresh')}
             </Button>
-            <Popconfirm title="Xóa toàn bộ lịch sử chạy?" onConfirm={handleDeleteHistory} okText="Xóa" cancelText="Hủy" placement="bottomRight">
+            <Popconfirm title={t('workflowEditor.deleteAllHistoryConfirm')} onConfirm={handleDeleteHistory} okText={t('common.delete')} cancelText={t('common.cancel')} placement="bottomRight">
               <Button type="primary" danger icon={<Trash2 size={14} />} size="small">
-                Xóa lịch sử
+                {t('workflowEditor.deleteHistoryBtn')}
               </Button>
             </Popconfirm>
           </Space>

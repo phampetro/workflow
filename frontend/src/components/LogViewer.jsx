@@ -3,6 +3,7 @@ import { Terminal, Download, ArrowDown } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 import { createLogStream } from '../api/client'
 import { Drawer, Button, Typography, Tag, Empty, Space } from 'antd'
+import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
 const { Text } = Typography
@@ -74,6 +75,7 @@ function LogRow({ log }) {
 }
 
 export default function LogViewer({ runId, isRunning, streamedRunId, onClose, onFinished }) {
+  const { t } = useTranslation()
   const logs = useStore(state => state.runLogs[runId] || EMPTY_LOGS)
   const [autoScroll, setAutoScroll] = useState(true)
   const virtuosoRef = useRef(null)
@@ -134,14 +136,14 @@ export default function LogViewer({ runId, isRunning, streamedRunId, onClose, on
       title={
         <Space>
           <Terminal size={16} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 600 }}>Tiến trình chạy</span>
+          <span style={{ fontWeight: 600 }}>{t('logViewer.title')}</span>
           {runId && (
             <Tag variant="filled" style={{ margin: 0, fontFamily: 'var(--font-mono)', background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
               #{runId.split('-')[0]}
             </Tag>
           )}
           {isRunning && (
-            <Tag color="processing" style={{ margin: 0 }}>Đang chạy</Tag>
+            <Tag color="processing" style={{ margin: 0 }}>{t('logViewer.running')}</Tag>
           )}
         </Space>
       }
@@ -160,9 +162,9 @@ export default function LogViewer({ runId, isRunning, streamedRunId, onClose, on
           size="small"
           onClick={exportLogs}
           disabled={!logs.length}
-          aria-label="Lưu log ra file"
+          aria-label={t('logViewer.saveAria')}
         >
-          Lưu Log
+          {t('logViewer.saveLog')}
         </Button>
       }
     >
@@ -170,7 +172,7 @@ export default function LogViewer({ runId, isRunning, streamedRunId, onClose, on
         {logs.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<span style={{ color: 'var(--log-empty)' }}>Chưa có log nào...</span>}
+            description={<span style={{ color: 'var(--log-empty)' }}>{t('logViewer.empty')}</span>}
             style={{ margin: '40px 0' }}
           />
         ) : (
@@ -197,7 +199,7 @@ export default function LogViewer({ runId, isRunning, streamedRunId, onClose, on
             size="small"
             icon={<ArrowDown size={14} />}
             onClick={jumpToBottom}
-            aria-label="Cuộn xuống xem log mới nhất"
+            aria-label={t('logViewer.jumpToBottomAria')}
             style={{
               position: 'absolute',
               bottom: 16,
@@ -207,7 +209,7 @@ export default function LogViewer({ runId, isRunning, streamedRunId, onClose, on
               zIndex: 10,
             }}
           >
-            Xem log mới nhất
+            {t('logViewer.jumpToBottom')}
           </Button>
         )}
       </div>

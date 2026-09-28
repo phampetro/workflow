@@ -72,6 +72,22 @@ async def create_user(body: dict, session: AsyncSession = Depends(get_session)):
     return user.to_dict()
 
 
+@router.patch("/{user_id}/language")
+async def update_user_language(user_id: str, body: dict, session: AsyncSession = Depends(get_session)):
+    language = body.get("language")
+    if language not in ("vi", "en"):
+        raise HTTPException(400, "Ngôn ngữ không hợp lệ")
+
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User không tồn tại")
+
+    user.language = language
+    await session.commit()
+    await session.refresh(user)
+    return user.to_dict()
+
+
 @router.delete("/{user_id}", status_code=204)
 async def delete_user(user_id: str, session: AsyncSession = Depends(get_session)):
     user = await session.get(User, user_id)

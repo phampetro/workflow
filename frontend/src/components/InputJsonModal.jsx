@@ -3,6 +3,7 @@ import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Modal, For
 import Editor from '@monaco-editor/react'
 import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, API_BASE } from '../api/client'
 import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen, Database, Plug, Pencil } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
 const { Dragger } = Upload
@@ -20,6 +21,7 @@ function stripTrailingCommas(text) {
 
 export default function InputJsonModal({ open, onClose, workflowId, projectId, initialData }) {
   const { message, modal } = App.useApp()
+  const { t } = useTranslation()
   const theme = useStore(state => state.theme)
   const [jsonText, setJsonText] = useState('{}')
   const [savedJsonText, setSavedJsonText] = useState('{}')
@@ -80,7 +82,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       const res = await getDbConnections(workflowId)
       setDbConnections(res.data || [])
     } catch (e) {
-      message.error('Lỗi tải danh sách kết nối: ' + e.message)
+      message.error(t('inputJsonModal.loadConnectionsError', { message: e.message }))
     } finally {
       setLoadingDbConnections(false)
     }
@@ -114,10 +116,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
         // đang lưu để test, khỏi bắt gõ lại chỉ để bấm Test.
         saved_connection_id: editingConnection?.id,
       })
-      message.success('Kết nối thành công!')
+      message.success(t('inputJsonModal.testConnectionSuccess'))
     } catch (e) {
       if (e.errorFields) return
-      message.error('Kết nối thất bại: ' + (e.response?.data?.detail || e.message))
+      message.error(t('inputJsonModal.testConnectionError', { message: e.response?.data?.detail || e.message }))
     } finally {
       setTestingConnection(false)
     }
@@ -132,12 +134,12 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       } else {
         await createDbConnection({ ...values, workflow_id: workflowId })
       }
-      message.success('Đã lưu kết nối!')
+      message.success(t('inputJsonModal.saveConnectionSuccess'))
       setDbConnModalOpen(false)
       loadDbConnections()
     } catch (e) {
       if (e.errorFields) return
-      message.error('Lỗi khi lưu: ' + (e.response?.data?.detail || e.message))
+      message.error(t('inputJsonModal.saveConnectionError', { message: e.response?.data?.detail || e.message }))
     } finally {
       setSavingConnection(false)
     }
@@ -146,10 +148,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const handleDeleteConnection = async (id) => {
     try {
       await deleteDbConnection(id)
-      message.success('Đã xoá kết nối')
+      message.success(t('inputJsonModal.deleteConnectionSuccess'))
       loadDbConnections()
     } catch (e) {
-      message.error('Lỗi khi xoá: ' + e.message)
+      message.error(t('inputJsonModal.deleteConnectionError', { message: e.message }))
     }
   }
 
@@ -167,7 +169,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       setFiles(inputFiles)
       setOutFiles(resOut.data || [])
     } catch (e) {
-      message.error('Lỗi tải danh sách tệp: ' + e.message)
+      message.error(t('inputJsonModal.loadFilesError', { message: e.message }))
     } finally {
       setLoadingFiles(false)
       setLoadingOutFiles(false)
@@ -177,20 +179,20 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const handleDeleteFile = async (filename) => {
     try {
       await deleteWorkflowFile(workflowId, filename)
-      message.success('Đã xóa tệp: ' + filename)
+      message.success(t('inputJsonModal.deleteFileSuccess', { name: filename }))
       loadFiles()
     } catch (e) {
-      message.error('Lỗi khi xóa tệp: ' + e.message)
+      message.error(t('inputJsonModal.deleteFileError', { message: e.message }))
     }
   }
 
   const handleDeleteOutFile = async (filename) => {
     try {
       await deleteWorkflowOutputFile(workflowId, filename)
-      message.success('Đã xóa tệp: ' + filename)
+      message.success(t('inputJsonModal.deleteFileSuccess', { name: filename }))
       loadFiles()
     } catch (e) {
-      message.error('Lỗi khi xóa tệp: ' + e.message)
+      message.error(t('inputJsonModal.deleteFileError', { message: e.message }))
     }
   }
 
@@ -202,12 +204,12 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
         if (isOutput) await deleteWorkflowOutputFile(workflowId, key);
         else await deleteWorkflowFile(workflowId, key);
       }
-      message.success(`Đã xóa ${keys.length} tệp`);
+      message.success(t('inputJsonModal.batchDeleteSuccess', { count: keys.length }));
       if (isOutput) setSelectedOutputRowKeys([]);
       else setSelectedInputRowKeys([]);
       loadFiles();
     } catch (e) {
-      message.error('Lỗi khi xóa: ' + e.message);
+      message.error(t('inputJsonModal.batchDeleteError', { message: e.message }));
     }
   }
 
@@ -227,9 +229,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       } else {
         await openWorkflowFile(workflowId, filename)
       }
-      message.success('Đã mở tệp!')
+      message.success(t('inputJsonModal.viewFileSuccess'))
     } catch (e) {
-      message.error('Lỗi mở tệp: ' + e.message)
+      message.error(t('inputJsonModal.viewFileError', { message: e.message }))
     }
   }
 
@@ -248,13 +250,13 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       const parsed = JSON.parse(stripTrailingCommas(stripJsonComments(currentText)))
       setSaving(true)
       await updateWorkflowInput(workflowId, { raw_text: currentText })
-      message.success('Đã lưu cấu hình!')
+      message.success(t('inputJsonModal.saveJsonSuccess'))
       setSavedJsonText(currentText)
       setJsonText(currentText)
       setParseError(null)   // file đã hợp lệ trở lại → gỡ banner cảnh báo
       onClose({ ...parsed, __raw_text__: currentText })
     } catch (e) {
-      message.error('Lỗi JSON: ' + e.message)
+      message.error(t('inputJsonModal.saveJsonError', { message: e.message }))
     } finally {
       setSaving(false)
     }
@@ -274,10 +276,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
     const currentText = jsonEditorRef.current ? jsonEditorRef.current.getValue() : jsonText
     if (activeTab === 'json' && currentText !== savedJsonText) {
       modal.confirm({
-        title: 'Có thay đổi chưa lưu',
-        content: 'Bạn chưa bấm "Lưu" cho phần Biến môi trường. Đóng lại sẽ bỏ qua các thay đổi này, bạn có chắc chắn không?',
-        okText: 'Đóng, bỏ qua',
-        cancelText: 'Quay lại soạn',
+        title: t('inputJsonModal.unsavedChangesTitle'),
+        content: t('inputJsonModal.unsavedChangesContent'),
+        okText: t('inputJsonModal.closeDiscard'),
+        cancelText: t('inputJsonModal.backToEdit'),
         okButtonProps: { danger: true },
         onOk: closeWithoutSaving,
       })
@@ -295,11 +297,11 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       try {
         await uploadWorkflowFile(workflowId, formData)
         onSuccess("ok")
-        message.success(`${file.name} tải lên thành công.`)
+        message.success(t('inputJsonModal.uploadSuccess', { name: file.name }))
         loadFiles()
       } catch (e) {
         onError(e)
-        message.error(`${file.name} tải lên thất bại.`)
+        message.error(t('inputJsonModal.uploadError', { name: file.name }))
       }
     },
     showUploadList: false
@@ -316,7 +318,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
 
   const getColumns = (isOutput) => [
     {
-      title: 'Tên tệp',
+      title: t('inputJsonModal.colFileName'),
       dataIndex: 'name',
       key: 'name',
       render: (text) => (
@@ -327,7 +329,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       )
     },
     {
-      title: 'Kích thước',
+      title: t('inputJsonModal.colFileSize'),
       dataIndex: 'size',
       key: 'size',
       width: 100,
@@ -340,10 +342,10 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       align: 'center',
       render: (_, record) => (
         <Space size={4}>
-          <Button type="text" size="small" icon={<Eye size={14} />} onClick={() => handleView(record.name, isOutput)} aria-label="Xem trước tệp" />
-          <Button type="text" size="small" icon={<Download size={14} />} onClick={() => handleDownload(record.name, isOutput)} aria-label="Tải tệp về máy" />
-          <Popconfirm title="Xóa tệp?" onConfirm={() => isOutput ? handleDeleteOutFile(record.name) : handleDeleteFile(record.name)}>
-            <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label="Xóa tệp" />
+          <Button type="text" size="small" icon={<Eye size={14} />} onClick={() => handleView(record.name, isOutput)} aria-label={t('inputJsonModal.previewFileAria')} />
+          <Button type="text" size="small" icon={<Download size={14} />} onClick={() => handleDownload(record.name, isOutput)} aria-label={t('inputJsonModal.downloadFileAria')} />
+          <Popconfirm title={t('inputJsonModal.deleteFileConfirm')} onConfirm={() => isOutput ? handleDeleteOutFile(record.name) : handleDeleteFile(record.name)}>
+            <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label={t('inputJsonModal.deleteFileAria')} />
           </Popconfirm>
         </Space>
       )
@@ -353,19 +355,19 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const tabItems = [
     {
       key: 'json',
-      label: 'Biến môi trường',
+      label: t('inputJsonModal.envVarsTab'),
       children: (
         <div>
           <p style={{ margin: '0 0 12px 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            Khai báo biến JSON để sử dụng trong Workflow.
+            {t('inputJsonModal.envVarsDesc')}
           </p>
           {parseError && (
             <Alert
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              title="File input.json đang có lỗi cú pháp"
-              description={`${parseError}. Nội dung gốc vẫn được giữ nguyên bên dưới — hãy sửa chỗ sai rồi Lưu. Đừng xoá hết rồi gõ lại: các biến cũ (token, mật khẩu…) sẽ mất.`}
+              title={t('inputJsonModal.jsonSyntaxErrorTitle')}
+              description={t('inputJsonModal.jsonSyntaxErrorDesc', { error: parseError })}
             />
           )}
           <div style={{ height: 'calc(100vh - 300px)', border: '1px solid var(--border-default)', borderRadius: 8, overflow: 'hidden' }}>
@@ -408,22 +410,22 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       label: (
         <Space>
           <FolderOpen size={14} />
-          Tệp đính kèm ({files.length})
+          {t('inputJsonModal.attachedFilesTab', { count: files.length })}
         </Space>
       ),
       children: (
         <div>
           {selectedInputRowKeys.length > 0 && (
             <Space style={{ marginBottom: 12 }}>
-              <Tag>{selectedInputRowKeys.length} tệp chọn</Tag>
-              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(false)}>Tải xuống</Button>
-              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(false)}>Xóa</Button>
+              <Tag>{t('inputJsonModal.filesSelectedTag', { count: selectedInputRowKeys.length })}</Tag>
+              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(false)}>{t('inputJsonModal.downloadBtn')}</Button>
+              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(false)}>{t('common.delete')}</Button>
             </Space>
           )}
           <Dragger {...uploadProps} style={{ marginBottom: 12 }}>
             <p style={{ margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <UploadCloud size={24} color="var(--accent-primary)" />
-              <span>Kéo thả hoặc nhấp để tải tệp lên</span>
+              <span>{t('inputJsonModal.dragDropUpload')}</span>
             </p>
           </Dragger>
           <Table
@@ -434,7 +436,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             size="small"
             pagination={false}
             loading={loadingFiles}
-            locale={{ emptyText: 'Chưa có tệp nào' }}
+            locale={{ emptyText: t('inputJsonModal.noFilesYet') }}
           />
         </div>
       )
@@ -444,16 +446,16 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       label: (
         <Space>
           <Download size={14} />
-          Kết quả ({outFiles.length})
+          {t('inputJsonModal.resultsTab', { count: outFiles.length })}
         </Space>
       ),
       children: (
         <div>
           {selectedOutputRowKeys.length > 0 && (
             <Space style={{ marginBottom: 12 }}>
-              <Tag>{selectedOutputRowKeys.length} tệp chọn</Tag>
-              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(true)}>Tải xuống</Button>
-              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(true)}>Xóa</Button>
+              <Tag>{t('inputJsonModal.filesSelectedTag', { count: selectedOutputRowKeys.length })}</Tag>
+              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(true)}>{t('inputJsonModal.downloadBtn')}</Button>
+              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(true)}>{t('common.delete')}</Button>
             </Space>
           )}
           <Table
@@ -464,7 +466,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             size="small"
             pagination={false}
             loading={loadingOutFiles}
-            locale={{ emptyText: 'Chưa có tệp kết quả' }}
+            locale={{ emptyText: t('inputJsonModal.noOutputFilesYet') }}
           />
         </div>
       )
@@ -474,13 +476,13 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       label: (
         <Space>
           <Database size={14} />
-          Database ({dbConnections.length})
+          {t('inputJsonModal.databaseTab', { count: dbConnections.length })}
         </Space>
       ),
       children: (
         <div>
           <Button type="primary" icon={<Plug size={14} />} style={{ marginBottom: 12 }} onClick={() => openDbConnModal(null)}>
-            Thêm kết nối
+            {t('inputJsonModal.addConnectionBtn')}
           </Button>
           <Table
             dataSource={dbConnections}
@@ -488,12 +490,12 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             size="small"
             pagination={false}
             loading={loadingDbConnections}
-            locale={{ emptyText: 'Chưa có kết nối nào' }}
+            locale={{ emptyText: t('inputJsonModal.noConnectionsYet') }}
             columns={[
-              { title: 'Tên', dataIndex: 'label' },
-              { title: 'Loại DB', dataIndex: 'db_type' },
-              { title: 'Host', dataIndex: 'host' },
-              { title: 'Database', dataIndex: 'dbname' },
+              { title: t('inputJsonModal.colName'), dataIndex: 'label' },
+              { title: t('inputJsonModal.colDbType'), dataIndex: 'db_type' },
+              { title: t('inputJsonModal.colHost'), dataIndex: 'host' },
+              { title: t('inputJsonModal.colDatabase'), dataIndex: 'dbname' },
               {
                 title: '',
                 key: 'action',
@@ -501,9 +503,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
                 align: 'center',
                 render: (_, record) => (
                   <Space size={4}>
-                    <Button type="text" size="small" icon={<Pencil size={14} />} onClick={() => openDbConnModal(record)} aria-label="Sửa kết nối Database" />
-                    <Popconfirm title="Xoá kết nối?" onConfirm={() => handleDeleteConnection(record.id)}>
-                      <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label="Xoá kết nối Database" />
+                    <Button type="text" size="small" icon={<Pencil size={14} />} onClick={() => openDbConnModal(record)} aria-label={t('inputJsonModal.editConnectionAria')} />
+                    <Popconfirm title={t('inputJsonModal.deleteConnectionConfirm')} onConfirm={() => handleDeleteConnection(record.id)}>
+                      <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label={t('inputJsonModal.deleteConnectionAria')} />
                     </Popconfirm>
                   </Space>
                 )
@@ -521,7 +523,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       title={
         <Space>
           <FileText size={16} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 600 }}>Dữ liệu Workflow</span>
+          <span style={{ fontWeight: 600 }}>{t('inputJsonModal.drawerTitle')}</span>
         </Space>
       }
       open={open}
@@ -532,11 +534,11 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       extra={
         activeTab === 'json' ? (
           <Space>
-            <Button onClick={handleClose}>Hủy</Button>
-            <Button type="primary" loading={saving} onClick={handleSaveJson}>Lưu</Button>
+            <Button onClick={handleClose}>{t('common.cancel')}</Button>
+            <Button type="primary" loading={saving} onClick={handleSaveJson}>{t('common.save')}</Button>
           </Space>
         ) : (
-          <Button type="primary" onClick={handleClose}>Đóng</Button>
+          <Button type="primary" onClick={handleClose}>{t('common.close')}</Button>
         )
       }
     >
@@ -544,21 +546,21 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
     </Drawer>
 
     <Modal
-      title={editingConnection?.id ? 'Sửa kết nối Database' : 'Thêm kết nối Database'}
+      title={editingConnection?.id ? t('inputJsonModal.editConnectionTitle') : t('inputJsonModal.addConnectionTitle')}
       open={dbConnModalOpen}
       onCancel={() => setDbConnModalOpen(false)}
       footer={[
-        <Button key="test" onClick={handleTestConnection} loading={testingConnection}>Test kết nối</Button>,
-        <Button key="cancel" onClick={() => setDbConnModalOpen(false)}>Hủy</Button>,
-        <Button key="save" type="primary" onClick={handleSaveConnection} loading={savingConnection}>Lưu</Button>,
+        <Button key="test" onClick={handleTestConnection} loading={testingConnection}>{t('inputJsonModal.testConnectionBtn')}</Button>,
+        <Button key="cancel" onClick={() => setDbConnModalOpen(false)}>{t('common.cancel')}</Button>,
+        <Button key="save" type="primary" onClick={handleSaveConnection} loading={savingConnection}>{t('common.save')}</Button>,
       ]}
       destroyOnHidden
     >
       <Form form={dbConnForm} layout="vertical">
-        <Form.Item name="label" label="Tên kết nối" rules={[{ required: true, message: 'Nhập tên kết nối' }]}>
-          <Input placeholder="VD: DMS Report Server" />
+        <Form.Item name="label" label={t('inputJsonModal.connectionNameLabel')} rules={[{ required: true, message: t('inputJsonModal.connectionNameRequired') }]}>
+          <Input placeholder={t('inputJsonModal.connectionNamePlaceholder')} />
         </Form.Item>
-        <Form.Item name="db_type" label="Loại Database" rules={[{ required: true }]}>
+        <Form.Item name="db_type" label={t('inputJsonModal.dbTypeLabel')} rules={[{ required: true }]}>
           <Select>
             <Select.Option value="postgresql">PostgreSQL</Select.Option>
             <Select.Option value="mysql">MySQL</Select.Option>
@@ -566,26 +568,26 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             <Select.Option value="sqlserver">SQL Server</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item name="host" label="Host">
-          <Input placeholder="VD: 118.69.76.220 hoặc localhost" />
+        <Form.Item name="host" label={t('inputJsonModal.hostLabel')}>
+          <Input placeholder={t('inputJsonModal.hostPlaceholder')} />
         </Form.Item>
-        <Form.Item name="port" label="Port">
-          <Input placeholder="VD: 1433" />
+        <Form.Item name="port" label={t('inputJsonModal.portLabel')}>
+          <Input placeholder={t('inputJsonModal.portPlaceholder')} />
         </Form.Item>
-        <Form.Item name="username" label="User">
-          <Input placeholder="Tên đăng nhập" />
+        <Form.Item name="username" label={t('inputJsonModal.userLabel')}>
+          <Input placeholder={t('inputJsonModal.userPlaceholder')} />
         </Form.Item>
         <Form.Item
           name="password"
-          label="Password"
+          label={t('inputJsonModal.passwordLabel')}
           extra={editingConnection?.has_password
-            ? 'Đã có mật khẩu. Để trống nếu muốn giữ nguyên, hoặc gõ mật khẩu mới để thay.'
+            ? t('inputJsonModal.passwordExtraHasPassword')
             : undefined}
         >
-          <Input.Password placeholder={editingConnection?.has_password ? '••••••••  (giữ nguyên)' : 'Mật khẩu'} />
+          <Input.Password placeholder={editingConnection?.has_password ? t('inputJsonModal.passwordPlaceholderKeep') : t('inputJsonModal.passwordPlaceholderNew')} />
         </Form.Item>
-        <Form.Item name="dbname" label="Tên Database">
-          <Input placeholder="VD: DMS_Report" />
+        <Form.Item name="dbname" label={t('inputJsonModal.dbNameLabel')}>
+          <Input placeholder={t('inputJsonModal.dbNamePlaceholder')} />
         </Form.Item>
       </Form>
     </Modal>

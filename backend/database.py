@@ -103,6 +103,9 @@ def _sqlite_apply_schema_updates(conn):
         "workflow_run": {
             "logs_json": ("TEXT", "'[]'"),
         },
+        "user": {
+            "language": ("TEXT", "'vi'"),
+        },
     }
 
     for table_name, columns in schema_updates.items():

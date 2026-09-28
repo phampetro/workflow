@@ -3,6 +3,7 @@ import { Modal, Form, Input, InputNumber, DatePicker, Button, Space } from 'antd
 import { FormInput, Clock } from 'lucide-react'
 import dayjs from 'dayjs'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import { submitRunInput } from '../api/client'
 
 /**
@@ -12,6 +13,7 @@ import { submitRunInput } from '../api/client'
  * - Hết giờ: backend tự báo lỗi khối; modal chỉ tự đóng.
  */
 export default function InputVarsModal({ runId, spec, onDone }) {
+  const { t } = useTranslation()
   const fields = spec?.fields || []
   const [values, setValues] = useState({})
   const [remaining, setRemaining] = useState(spec?.remaining_seconds ?? 0)
@@ -53,7 +55,7 @@ export default function InputVarsModal({ runId, spec, onDone }) {
       if (f.required) {
         const v = values[f.name]
         const empty = v == null || v === '' || (f.type === 'date' && !v)
-        if (empty) { toast.error(`Vui lòng nhập "${f.label || f.name}"`); return }
+        if (empty) { toast.error(t('inputVarsModal.requiredFieldError', { label: f.label || f.name })); return }
       }
     }
     // Chuẩn hoá payload: date → YYYY-MM-DD, number → số, còn lại → chuỗi
@@ -67,10 +69,10 @@ export default function InputVarsModal({ runId, spec, onDone }) {
     setSubmitting(true)
     try {
       await submitRunInput(runId, payload)
-      toast.success('Đã gửi dữ liệu nhập')
+      toast.success(t('inputVarsModal.submitSuccess'))
       onDone?.()
     } catch (err) {
-      toast.error(err.message || 'Gửi thất bại (có thể đã hết thời gian)')
+      toast.error(err.message || t('inputVarsModal.submitError'))
       onDone?.()
     }
   }
@@ -85,14 +87,14 @@ export default function InputVarsModal({ runId, spec, onDone }) {
       keyboard={false}
       title={
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Space><FormInput size={18} color="#f97316" /><span style={{ fontWeight: 600 }}>{spec?.label || 'Nhập biến đầu vào'}</span></Space>
+          <Space><FormInput size={18} color="#f97316" /><span style={{ fontWeight: 600 }}>{spec?.label || t('inputVarsModal.defaultTitle')}</span></Space>
           <Space size={4} style={{ color: urgent ? 'var(--accent-danger)' : 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
             <Clock size={15} /> {mmss}
           </Space>
         </Space>
       }
       footer={
-        <Button type="primary" loading={submitting} onClick={handleSubmit}>Gửi</Button>
+        <Button type="primary" loading={submitting} onClick={handleSubmit}>{t('inputVarsModal.submitBtn')}</Button>
       }
     >
       <Form layout="vertical" style={{ marginTop: 8 }}>
@@ -108,7 +110,7 @@ export default function InputVarsModal({ runId, spec, onDone }) {
                 onChange={(v) => setVal(f.name, v)} />
             ) : f.type === 'date' ? (
               <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" value={values[f.name] || null}
-                onChange={(v) => setVal(f.name, v)} placeholder="Chọn ngày" />
+                onChange={(v) => setVal(f.name, v)} placeholder={t('inputVarsModal.datePlaceholder')} />
             ) : (
               <Input value={values[f.name]} placeholder={f.placeholder}
                 onChange={(e) => setVal(f.name, e.target.value)}

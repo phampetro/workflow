@@ -7,6 +7,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button, Modal, Form, Input, Dropdown, Spin, Tag, Space, Alert, Tooltip, App } from 'antd'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 
 const COLORS = ['#6c63ff','#00d4aa','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
 const ICONS = {
@@ -20,6 +21,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
   // "Static function can not consume context like dynamic theme" ra console.
   const { modal } = App.useApp()
+  const { t } = useTranslation()
 
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -128,7 +130,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           icon: selectedIcon,
         })
         setProjects((prev) => prev.map(p => p.id === editingProject.id ? { ...p, ...res.data } : p))
-        toast.success('Cập nhật project thành công!')
+        toast.success(t('dashboard.updateSuccess'))
       } else {
         const res = await createProject({
           name: values.name.trim(),
@@ -137,11 +139,11 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           icon: selectedIcon,
         })
         setProjects((prev) => [res.data, ...prev])
-        toast.success('Tạo project thành công!')
+        toast.success(t('dashboard.createSuccess'))
       }
       handleModalClose()
     } catch (e) {
-      toast.error('Lỗi: ' + e.message)
+      toast.error(t('dashboard.genericError', { message: e.message }))
     } finally {
       setCreating(false)
     }
@@ -157,19 +159,19 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
 
   const handleDelete = (id) => {
     modal.confirm({
-      title: 'Xóa Project',
-      content: 'Bạn có chắc muốn xóa project này? Tất cả workflows, lịch chạy và virtual environment sẽ bị xóa vĩnh viễn.',
-      okText: 'Xóa vĩnh viễn',
+      title: t('dashboard.deleteTitle'),
+      content: t('dashboard.deleteContent'),
+      okText: t('dashboard.deletePermanently'),
       okType: 'danger',
-      cancelText: 'Hủy',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await deleteProject(id)
-          toast.success('Đã xóa project!')
+          toast.success(t('dashboard.deleteSuccess'))
           // Reload toàn bộ để cập nhật cả stats trên Navbar
           loadData()
         } catch (e) {
-          toast.error('Lỗi xóa project: ' + e.message)
+          toast.error(t('dashboard.deleteError', { message: e.message }))
         }
       }
     })
@@ -177,7 +179,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
 
   const handleExport = (project) => {
     window.location.href = `${API_BASE}/api/projects/${project.id}/export`
-    toast.success(`Đang tải xuống project ${project.name}...`)
+    toast.success(t('dashboard.exporting', { name: project.name }))
   }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -191,7 +193,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     try {
       await reorderProjects(reordered.map((p, i) => ({ id: p.id, sort_order: i })))
     } catch {
-      toast.error('Lỗi lưu thứ tự')
+      toast.error(t('dashboard.reorderError'))
     }
   }
 
@@ -199,10 +201,10 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     return (
       <div style={{ padding: 40 }}>
         <Alert
-          title="Backend chưa khởi động"
+          title={t('dashboard.backendOfflineTitle')}
           description={
             <div>
-              Chạy lệnh sau để khởi động backend:
+              {t('dashboard.backendOfflineDesc')}
               <pre style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-base)', borderRadius: 8 }}>
                 cd backend &amp;&amp; .venv\Scripts\python main.py
               </pre>
@@ -213,7 +215,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           icon={<WifiOff size="1.5rem" />}
           action={
             <Button size="small" type="primary" onClick={() => checkBackend().then(ok => ok && loadData())}>
-              <RefreshCw size="0.875rem" style={{ marginRight: 6 }} /> Thử lại
+              <RefreshCw size="0.875rem" style={{ marginRight: 6 }} /> {t('dashboard.retry')}
             </Button>
           }
         />
@@ -227,12 +229,12 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
       <div style={{ marginBottom: '1.5rem' }}>
         <div>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-            {currentUser ? `Xin chào, ${currentUser.name}! 👋` : 'Workspace'}
+            {currentUser ? t('dashboard.greetingUser', { name: currentUser.name }) : t('dashboard.greetingGuest')}
           </h2>
           <p style={{ color: 'var(--text-muted)', margin: '3px 0 0 0', fontSize: '0.83rem' }}>
             {currentUser
-              ? `Bạn có ${projects.length} project${projects.length !== 1 ? 's' : ''} — chúc bạn làm việc hiệu quả!`
-              : `${projects.length} project${projects.length !== 1 ? 's' : ''} — Quản lý tất cả workflows của bạn`
+              ? t('dashboard.subtitleUser', { count: projects.length })
+              : t('dashboard.subtitleGuest', { count: projects.length })
             }
           </p>
         </div>
@@ -241,7 +243,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
       {/* Error state */}
       {error && (
         <Alert title={error} type="error" showIcon style={{ marginBottom: 20 }}
-          action={<Button size="small" onClick={loadData}>Thử lại</Button>}
+          action={<Button size="small" onClick={loadData}>{t('dashboard.retry')}</Button>}
         />
       )}
 
@@ -251,11 +253,11 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
           <div className="empty-state">
             <FolderOpen className="empty-state-icon" />
             <div>
-              <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 600 }}>Chưa có dự án nào</h3>
-              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>Bắt đầu bằng cách tạo một project mới để chứa các workflows.</p>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 600 }}>{t('dashboard.emptyTitle')}</h3>
+              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>{t('dashboard.emptyDesc')}</p>
             </div>
             <Button type="primary" onClick={() => setIsModalOpen(true)} icon={<Plus size="1rem" />} size="large" style={{ marginTop: '0.5rem' }}>
-              Tạo Project
+              {t('dashboard.createProject')}
             </Button>
           </div>
         ) : (
@@ -285,7 +287,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
             <div style={{ width:26, height:26, background:'var(--premium-gradient-1)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>
               {editingProject ? <Settings size="0.875rem" /> : <Plus size="0.875rem" />}
             </div>
-            {editingProject ? 'Chỉnh sửa Project' : 'Tạo Project Mới'}
+            {editingProject ? t('dashboard.editProject') : t('dashboard.newProject')}
           </Space>
         }
         open={isModalOpen}
@@ -294,13 +296,13 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit} style={{ marginTop: 24 }}>
-          <Form.Item name="name" label="Tên Project" rules={[{ required: true, message: 'Vui lòng nhập tên project!' }]}>
-            <Input placeholder="VD: Data ETL Pipeline" size="large" autoFocus />
+          <Form.Item name="name" label={t('dashboard.nameLabel')} rules={[{ required: true, message: t('dashboard.nameRequired') }]}>
+            <Input placeholder={t('dashboard.namePlaceholder')} size="large" autoFocus />
           </Form.Item>
-          <Form.Item name="description" label="Mô tả">
-            <Input.TextArea placeholder="Mô tả ngắn về project..." rows={3} />
+          <Form.Item name="description" label={t('dashboard.descLabel')}>
+            <Input.TextArea placeholder={t('dashboard.descPlaceholder')} rows={3} />
           </Form.Item>
-          <Form.Item label="Biểu tượng">
+          <Form.Item label={t('dashboard.iconLabel')}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {Object.keys(ICONS).map((iconName) => {
                 const IconComponent = ICONS[iconName]
@@ -313,7 +315,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
                     key={iconName}
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`Biểu tượng ${iconName}`}
+                    aria-label={t('dashboard.iconAria', { name: iconName })}
                     onClick={() => setSelectedIcon(iconName)}
                     style={{
                       width: 36, height: 36, borderRadius: 8,
@@ -330,7 +332,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
               })}
             </div>
           </Form.Item>
-          <Form.Item label="Màu sắc">
+          <Form.Item label={t('dashboard.colorLabel')}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {COLORS.map((c) => (
                 // Trạng thái "đang chọn" trước đây chỉ báo bằng MÀU + scale + opacity —
@@ -340,7 +342,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
                   key={c}
                   type="button"
                   aria-pressed={selectedColor === c}
-                  aria-label={`Màu ${c}`}
+                  aria-label={t('dashboard.colorAria', { color: c })}
                   onClick={() => setSelectedColor(c)}
                   style={{
                     width: 30, height: 30, borderRadius: '50%', background: c,
@@ -357,9 +359,9 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
             </div>
           </Form.Item>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 28 }}>
-            <Button onClick={handleModalClose}>Hủy</Button>
+            <Button onClick={handleModalClose}>{t('common.cancel')}</Button>
             <Button type="primary" htmlType="submit" loading={creating}>
-              {editingProject ? 'Lưu thay đổi' : 'Tạo Project'}
+              {editingProject ? t('dashboard.saveChanges') : t('dashboard.createProject')}
             </Button>
           </div>
         </Form>
@@ -369,6 +371,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
 }
 
 function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
+  const { t, i18n } = useTranslation()
   const {
     attributes,
     listeners,
@@ -385,33 +388,34 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
     zIndex: isDragging ? 10 : 'auto',
   }
 
+  const locale = i18n.language === 'en' ? 'en-US' : 'vi-VN'
   const formatDate = (iso) => {
     if (!iso) return '-'
     try {
       const d = new Date(iso)
       const diff = Date.now() - d.getTime()
       if (diff <= 5 * 60 * 1000) {
-        if (diff < 60000) return 'Vừa xong'
-        return `${Math.floor(diff / 60000)} phút trước`
+        if (diff < 60000) return t('dashboard.justNow')
+        return t('dashboard.minutesAgo', { count: Math.floor(diff / 60000) })
       }
-      const time = d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
-      const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      const time = d.toLocaleTimeString(locale, { hour12: false, hour: '2-digit', minute: '2-digit' })
+      const date = d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })
       return `${time} ${date}`
     } catch { return iso }
   }
 
-  let statusText = 'Đang tạo venv'
+  let statusText = t('dashboard.statusCreatingVenv')
   let statusColor = 'warning'
 
   // Ưu tiên: đang chạy > lỗi gần đây > đã có venv > đang tạo venv
   if (project.running_count > 0) {
-    statusText = 'Đang chạy'
+    statusText = t('dashboard.statusRunning')
     statusColor = 'processing'
   } else if (project.last_run_status === 'error') {
-    statusText = 'Lỗi gần đây'
+    statusText = t('dashboard.statusRecentError')
     statusColor = 'error'
   } else if (project.venv_ready) {
-    statusText = 'Đã có venv'
+    statusText = t('dashboard.statusVenvReady')
     statusColor = 'success'
   }
 
@@ -419,10 +423,10 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
   const pColor = project.color || 'var(--accent-primary)'
 
   const items = [
-    { key: 'edit', label: 'Cài đặt', icon: <Settings size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
-    { key: 'export', label: 'Export ZIP', icon: <Download size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
+    { key: 'edit', label: t('dashboard.menuSettings'), icon: <Settings size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
+    { key: 'export', label: t('dashboard.menuExport'), icon: <Download size="0.938rem" />, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
     { type: 'divider' },
-    { key: 'delete', label: 'Xóa Project', icon: <Trash2 size="0.938rem" />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },
+    { key: 'delete', label: t('dashboard.menuDelete'), icon: <Trash2 size="0.938rem" />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },
   ]
 
   return (
@@ -438,7 +442,7 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
       // biến nó thành điểm dừng Tab hợp lệ và nhận Enter/Space như một nút.
       role="button"
       tabIndex={0}
-      aria-label={`Mở project ${project.name}`}
+      aria-label={t('dashboard.openProjectAria', { name: project.name })}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
       }}
@@ -460,9 +464,9 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
               {project.name}
             </h3>
           </Tooltip>
-          <Tooltip title={project.description || 'Chưa có mô tả'} placement="top" mouseEnterDelay={0.5}>
+          <Tooltip title={project.description || t('dashboard.noDescription')} placement="top" mouseEnterDelay={0.5}>
             <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {project.description || 'Chưa có mô tả'}
+              {project.description || t('dashboard.noDescription')}
             </p>
           </Tooltip>
         </div>
@@ -471,7 +475,7 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
           <Button
             type="text"
             icon={<MoreVertical size="1.125rem" />}
-            aria-label="Mở menu thao tác Project"
+            aria-label={t('dashboard.projectMenuAria')}
             onClick={e => e.stopPropagation()}
             className="project-menu-btn"
             style={{ color: 'var(--text-muted)' }}

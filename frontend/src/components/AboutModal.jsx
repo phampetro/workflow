@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Modal, Space, Typography, Button, Spin, Alert, message } from 'antd'
 import { ShieldCheck, Info, Zap, Mail, Send, Tag, Clock, DownloadCloud, CheckCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { APP_INFO } from '../config/appInfo'
 import { systemApi, checkHealth, getLicenseStatus } from '../api/client'
 import dayjs from 'dayjs'
@@ -18,6 +19,7 @@ function InfoRow({ icon, label, value }) {
 }
 
 export default function AboutModal({ open, onClose, licenseStatus }) {
+  const { t } = useTranslation()
   const [sysInfo, setSysInfo] = useState(null)
   const [loading, setLoading] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -91,7 +93,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
         setUpdateMsg(res.message)
       }
     } catch (err) {
-      message.error("Không thể kiểm tra bản cập nhật.")
+      message.error(t('about.checkUpdateError'))
     } finally {
       setCheckingUpdate(false)
     }
@@ -99,7 +101,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
 
   const handleUpdate = async () => {
     setUpdateStatus('updating')
-    setUpdateMsg("Hệ thống đang tải code mới và sẽ tự động khởi động lại trong giây lát...")
+    setUpdateMsg(t('about.updatingMessage'))
     try {
       await systemApi.update()
       
@@ -137,7 +139,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
           // dùng không bị kẹt ở màn "đang cập nhật".
           if (sawDown || waited >= MAX_WAIT_MS) {
             clearInterval(pingInterval)
-            message.success("Cập nhật thành công!")
+            message.success(t('about.updateSuccessToast'))
             window.location.reload()
           }
         } catch (e) {
@@ -145,7 +147,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
         }
       }, 2000)
     } catch (err) {
-      message.error("Lỗi khi gửi lệnh cập nhật.")
+      message.error(t('about.updateSendError'))
       setUpdateStatus(null)
     }
   }
@@ -158,7 +160,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
       title={
         <Space>
           <Info size={20} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 600 }}>Thông tin</span>
+          <span style={{ fontWeight: 600 }}>{t('about.title')}</span>
         </Space>
       }
       open={open}
@@ -174,19 +176,19 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
         </div>
         <div>
           <Text style={{ fontSize: '1.15rem', fontWeight: 700, display: 'block' }}>{APP_INFO.name}</Text>
-          <Text style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nền tảng tự động hóa workflow</Text>
+          <Text style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('about.tagline')}</Text>
         </div>
       </div>
 
       <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: 8, paddingBottom: 16 }}>
-        <InfoRow icon={<Tag size={14} />} label="Tác giả" value={APP_INFO.author} />
-        <InfoRow icon={<Mail size={14} />} label="Liên hệ" value={APP_INFO.email} />
-        <InfoRow icon={<Send size={14} />} label="Telegram" value={APP_INFO.telegram} />
-        
+        <InfoRow icon={<Tag size={14} />} label={t('about.author')} value={APP_INFO.author} />
+        <InfoRow icon={<Mail size={14} />} label={t('about.contact')} value={APP_INFO.email} />
+        <InfoRow icon={<Send size={14} />} label={t('about.telegram')} value={APP_INFO.telegram} />
+
         {lic && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
             <div style={{ color: 'var(--text-muted)', display: 'flex' }}><ShieldCheck size={14} /></div>
-            <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Bản quyền</Text>
+            <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>{t('about.license')}</Text>
             {/* Thứ tự điều kiện có chủ ý — đừng đảo:
                 1. Có key hợp lệ  → "Đã kích hoạt" (đúng cho cả bản đóng gói lẫn source).
                 2. packaged HOẶC enforced → "Chưa kích hoạt hoặc hết hạn".
@@ -203,31 +205,31 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
               // Không gọi được API → KHÔNG suy ra là bản phát triển. Hay gặp ngay
               // sau khi cập nhật: backend cũ vừa bị kill, backend mới chưa serve.
               <Text style={{ fontWeight: 500, color: 'var(--text-muted)' }}>
-                Chưa xác định được (backend chưa phản hồi)
+                {t('about.licenseUnknown')}
               </Text>
             ) : lic.activated && lic.valid ? (
               <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>
-                Đã kích hoạt {lic.expiry ? `(Hết hạn: ${dayjs(lic.expiry).format('DD/MM/YYYY')})` : '(Vĩnh viễn)'}
+                {t('about.licenseActivated')} {lic.expiry ? t('about.licenseExpiry', { date: dayjs(lic.expiry).format('DD/MM/YYYY') }) : t('about.licensePerpetual')}
               </Text>
             ) : (lic.packaged || lic.enforced) ? (
               <Text style={{ fontWeight: 500, color: 'var(--accent-danger)' }}>
-                Chưa kích hoạt hoặc hết hạn
+                {t('about.licenseInvalid')}
               </Text>
             ) : (
-              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>Bản phát triển (Mở khóa)</Text>
+              <Text style={{ fontWeight: 500, color: 'var(--accent-success)' }}>{t('about.licenseDev')}</Text>
             )}
           </div>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
           <div style={{ color: 'var(--text-muted)', display: 'flex' }}><Tag size={14} /></div>
-          <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Version</Text>
+          <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>{t('about.version')}</Text>
           {loading ? <Spin size="small" /> : <Text style={{ fontWeight: 500, color: 'var(--accent-primary)' }}>{currentVersion}</Text>}
         </div>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
           <div style={{ color: 'var(--text-muted)', display: 'flex' }}><Clock size={14} /></div>
-          <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>Cập nhật</Text>
+          <Text style={{ color: 'var(--text-muted)', minWidth: 90 }}>{t('about.updatedAt')}</Text>
           {loading ? <Spin size="small" /> : <Text style={{ fontWeight: 500 }}>{currentUpdatedAt}</Text>}
         </div>
       </div>
@@ -242,7 +244,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
             disabled={updateStatus === 'updating'}
             style={{ minWidth: 160 }}
           >
-            Kiểm tra cập nhật
+            {t('about.checkUpdate')}
           </Button>
 
           {updateStatus === 'latest' && (
@@ -257,7 +259,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
               style={{ fontSize: '0.85rem', justifyContent: 'center' }}
               action={
                 <Button size="small" type="primary" onClick={handleUpdate}>
-                  Cập nhật ngay
+                  {t('about.updateNow')}
                 </Button>
               }
             />

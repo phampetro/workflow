@@ -4,42 +4,48 @@ import { getSchedules, createSchedule, updateSchedule, deleteSchedule as apiDele
 import { Drawer, Form, Input, TimePicker, DatePicker, Select, Button, Switch, Tag, Typography, Space, Popconfirm, Table, Radio, InputNumber, Empty, Alert } from 'antd'
 import toast from 'react-hot-toast'
 import dayjs from 'dayjs'
+import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
 const { Text } = Typography
 
-const DAY_OPTIONS = [
-  { label: 'Thứ 2', value: 'mon' },
-  { label: 'Thứ 3', value: 'tue' },
-  { label: 'Thứ 4', value: 'wed' },
-  { label: 'Thứ 5', value: 'thu' },
-  { label: 'Thứ 6', value: 'fri' },
-  { label: 'Thứ 7', value: 'sat' },
-  { label: 'CN', value: 'sun' }
+const getDayOptions = (t) => [
+  { label: t('schedulerPanel.dayMon'), value: 'mon' },
+  { label: t('schedulerPanel.dayTue'), value: 'tue' },
+  { label: t('schedulerPanel.dayWed'), value: 'wed' },
+  { label: t('schedulerPanel.dayThu'), value: 'thu' },
+  { label: t('schedulerPanel.dayFri'), value: 'fri' },
+  { label: t('schedulerPanel.daySat'), value: 'sat' },
+  { label: t('schedulerPanel.daySun'), value: 'sun' }
 ]
-const DAY_MAP = DAY_OPTIONS.reduce((acc, curr) => ({ ...acc, [curr.value]: curr.label }), {})
 
-function parseCron(cron) {
+// Sinh chuỗi mô tả lịch từ cron_expr (JSON) — dùng để hiển thị LIVE dưới tên
+// lịch trong bảng, và làm nhãn mặc định khi người dùng để trống "Tên ghi nhớ"
+// lúc tạo lịch mới.
+function parseCron(cron, t) {
+  const dayMap = getDayOptions(t).reduce((acc, curr) => ({ ...acc, [curr.value]: curr.label }), {})
   try {
     if (cron && typeof cron === 'string' && cron.startsWith('{')) {
       const config = JSON.parse(cron)
-      const time = config.hour && config.minute ? `${config.hour.padStart(2, '0')}:${config.minute.padStart(2, '0')}` : 'mỗi giờ'
+      const time = config.hour && config.minute ? `${config.hour.padStart(2, '0')}:${config.minute.padStart(2, '0')}` : t('schedulerPanel.hourlyFallback')
       let str = ''
       if (config.schedule_type === 'month') {
-        str = `Ngày ${config.day_of_month || 1} / tháng lúc ${time}`
+        str = t('schedulerPanel.monthlyPattern', { day: config.day_of_month || 1, time })
       } else {
-        const days = config.days && config.days.length > 0 ? config.days.map(d => DAY_MAP[d] || d).join(', ') : 'Hàng ngày'
-        str = `${days} lúc ${time}`
+        const days = config.days && config.days.length > 0 ? config.days.map(d => dayMap[d] || d).join(', ') : t('schedulerPanel.dailyAllDays')
+        str = t('schedulerPanel.weeklyPattern', { days, time })
       }
       return str
     }
-    return 'Lịch tùy chỉnh'
+    return t('schedulerPanel.customSchedule')
   } catch {
-    return 'Lịch tùy chỉnh'
+    return t('schedulerPanel.customSchedule')
   }
 }
 
 export default function SchedulerPanel({ workflow, onClose }) {
+  const { t, i18n } = useTranslation()
+  const DAY_OPTIONS = getDayOptions(t)
   const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -56,7 +62,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
     if (workflow?.id) {
       getSchedules(workflow.id)
         .then(res => setSchedules(res.data || []))
-        .catch(e => toast.error('Lỗi tải lịch: ' + e.message))
+        .catch(e => toast.error(t('schedulerPanel.loadError', { message: e.message })))
         .finally(() => setLoading(false))
     } else {
       // loading khởi tạo là true; không có else thì mở Drawer khi workflow chưa
@@ -104,7 +110,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
 
     const payload = {
       cron_expr: cronPayload,
-      label: values.label || parseCron(cronPayload),
+      label: values.label || parseCron(cronPayload, t),
       enabled: true
     }
 
@@ -112,17 +118,19 @@ export default function SchedulerPanel({ workflow, onClose }) {
       if (editingSchedule) {
         const res = await updateSchedule(editingSchedule, payload)
         setSchedules(schedules.map(s => s.id === editingSchedule ? res.data : s))
-        toast.success('Đã cập nhật lịch chạy')
+        toast.success(t('schedulerPanel.updateSuccess'))
       } else {
         const res = await createSchedule(workflow.id, payload)
         setSchedules([...schedules, res.data])
-        toast.success('Đã thêm lịch chạy mới')
+        toast.success(t('schedulerPanel.createSuccess'))
       }
       setShowAdd(false)
       setEditingSchedule(null)
       form.resetFields()
     } catch (e) {
-      toast.error(`Lỗi ${editingSchedule ? 'cập nhật' : 'tạo'} lịch: ` + e.message)
+      toast.error(editingSchedule
+        ? t('schedulerPanel.submitErrorUpdate', { message: e.message })
+        : t('schedulerPanel.submitErrorCreate', { message: e.message }))
     } finally {
       setCreating(false)
     }
@@ -131,12 +139,12 @@ export default function SchedulerPanel({ workflow, onClose }) {
   const toggleSchedule = async (id, checked) => {
     try {
       const res = await apiToggleSchedule(id)
-      setSchedules(schedules.map(s => 
+      setSchedules(schedules.map(s =>
         s.id === id ? { ...s, enabled: res.data.enabled, next_run_at: res.data.next_run_at } : s
       ))
-      toast.success(`Đã ${res.data.enabled ? 'bật' : 'tắt'} lịch chạy`)
+      toast.success(res.data.enabled ? t('schedulerPanel.toggleOn') : t('schedulerPanel.toggleOff'))
     } catch (e) {
-      toast.error('Lỗi: ' + e.message)
+      toast.error(t('schedulerPanel.toggleError', { message: e.message }))
     }
   }
 
@@ -144,41 +152,42 @@ export default function SchedulerPanel({ workflow, onClose }) {
     try {
       await apiDeleteSchedule(id)
       setSchedules(schedules.filter(s => s.id !== id))
-      toast.success('Đã xóa lịch chạy')
+      toast.success(t('schedulerPanel.deleteSuccess'))
     } catch (e) {
-      toast.error('Lỗi xóa lịch: ' + e.message)
+      toast.error(t('schedulerPanel.deleteError', { message: e.message }))
     }
   }
 
+  const dateLocale = i18n.language === 'en' ? 'en-US' : 'vi-VN'
   const formatNextRun = (iso) => {
-    if (!iso) return <Text type="secondary" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Chưa xếp lịch</Text>
+    if (!iso) return <Text type="secondary" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{t('schedulerPanel.notScheduled')}</Text>
     const d = new Date(iso)
     return <Text style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-      {d.toLocaleString('vi-VN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+      {d.toLocaleString(dateLocale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
     </Text>
   }
 
   const columns = [
     {
-      title: 'STT',
+      title: t('schedulerPanel.colIndex'),
       key: 'stt',
       width: 50,
       align: 'center',
       render: (_, __, index) => <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{index + 1}</span>
     },
     {
-      title: 'Tên ghi nhớ',
+      title: t('schedulerPanel.colName'),
       dataIndex: 'label',
       key: 'label',
       render: (text, record) => (
         <div>
           <div style={{ fontWeight: 500, opacity: record.enabled ? 1 : 0.5 }}>{text}</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{parseCron(record.cron_expr)}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{parseCron(record.cron_expr, t)}</div>
         </div>
       )
     },
     {
-      title: 'Chạy tiếp',
+      title: t('schedulerPanel.colNextRun'),
       dataIndex: 'next_run_at',
       key: 'next_run_at',
       width: 130,
@@ -186,7 +195,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
       render: formatNextRun
     },
     {
-      title: 'Bật',
+      title: t('schedulerPanel.colEnabled'),
       key: 'status',
       width: 70,
       align: 'center',
@@ -195,15 +204,15 @@ export default function SchedulerPanel({ workflow, onClose }) {
       )
     },
     {
-      title: 'Thao tác',
+      title: t('schedulerPanel.colAction'),
       key: 'action',
       width: 90,
       align: 'center',
       render: (_, record) => (
         <Space size={4}>
-          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} aria-label="Sửa lịch" />
-          <Popconfirm title="Xóa lịch này?" onConfirm={() => deleteSchedule(record.id)}>
-            <Button size="small" type="text" danger icon={<Trash2 size={14} />} aria-label="Xóa lịch" />
+          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => openEdit(record)} aria-label={t('schedulerPanel.editAria')} />
+          <Popconfirm title={t('schedulerPanel.deleteConfirm')} onConfirm={() => deleteSchedule(record.id)}>
+            <Button size="small" type="text" danger icon={<Trash2 size={14} />} aria-label={t('schedulerPanel.deleteAria')} />
           </Popconfirm>
         </Space>
       )
@@ -215,18 +224,18 @@ export default function SchedulerPanel({ workflow, onClose }) {
       title={
         <Space>
           <Calendar size={16} color="var(--accent-warning)" />
-          <span style={{ fontWeight: 600 }}>{showAdd ? (editingSchedule ? 'Chỉnh sửa lịch' : 'Thêm lịch mới') : 'Lịch chạy'}</span>
+          <span style={{ fontWeight: 600 }}>{showAdd ? (editingSchedule ? t('schedulerPanel.editTitle') : t('schedulerPanel.addTitle')) : t('schedulerPanel.panelTitle')}</span>
           <Tag variant="filled" style={{ margin: 0 }}>{workflow?.name}</Tag>
         </Space>
       }
       extra={
         !showAdd ? (
           <Button size="small" type="primary" icon={<Clock size={14} />} onClick={() => { setEditingSchedule(null); form.resetFields(); setShowAdd(true); }}>
-            Thêm mới
+            {t('schedulerPanel.addNew')}
           </Button>
         ) : (
           <Button size="small" onClick={() => { setShowAdd(false); setEditingSchedule(null); }}>
-            Quay lại
+            {t('schedulerPanel.back')}
           </Button>
         )
       }
@@ -248,9 +257,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
               style={{ marginBottom: 12 }}
               title={
                 <span>
-                  Lịch chỉ chạy khi người dùng <b>{currentUser?.name || '(hiện tại)'}</b> đang được kích hoạt.
-                  Chuyển sang người dùng khác sẽ tạm dừng toàn bộ lịch và Telegram Listener trong không gian này
-                  cho tới khi bạn kích hoạt lại.
+                  {t('schedulerPanel.multiUserWarningPrefix')} <b>{currentUser?.name || t('schedulerPanel.currentUserFallback')}</b> {t('schedulerPanel.multiUserWarningSuffix')}
                 </span>
               }
             />
@@ -264,7 +271,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
             size="small"
             sticky={{ offsetHeader: 0 }}
             scroll={{ y: 'calc(100vh - 160px)' }}
-            locale={{ emptyText: <Empty description="Chưa có lịch nào. Thêm lịch để tự động chạy workflow." image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+            locale={{ emptyText: <Empty description={t('schedulerPanel.emptyTable')} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
           />
         </>
       ) : (
@@ -274,42 +281,42 @@ export default function SchedulerPanel({ workflow, onClose }) {
             onFinish={handleSubmit}
             initialValues={{ schedule_type: 'week', day_of_month: 1, days: ['mon', 'tue', 'wed', 'thu', 'fri'], time: dayjs('08:00', 'HH:mm') }}
           >
-            <Form.Item name="schedule_type" label="Kiểu lặp lại">
+            <Form.Item name="schedule_type" label={t('schedulerPanel.scheduleTypeLabel')}>
               <Radio.Group optionType="button" buttonStyle="solid" size="small">
-                <Radio.Button value="week">Theo tuần</Radio.Button>
-                <Radio.Button value="month">Theo tháng</Radio.Button>
+                <Radio.Button value="week">{t('schedulerPanel.weekly')}</Radio.Button>
+                <Radio.Button value="month">{t('schedulerPanel.monthly')}</Radio.Button>
               </Radio.Group>
             </Form.Item>
 
-            <Form.Item name="time" label="Giờ chạy" rules={[{ required: true, message: 'Vui lòng chọn giờ' }]}>
+            <Form.Item name="time" label={t('schedulerPanel.timeLabel')} rules={[{ required: true, message: t('schedulerPanel.timeRequired') }]}>
               <TimePicker format="HH:mm" style={{ width: '100%' }} />
             </Form.Item>
 
             {scheduleType === 'month' ? (
-              <Form.Item name="day_of_month" label="Ngày trong tháng" rules={[{ required: true, message: 'Nhập ngày' }]}>
-                <InputNumber min={1} max={31} style={{ width: '100%' }} placeholder="VD: 1" />
+              <Form.Item name="day_of_month" label={t('schedulerPanel.dayOfMonthLabel')} rules={[{ required: true, message: t('schedulerPanel.dayOfMonthRequired') }]}>
+                <InputNumber min={1} max={31} style={{ width: '100%' }} placeholder={t('schedulerPanel.dayOfMonthPlaceholder')} />
               </Form.Item>
             ) : (
-              <Form.Item name="days" label="Các ngày trong tuần" rules={[{ required: true, message: 'Chọn ít nhất 1 ngày' }]}>
-                <Select mode="multiple" options={DAY_OPTIONS} placeholder="Chọn ngày" />
+              <Form.Item name="days" label={t('schedulerPanel.weekDaysLabel')} rules={[{ required: true, message: t('schedulerPanel.weekDaysRequired') }]}>
+                <Select mode="multiple" options={DAY_OPTIONS} placeholder={t('schedulerPanel.weekDaysPlaceholder')} />
               </Form.Item>
             )}
 
-            <Form.Item name="dateRange" label="Thời gian áp dụng">
-              <DatePicker.RangePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder={['Bắt đầu', 'Kết thúc']} />
+            <Form.Item name="dateRange" label={t('schedulerPanel.dateRangeLabel')}>
+              <DatePicker.RangePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder={[t('schedulerPanel.dateRangeStart'), t('schedulerPanel.dateRangeEnd')]} />
             </Form.Item>
 
-            <Form.Item name="label" label="Tên ghi nhớ" rules={[{ required: true, message: 'Nhập tên' }]}>
-              <Input placeholder="VD: Chạy buổi sáng" />
+            <Form.Item name="label" label={t('schedulerPanel.nameLabel')} rules={[{ required: true, message: t('schedulerPanel.nameRequired') }]}>
+              <Input placeholder={t('schedulerPanel.namePlaceholder')} />
             </Form.Item>
 
             <Form.Item style={{ marginBottom: 0, marginTop: 24 }}>
               <Space>
                 <Button htmlType="submit" type="primary" loading={creating}>
-                  {editingSchedule ? 'Lưu thay đổi' : 'Thêm lịch'}
+                  {editingSchedule ? t('schedulerPanel.saveChanges') : t('schedulerPanel.addSchedule')}
                 </Button>
                 <Button onClick={() => { setShowAdd(false); setEditingSchedule(null); }}>
-                  Hủy
+                  {t('common.cancel')}
                 </Button>
               </Space>
             </Form.Item>
