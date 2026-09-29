@@ -73,7 +73,13 @@
     "checkUpdateError": "Không thể kiểm tra bản cập nhật.",
     "updatingMessage": "Hệ thống đang tải code mới và sẽ tự động khởi động lại trong giây lát...",
     "updateSuccessToast": "Cập nhật thành công!",
-    "updateSendError": "Lỗi khi gửi lệnh cập nhật."
+    "updateSendError": "Lỗi khi gửi lệnh cập nhật.",
+    "updateAvailable": "Có bản cập nhật mới (v{{version}})",
+    "updateAvailableGeneric": "Có bản cập nhật mới",
+    "upToDate": "Bạn đang dùng phiên bản mới nhất",
+    "gitNotFound": "Hệ thống không tìm thấy Git. Vui lòng cài đặt Git để sử dụng tính năng cập nhật.",
+    "checkFailed": "Không thể kiểm tra cập nhật từ GitHub.",
+    "invalidUpdate": "Bản cập nhật không hợp lệ: {{detail}}"
   },
   "dashboard": {
     "retry": "Thử lại",
@@ -121,7 +127,13 @@
     "menuDelete": "Xóa Project",
     "noDescription": "Chưa có mô tả",
     "openProjectAria": "Mở project {{name}}",
-    "projectMenuAria": "Mở menu thao tác Project"
+    "projectMenuAria": "Mở menu thao tác Project",
+    "searchPlaceholder": "Tìm project theo tên...",
+    "searchAria": "Tìm kiếm project",
+    "searchNoResults": "Không tìm thấy project nào khớp với “{{query}}”.",
+    "viewModeAria": "Chế độ xem",
+    "viewGrid": "Thẻ",
+    "viewList": "Danh sách"
   },
   "projectDetail": {
     "loadWorkflowsError": "Lỗi tải workflows: {{message}}",

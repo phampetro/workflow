@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, Languages, UserCog, Upload, Sparkles, Info } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, Languages, UserCog, Upload, Sparkles, Info, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -63,6 +63,8 @@ export default function Navbar({
   onSwitchUser,
   onOpenAiSettings,
   onOpenAbout,
+  sidePanelOpen,
+  onToggleSidePanel,
 }) {
   const { t } = useTranslation()
   const theme = useStore((state) => state.theme)
@@ -247,6 +249,18 @@ export default function Navbar({
           </div>
           <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>{currentUser?.name}</span>
         </div>
+
+        {onToggleSidePanel && (
+          <Tooltip title={sidePanelOpen ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}>
+            <Button
+              type="text"
+              icon={sidePanelOpen ? <PanelRightClose size="0.938rem" /> : <PanelRightOpen size="0.938rem" />}
+              onClick={onToggleSidePanel}
+              className="nav-btn-ghost"
+              aria-label={sidePanelOpen ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}
+            />
+          </Tooltip>
+        )}
 
         <Dropdown menu={{ items: settingsItems }} placement="bottomRight" trigger={['click']}>
           <Tooltip title={t('navbar.settingsTooltip')}>

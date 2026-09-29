@@ -58,7 +58,8 @@ export const activateUser    = (id)         => api.post(`/api/users/${id}/activa
 export const getUserStats    = (id)         => api.get(`/api/users/${id}/stats`)
 export const updateUserLanguage = (id, language) => api.patch(`/api/users/${id}/language`, { language })
 export const updateUserWorkflowViewMode = (id, workflow_view_mode) => api.patch(`/api/users/${id}/workflow-view-mode`, { workflow_view_mode })
-export const updateUserWorkflowPanelOpen = (id, workflow_panel_open) => api.patch(`/api/users/${id}/workflow-panel-open`, { workflow_panel_open })
+export const updateUserProjectViewMode = (id, project_view_mode) => api.patch(`/api/users/${id}/project-view-mode`, { project_view_mode })
+export const updateUserSidePanelOpen = (id, side_panel_open) => api.patch(`/api/users/${id}/side-panel-open`, { side_panel_open })
 
 // ── License ───────────────────────────────────────────────
 export const getLicenseStatus  = ()          => api.get('/api/license/status')

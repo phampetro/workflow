@@ -77,20 +77,36 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
     }
   }
 
+  // Backend luôn trả "message" tiếng Việt cứng (chỉ để log/debug) — hiển thị
+  // cho người dùng phải dịch qua "code" bằng i18n để đổi theo ngôn ngữ UI.
+  const translateUpdateResult = (res) => {
+    switch (res.code) {
+      case 'update_available':
+        return res.version ? t('about.updateAvailable', { version: res.version }) : t('about.updateAvailableGeneric')
+      case 'up_to_date':
+        return t('about.upToDate')
+      case 'git_not_found':
+        return t('about.gitNotFound')
+      case 'check_failed':
+      default:
+        return t('about.checkFailed')
+    }
+  }
+
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true)
     setUpdateStatus(null)
     try {
       const res = await systemApi.checkUpdate()
-      if (res.error === "GIT_NOT_FOUND") {
+      if (res.code === 'git_not_found' || res.code === 'check_failed') {
         setUpdateStatus('error')
-        setUpdateMsg(res.message)
+        setUpdateMsg(translateUpdateResult(res))
       } else if (res.hasUpdate) {
         setUpdateStatus('available')
-        setUpdateMsg(res.message)
+        setUpdateMsg(translateUpdateResult(res))
       } else {
         setUpdateStatus('latest')
-        setUpdateMsg(res.message)
+        setUpdateMsg(translateUpdateResult(res))
       }
     } catch (err) {
       message.error(t('about.checkUpdateError'))
@@ -128,7 +144,9 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
               if (st?.error) {
                 clearInterval(pingInterval)
                 setUpdateStatus('error')
-                setUpdateMsg(st.error)
+                setUpdateMsg(st.error.code === 'invalid_update'
+                  ? t('about.invalidUpdate', { detail: st.error.detail })
+                  : t('about.checkFailed'))
                 return
               }
             } catch { /* endpoint chưa có ở bản cũ — bỏ qua */ }

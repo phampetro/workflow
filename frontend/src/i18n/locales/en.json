@@ -73,7 +73,13 @@
     "checkUpdateError": "Could not check for updates.",
     "updatingMessage": "The system is downloading new code and will restart shortly...",
     "updateSuccessToast": "Update successful!",
-    "updateSendError": "Failed to send update command."
+    "updateSendError": "Failed to send update command.",
+    "updateAvailable": "A new version is available (v{{version}})",
+    "updateAvailableGeneric": "A new version is available",
+    "upToDate": "You're using the latest version",
+    "gitNotFound": "Git was not found on this system. Please install Git to use the update feature.",
+    "checkFailed": "Could not check for updates from GitHub.",
+    "invalidUpdate": "Invalid update: {{detail}}"
   },
   "dashboard": {
     "retry": "Retry",
@@ -121,7 +127,13 @@
     "menuDelete": "Delete Project",
     "noDescription": "No description",
     "openProjectAria": "Open project {{name}}",
-    "projectMenuAria": "Open project actions menu"
+    "projectMenuAria": "Open project actions menu",
+    "searchPlaceholder": "Search projects by name...",
+    "searchAria": "Search projects",
+    "searchNoResults": "No projects match \"{{query}}\".",
+    "viewModeAria": "View mode",
+    "viewGrid": "Grid",
+    "viewList": "List"
   },
   "projectDetail": {
     "loadWorkflowsError": "Error loading workflows: {{message}}",

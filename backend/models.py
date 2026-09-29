@@ -24,9 +24,12 @@ class User(Base):
     # cách với `language`, không phải tiện ích riêng trình duyệt (localStorage)
     # để đổi máy/đổi trình duyệt vẫn giữ đúng lựa chọn.
     workflow_view_mode = Column(String, default="grid")
-    # Đóng/mở panel 1/3 bên phải màn hình workflow — cùng lý do với
-    # workflow_view_mode: theo user trong DB, không phải localStorage.
-    workflow_panel_open = Column(Boolean, default=True)
+    # Chế độ xem danh sách project (thẻ/danh sách) ở Dashboard — độc lập với
+    # workflow_view_mode vì 2 danh sách khác nhau, đổi cái này không kéo theo cái kia.
+    project_view_mode = Column(String, default="grid")
+    # Đóng/mở panel 1/3 bên phải — DÙNG CHUNG cho cả Dashboard lẫn ProjectDetail
+    # (không còn riêng cho màn hình workflow nữa), theo user trong DB.
+    side_panel_open = Column(Boolean, default=True)
 
     def to_dict(self):
         return {
@@ -36,7 +39,8 @@ class User(Base):
             "is_active": self.is_active,
             "language": self.language or "vi",
             "workflow_view_mode": self.workflow_view_mode or "grid",
-            "workflow_panel_open": self.workflow_panel_open if self.workflow_panel_open is not None else True,
+            "project_view_mode": self.project_view_mode or "grid",
+            "side_panel_open": self.side_panel_open if self.side_panel_open is not None else True,
         }
 
 
