@@ -6,7 +6,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App, Switch, Progress } from 'antd'
+import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App, Switch, Progress, Drawer } from 'antd'
 const { Text, Title } = Typography
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -41,6 +41,24 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   // Đóng/mở panel 1/3 bên phải — cùng cách lưu với viewMode (theo user trong DB).
   const panelOpen = useStore((s) => s.workflowPanelOpen)
   const setPanelOpen = useStore((s) => s.setWorkflowPanelOpen)
+
+  // Nhận biết màn hình nhỏ (< 1200px) để tự động ẩn panel hoặc chuyển sang dạng Drawer trượt
+  const [isSmallScreen, setIsSmallScreen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 1200 : false))
+  // Trạng thái mở Drawer khi ở màn hình nhỏ (chỉ mở khi người dùng click, không ghi đè cài đặt panelOpen của Desktop)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      const small = window.innerWidth < 1200
+      setIsSmallScreen(small)
+      // Khi kéo to ra màn hình lớn (>= 1200px), đóng Drawer để hiển thị lại inline panel theo panelOpen đã lưu
+      if (!small) {
+        setDrawerOpen(false)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   const [packages, setPackages] = useState([])
   const [runHistory, setRunHistory] = useState([])
   const [loading, setLoading] = useState(true)
@@ -95,13 +113,14 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }, [])
 
   useEffect(() => {
-    if (!panelOpen) return
+    const isVisible = (!isSmallScreen && panelOpen) || (isSmallScreen && drawerOpen)
+    if (!isVisible) return
     loadHardware(true)
     const timer = setInterval(() => {
       loadHardware(false)
     }, 3000)
     return () => clearInterval(timer)
-  }, [panelOpen, loadHardware])
+  }, [panelOpen, drawerOpen, isSmallScreen, loadHardware])
 
   // Đọc trạng thái đang chạy từ Zustand (nguồn sự thật duy nhất)
   const activeRuns = useStore((s) => s.activeRuns)
@@ -622,225 +641,295 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
             />
           </Tooltip>
         </div>
-        <Tooltip title={panelOpen ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}>
+        <Tooltip title={(isSmallScreen ? drawerOpen : panelOpen) ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}>
           <Button
             type="text"
-            icon={panelOpen ? <PanelRightClose size="0.938rem" /> : <PanelRightOpen size="0.938rem" />}
-            onClick={() => setPanelOpen(!panelOpen)}
-            aria-label={panelOpen ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}
+            icon={(isSmallScreen ? drawerOpen : panelOpen) ? <PanelRightClose size="0.938rem" /> : <PanelRightOpen size="0.938rem" />}
+            onClick={() => {
+              if (isSmallScreen) {
+                setDrawerOpen(prev => !prev)
+              } else {
+                setPanelOpen(!panelOpen)
+              }
+            }}
+            aria-label={(isSmallScreen ? drawerOpen : panelOpen) ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}
             style={{ color: 'var(--text-secondary)' }}
           />
         </Tooltip>
       </div>
 
-      {/* Content — 2/3 danh sách workflow, 1/3 panel phụ (đang để trống, làm sau) */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ flex: panelOpen ? '0 0 66.6667%' : '1 1 100%', padding: '0.75rem 2.5rem', overflowY: 'auto' }}>
-          <Spin spinning={loading}>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={filteredWorkflows.map(w => w.id)} strategy={rectSortingStrategy}>
-                <div className={viewMode === 'list' ? 'list-workflows' : 'grid-workflows'} style={{ marginTop: '1.5rem' }}>
-                  {workflows.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description={
-                        <span style={{ color: 'var(--text-muted)' }}>
-                          {t('projectDetail.emptyWorkflowsPrefix')} <strong>{t('projectDetail.newWorkflow')}</strong> {t('projectDetail.emptyWorkflowsSuffix')}
-                        </span>
-                      }
-                      style={{ gridColumn: '1 / -1', padding: '3rem' }}
-                    />
-                  ) : filteredWorkflows.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description={
-                        <span style={{ color: 'var(--text-muted)' }}>
-                          {t('projectDetail.searchNoResults', { query: searchQuery.trim() })}
-                        </span>
-                      }
-                      style={{ gridColumn: '1 / -1', padding: '3rem' }}
-                    />
-                  ) : filteredWorkflows.map((wf) => {
-                    const wColor = wf.color || 'var(--accent-primary)'
-                    return (
-                      <WorkflowCard
-                        key={wf.id}
-                        workflow={wf}
-                        color={wColor}
-                        listView={viewMode === 'list'}
-                        dragDisabled={isSearching}
-                        onOpen={() => onOpenWorkflow(wf)}
-                        onEdit={() => handleEditWf(wf)}
-                        onDuplicate={() => handleDuplicateWorkflow(wf.id)}
-                        onExport={() => handleExportWorkflow(wf)}
-                        onDelete={() => handleDeleteWorkflow(wf.id)}
-                        isRunning={isWfRunning(wf.id)}
-                        onRun={(e) => handleRunWorkflow(wf, e)}
-                        onStop={(e) => handleStopWorkflow(wf, e)}
+      {/* Content — Tách 2 khối riêng biệt bo tròn góc (Danh sách workflow & Panel) */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', padding: '0.875rem 1.5rem', gap: '1rem', background: 'var(--bg-base)' }}>
+        <div style={{
+          flex: (!isSmallScreen && panelOpen) ? '1 1 67%' : '1 1 100%',
+          minWidth: 0,
+          background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius-lg, 16px)',
+          border: '1px solid var(--border-default)',
+          boxShadow: 'var(--shadow-sm)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          <div style={{ flex: 1, padding: '1rem 1.75rem', overflowY: 'auto' }}>
+            <Spin spinning={loading}>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={filteredWorkflows.map(w => w.id)} strategy={rectSortingStrategy}>
+                  <div className={viewMode === 'list' ? 'list-workflows' : 'grid-workflows'} style={{ marginTop: '0.5rem' }}>
+                    {workflows.length === 0 ? (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            {t('projectDetail.emptyWorkflowsPrefix')} <strong>{t('projectDetail.newWorkflow')}</strong> {t('projectDetail.emptyWorkflowsSuffix')}
+                          </span>
+                        }
+                        style={{ gridColumn: '1 / -1', padding: '3rem' }}
                       />
-                    )
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
-          </Spin>
+                    ) : filteredWorkflows.length === 0 ? (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            {t('projectDetail.searchNoResults', { query: searchQuery.trim() })}
+                          </span>
+                        }
+                        style={{ gridColumn: '1 / -1', padding: '3rem' }}
+                      />
+                    ) : filteredWorkflows.map((wf) => {
+                      const wColor = wf.color || 'var(--accent-primary)'
+                      return (
+                        <WorkflowCard
+                          key={wf.id}
+                          workflow={wf}
+                          color={wColor}
+                          listView={viewMode === 'list'}
+                          dragDisabled={isSearching}
+                          onOpen={() => onOpenWorkflow(wf)}
+                          onEdit={() => handleEditWf(wf)}
+                          onDuplicate={() => handleDuplicateWorkflow(wf.id)}
+                          onExport={() => handleExportWorkflow(wf)}
+                          onDelete={() => handleDeleteWorkflow(wf.id)}
+                          isRunning={isWfRunning(wf.id)}
+                          onRun={(e) => handleRunWorkflow(wf, e)}
+                          onStop={(e) => handleStopWorkflow(wf, e)}
+                        />
+                      )
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </Spin>
+          </div>
         </div>
 
-        {panelOpen && (
-          <div style={{ flex: '0 0 33.3333%', borderLeft: '1px solid var(--border-default)', background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-            {/* Vùng nội dung chính của panel (để trống cho chức năng bổ sung sau) */}
-            <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={<span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{t('projectDetail.sidePanelEmpty')}</span>}
-                style={{ margin: 0 }}
-              />
-            </div>
-
-            {/* Thẻ phần cứng CPU & RAM hiển thị ở đáy panel */}
-            <div style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--border-default)', background: 'var(--bg-base)', flexShrink: 0 }}>
-              {/* Header của riêng widget System Resources */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', padding: '0 0.125rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                  <Activity size="0.8125rem" style={{ color: 'var(--accent-primary)' }} />
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                    {t('projectDetail.hardwareTitle')}
-                  </span>
-                </div>
-                <Tooltip title={t('projectDetail.refreshHardware')}>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />}
-                    onClick={() => loadHardware(true)}
-                    style={{ color: 'var(--text-muted)', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                  />
-                </Tooltip>
+        {/* Nội dung bên trong Panel (dùng chung cho cả Inline lẫn Drawer) */}
+        {(() => {
+          const panelContent = (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              {/* Vùng nội dung chính của panel (để trống cho chức năng bổ sung sau) */}
+              <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={<span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{t('projectDetail.sidePanelEmpty')}</span>}
+                  style={{ margin: 0 }}
+                />
               </div>
-              {hardware && hardware.cpu ? (
-                <div style={{
-                  padding: '0.75rem 0.875rem',
-                  background: 'var(--bg-surface)',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-subtle)',
-                  display: 'flex',
-                  alignItems: 'stretch',
-                  gap: '0.75rem',
-                  boxShadow: 'var(--shadow-sm)'
-                }}>
-                  {/* Cột trái: CPU */}
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                        <Cpu size="0.875rem" style={{ color: 'var(--accent-primary)' }} />
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>CPU</span>
-                      </div>
-                      <Tag
-                        color={hardware.cpu.percent > 85 ? 'error' : hardware.cpu.percent > 60 ? 'warning' : 'processing'}
-                        style={{ margin: 0, fontSize: '0.6875rem', padding: '0 4px', lineHeight: '18px', fontWeight: 600, borderRadius: 4 }}
-                      >
-                        {hardware.cpu.percent}%
-                      </Tag>
-                    </div>
 
-                    <div
-                      style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={hardware.cpu.name}
-                    >
-                      {hardware.cpu.name || 'Processor'}
-                    </div>
-
-                    <div style={{ fontSize: '0.7188rem', color: 'var(--text-muted)' }}>
-                      {hardware.cpu.physical_cores} {t('projectDetail.coresSuffix')} · {hardware.cpu.logical_cores} {t('projectDetail.threadsSuffix')}
-                    </div>
-
-                    {/* Tiêu thụ của PyFlow App */}
-                    <div style={{
-                      marginTop: '0.125rem',
-                      paddingTop: '0.25rem',
-                      borderTop: '1px dashed var(--border-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.7188rem',
-                      color: 'var(--text-secondary)'
-                    }}>
-                      <span>{t('projectDetail.appUsage')}:</span>
-                      <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>
-                        {hardware.app?.cpu_percent ?? 0}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Vạch ngăn cách giữa CPU và RAM */}
-                  <div style={{ width: 1, background: 'var(--border-default)', alignSelf: 'stretch', margin: '2px 0' }} />
-
-                  {/* Cột phải: RAM */}
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                        <Activity size="0.875rem" style={{ color: '#00d4aa' }} />
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>RAM</span>
-                      </div>
-                      <Tag
-                        color={hardware.memory?.percent > 85 ? 'error' : hardware.memory?.percent > 70 ? 'warning' : 'success'}
-                        style={{ margin: 0, fontSize: '0.6875rem', padding: '0 4px', lineHeight: '18px', fontWeight: 600, borderRadius: 4 }}
-                      >
-                        {hardware.memory?.percent ?? 0}%
-                      </Tag>
-                    </div>
-
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {hardware.memory?.used_gb ?? '-'} / {hardware.memory?.total_gb ?? '-'} <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-secondary)' }}>GB</span>
-                    </div>
-
-                    <div style={{ fontSize: '0.7188rem', color: 'var(--text-muted)' }}>
-                      {t('projectDetail.ramFree')}: <span style={{ color: '#10b981', fontWeight: 500 }}>{hardware.memory?.free_gb ?? '-'} GB</span>
-                    </div>
-
-                    {/* Tiêu thụ của PyFlow App (đơn vị MB) */}
-                    <div style={{
-                      marginTop: '0.125rem',
-                      paddingTop: '0.25rem',
-                      borderTop: '1px dashed var(--border-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.7188rem',
-                      color: 'var(--text-secondary)'
-                    }}>
-                      <span>{t('projectDetail.appUsage')}:</span>
-                      <span style={{ fontWeight: 600, color: '#00d4aa' }}>
-                        {hardware.app?.memory_mb ?? 0} MB
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  padding: '0.625rem 0.875rem',
-                  background: 'var(--bg-surface)',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-subtle)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.5rem'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                    <Spin size="small" spinning={hwLoading} />
-                    <span style={{ fontSize: '0.75rem', color: hwError ? '#ef4444' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hwError || ''}>
-                      {hwError ? hwError : (hwLoading ? t('projectDetail.hardwareLoading', { defaultValue: 'Đang tải thông số...' }) : t('projectDetail.hardwareLoadFailed', { defaultValue: 'Chưa có dữ liệu phần cứng' }))}
+              {/* Thẻ phần cứng CPU & RAM hiển thị ở đáy panel */}
+              <div style={{
+                padding: '0.75rem 0.875rem',
+                borderTop: '1px solid var(--border-default)',
+                background: 'var(--bg-base)',
+                flexShrink: 0,
+                borderRadius: '0 0 var(--radius-lg, 16px) var(--radius-lg, 16px)'
+              }}>
+                {/* Header của riêng widget System Resources */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', padding: '0 0.125rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                    <Activity size="0.8125rem" style={{ color: 'var(--accent-primary)' }} />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                      {t('projectDetail.hardwareTitle')}
                     </span>
                   </div>
-                  <Button size="small" type="text" icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />} onClick={() => loadHardware(true)}>
-                    {t('projectDetail.refreshHardware', { defaultValue: 'Thử lại' })}
-                  </Button>
+                  <Tooltip title={t('projectDetail.refreshHardware')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />}
+                      onClick={() => loadHardware(true)}
+                      style={{ color: 'var(--text-muted)', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                    />
+                  </Tooltip>
                 </div>
-              )}
+                {hardware && hardware.cpu ? (
+                  <div style={{
+                    padding: '0.75rem 0.875rem',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    gap: '0.75rem',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}>
+                    {/* Cột trái: CPU */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <Cpu size="0.875rem" style={{ color: 'var(--accent-primary)' }} />
+                          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>CPU</span>
+                        </div>
+                        <Tag
+                          color={hardware.cpu.percent > 85 ? 'error' : hardware.cpu.percent > 60 ? 'warning' : 'processing'}
+                          style={{ margin: 0, fontSize: '0.6875rem', padding: '0 4px', lineHeight: '18px', fontWeight: 600, borderRadius: 4 }}
+                        >
+                          {hardware.cpu.percent}%
+                        </Tag>
+                      </div>
+
+                      <div
+                        style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={hardware.cpu.name}
+                      >
+                        {hardware.cpu.name || 'Processor'}
+                      </div>
+
+                      <div style={{ fontSize: '0.7188rem', color: 'var(--text-muted)' }}>
+                        {hardware.cpu.physical_cores} {t('projectDetail.coresSuffix')} · {hardware.cpu.logical_cores} {t('projectDetail.threadsSuffix')}
+                      </div>
+
+                      {/* Tiêu thụ của PyFlow App */}
+                      <div style={{
+                        marginTop: '0.125rem',
+                        paddingTop: '0.25rem',
+                        borderTop: '1px dashed var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '0.7188rem',
+                        color: 'var(--text-secondary)'
+                      }}>
+                        <span>{t('projectDetail.appUsage')}:</span>
+                        <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>
+                          {hardware.app?.cpu_percent ?? 0}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Vạch ngăn cách giữa CPU và RAM */}
+                    <div style={{ width: 1, background: 'var(--border-default)', alignSelf: 'stretch', margin: '2px 0' }} />
+
+                    {/* Cột phải: RAM */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <Activity size="0.875rem" style={{ color: '#00d4aa' }} />
+                          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>RAM</span>
+                        </div>
+                        <Tag
+                          color={hardware.memory?.percent > 85 ? 'error' : hardware.memory?.percent > 70 ? 'warning' : 'success'}
+                          style={{ margin: 0, fontSize: '0.6875rem', padding: '0 4px', lineHeight: '18px', fontWeight: 600, borderRadius: 4 }}
+                        >
+                          {hardware.memory?.percent ?? 0}%
+                        </Tag>
+                      </div>
+
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {hardware.memory?.used_gb ?? '-'} / {hardware.memory?.total_gb ?? '-'} <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-secondary)' }}>GB</span>
+                      </div>
+
+                      <div style={{ fontSize: '0.7188rem', color: 'var(--text-muted)' }}>
+                        {t('projectDetail.ramFree')}: <span style={{ color: '#10b981', fontWeight: 500 }}>{hardware.memory?.free_gb ?? '-'} GB</span>
+                      </div>
+
+                      {/* Tiêu thụ của PyFlow App (đơn vị MB) */}
+                      <div style={{
+                        marginTop: '0.125rem',
+                        paddingTop: '0.25rem',
+                        borderTop: '1px dashed var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '0.7188rem',
+                        color: 'var(--text-secondary)'
+                      }}>
+                        <span>{t('projectDetail.appUsage')}:</span>
+                        <span style={{ fontWeight: 600, color: '#00d4aa' }}>
+                          {hardware.app?.memory_mb ?? 0} MB
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    padding: '0.625rem 0.875rem',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.5rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                      <Spin size="small" spinning={hwLoading} />
+                      <span style={{ fontSize: '0.75rem', color: hwError ? '#ef4444' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hwError || ''}>
+                        {hwError ? hwError : (hwLoading ? t('projectDetail.hardwareLoading', { defaultValue: 'Đang tải thông số...' }) : t('projectDetail.hardwareLoadFailed', { defaultValue: 'Chưa có dữ liệu phần cứng' }))}
+                      </span>
+                    </div>
+                    <Button size="small" type="text" icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />} onClick={() => loadHardware(true)}>
+                      {t('projectDetail.refreshHardware', { defaultValue: 'Thử lại' })}
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )
+
+          // 1. Màn hình lớn (>= 1200px): Hiển thị dạng khối riêng biệt bo tròn góc bên phải
+          if (!isSmallScreen && panelOpen) {
+            return (
+              <div style={{
+                flex: '0 0 33%',
+                maxWidth: 420,
+                minWidth: 320,
+                background: 'var(--bg-surface)',
+                borderRadius: 'var(--radius-lg, 16px)',
+                border: '1px solid var(--border-default)',
+                boxShadow: 'var(--shadow-sm)',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}>
+                {panelContent}
+              </div>
+            )
+          }
+
+          // 2. Màn hình nhỏ (< 1200px): Hiển thị dạng Drawer trượt từ mép phải đè lên trên
+          if (isSmallScreen) {
+            return (
+              <Drawer
+                placement="right"
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                width={Math.min(420, typeof window !== 'undefined' ? window.innerWidth * 0.88 : 400)}
+                styles={{
+                  body: { padding: 0, height: '100%', background: 'var(--bg-surface)' },
+                  header: { padding: '8px 14px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }
+                }}
+                closeIcon={<PanelRightClose size="1rem" style={{ color: 'var(--text-secondary)' }} />}
+                destroyOnHidden
+              >
+                {panelContent}
+              </Drawer>
+            )
+          }
+
+          return null
+        })()}
       </div>
 
       {/* Modal */}
