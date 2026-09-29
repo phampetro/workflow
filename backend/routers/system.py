@@ -246,6 +246,7 @@ def check_update():
             
             return {"hasUpdate": False, "message": "Bạn đang dùng phiên bản mới nhất"}
         except Exception as e:
+            logger.exception("Kiểm tra cập nhật GitHub thất bại")
             return {"hasUpdate": False, "error": str(e), "message": "Không thể kiểm tra cập nhật từ GitHub."}
 
     try:

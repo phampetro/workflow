@@ -808,6 +808,13 @@ def run_browser_block(
 
             log("info", tr(language, "browser_opening_window", headless=headless))
 
+            # Khi chạy chế độ xem trình duyệt / debug (not headless): phóng to tối đa toàn màn hình
+            # và đặt no_viewport=True để Chromium tự động lấp đầy kích thước màn hình máy tính.
+            if not headless:
+                launch_args.append("--start-maximized")
+
+            context_viewport_args = {"no_viewport": True} if not headless else {"viewport": {"width": 1280, "height": 800}}
+
             try:
                 if browser_profile_dir:
                     os.makedirs(browser_profile_dir, exist_ok=True)
@@ -819,7 +826,7 @@ def run_browser_block(
                         args=launch_args,
                         chromium_sandbox=CHROMIUM_SANDBOX,
                         ignore_default_args=["--enable-automation"],
-                        viewport={"width": 1280, "height": 800}
+                        **context_viewport_args
                     )
                     page = context.pages[0] if context.pages else context.new_page()
                     browser = None
@@ -832,7 +839,7 @@ def run_browser_block(
                         ignore_default_args=["--enable-automation"]
                     )
                     context = browser.new_context(
-                        viewport={"width": 1280, "height": 800}
+                        **context_viewport_args
                     )
                     page = context.new_page()
             except Exception as e:

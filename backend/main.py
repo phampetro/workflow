@@ -31,11 +31,24 @@ from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
 from routers import projects, workflows, users, dashboard, files, schedule_endpoints, ai_codegen, database, system, license
 from services import licensing
+from services.venv_manager import DATA_DIR
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("pyflow.main")
+
+# start.vbs chạy exe với cửa sổ ẩn (window style 0) nên stdout không ai xem được —
+# lỗi kiểu "Không thể kiểm tra cập nhật từ GitHub" xảy ra ở máy khách thì không
+# có cách nào tra ra nguyên nhân thật. Ghi thêm ra file trong DATA_DIR (đã là thư
+# mục ghi được, chung với pyflow.db) để đọc lại sau khi gặp lỗi.
+try:
+    from logging.handlers import RotatingFileHandler
+    _file_handler = RotatingFileHandler(DATA_DIR / "app.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    _file_handler.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+    logging.getLogger().addHandler(_file_handler)
+except Exception:
+    pass
 
 from database import AsyncSessionLocal
 from sqlalchemy import select, update
