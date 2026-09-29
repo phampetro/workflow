@@ -18,3 +18,7 @@ xlrd==2.0.2
 playwright==1.61.0
 cryptography==46.0.3
 psutil==7.2.2
+# routers/system.py dùng trực tiếp CA bundle của certifi cho request tới GitHub
+# (tránh phụ thuộc Windows cert store — xem comment _github_ssl_context()).
+# Trước đây chỉ có gián tiếp qua httpx, giờ pin cứng vì đã import trực tiếp.
+certifi==2026.6.17

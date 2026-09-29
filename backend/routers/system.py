@@ -4,6 +4,7 @@ import subprocess
 import os
 import sys
 import json
+import ssl
 import urllib.request
 import shutil
 import threading
@@ -11,6 +12,22 @@ import threading
 logger = logging.getLogger("pyflow.system")
 
 router = APIRouter(prefix="/api/system", tags=["System"])
+
+# ── SSL context dùng chung cho mọi request tới GitHub ────────────────────────
+# `urlopen()` mặc định (không truyền context) dựa vào Windows Certificate Store
+# qua enum_certificates(), mà store đó chỉ có sẵn intermediate cert của GitHub
+# SAU KHI đã được trình duyệt (Schannel) tự động tải về (AIA fetching) ít nhất
+# một lần. Máy mới cài chưa từng dùng trình duyệt hit domain đó thì Python
+# (OpenSSL, không tự AIA-fetch) báo "unable to get local issuer certificate"
+# dù trình duyệt trên chính máy đó vào GitHub bình thường. Dùng CA bundle của
+# certifi (đã có sẵn qua httpx, PyInstaller tự đóng gói cacert.pem nhờ
+# hook-certifi.py) để không phụ thuộc Windows cert store nữa.
+def _github_ssl_context() -> ssl.SSLContext:
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 # Lỗi của lần cập nhật gần nhất.
 # run_updater() chạy trong threading.Timer, tức SAU KHI /update đã trả response
@@ -223,9 +240,9 @@ def check_update():
         try:
             req = urllib.request.Request("https://api.github.com/repos/phampetro/workflow_re/releases/latest")
             req.add_header("User-Agent", "PyFlow-Studio-Updater")
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=10, context=_github_ssl_context()) as response:
                 release_data = json.loads(response.read().decode())
-            
+
             latest_version = release_data.get("tag_name", "").lstrip("v")
             assets = release_data.get("assets", [])
             download_url = None
@@ -267,7 +284,7 @@ def execute_update():
         try:
             req = urllib.request.Request("https://api.github.com/repos/phampetro/workflow_re/releases/latest")
             req.add_header("User-Agent", "PyFlow-Studio-Updater")
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=10, context=_github_ssl_context()) as response:
                 release_data = json.loads(response.read().decode())
                 download_url = None
                 sig_url = None
@@ -301,7 +318,7 @@ def execute_update():
                 # vĩnh viễn, trong khi API đã trả "Đang cập nhật và khởi động lại…"
                 # từ lâu — UI quay spinner mãi, không có gì xảy ra, không có log.
                 # (check_update ở trên đã có timeout=10, chỗ này bị bỏ sót.)
-                with urllib.request.urlopen(req, timeout=120) as response, open(zip_path, 'wb') as out_file:
+                with urllib.request.urlopen(req, timeout=120, context=_github_ssl_context()) as response, open(zip_path, 'wb') as out_file:
                     shutil.copyfileobj(response, out_file)
 
                 # ── CHỐT CHẶN: xác minh chữ ký TRƯỚC khi giải nén ────────────
@@ -313,7 +330,7 @@ def execute_update():
                 try:
                     sig_req = urllib.request.Request(sig_url)
                     sig_req.add_header("User-Agent", "PyFlow-Studio-Updater")
-                    with urllib.request.urlopen(sig_req, timeout=30) as r:
+                    with urllib.request.urlopen(sig_req, timeout=30, context=_github_ssl_context()) as r:
                         sig_text = r.read().decode("utf-8")
                     verify_update(zip_path, sig_text, PUBLIC_KEY_B64)
                 except Exception as e:
