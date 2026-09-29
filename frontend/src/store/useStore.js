@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
-import { updateUserLanguage } from '../api/client'
+import { updateUserLanguage, updateUserWorkflowViewMode, updateUserWorkflowPanelOpen } from '../api/client'
 
 // Khôi phục user từ localStorage nếu có
 const _savedUser = (() => {
@@ -22,7 +22,7 @@ const _runsChannel = typeof BroadcastChannel !== 'undefined'
 
 const useStore = create((set, get) => ({
   // --- Users ---
-  currentUser: _savedUser,   // { id, name, created_at, language } | null
+  currentUser: _savedUser,   // { id, name, created_at, language, workflow_view_mode } | null
   setCurrentUser: (user) => {
     if (user) {
       localStorage.setItem('pyflow_current_user', JSON.stringify(user))
@@ -30,7 +30,12 @@ const useStore = create((set, get) => ({
     } else {
       localStorage.removeItem('pyflow_current_user')
     }
-    set({ currentUser: user, language: user?.language || 'vi' })
+    set({
+      currentUser: user,
+      language: user?.language || 'vi',
+      workflowViewMode: user?.workflow_view_mode || 'grid',
+      workflowPanelOpen: user?.workflow_panel_open !== false,
+    })
   },
 
   // --- Language (lưu theo user trong DB, không phải theo trình duyệt) ---
@@ -46,6 +51,34 @@ const useStore = create((set, get) => ({
       // lỗi mạng chỉ làm mất phần lưu, không làm mất hiệu ứng đổi ngôn ngữ.
       updateUserLanguage(user.id, language).catch(() => {})
       return { language, currentUser: updatedUser }
+    })
+  },
+
+  // --- Chế độ xem workflow (thẻ/danh sách) — cùng cách với Language: lưu theo
+  // user trong DB, không phải localStorage, để đổi máy/trình duyệt vẫn đúng ý. ---
+  workflowViewMode: _savedUser?.workflow_view_mode || 'grid',
+  setWorkflowViewMode: (workflowViewMode) => {
+    set((state) => {
+      const user = state.currentUser
+      if (!user) return { workflowViewMode }
+      const updatedUser = { ...user, workflow_view_mode: workflowViewMode }
+      localStorage.setItem('pyflow_current_user', JSON.stringify(updatedUser))
+      updateUserWorkflowViewMode(user.id, workflowViewMode).catch(() => {})
+      return { workflowViewMode, currentUser: updatedUser }
+    })
+  },
+
+  // --- Đóng/mở panel 1/3 bên phải màn hình workflow — cùng cách với
+  // workflowViewMode: lưu theo user trong DB, không phải localStorage. ---
+  workflowPanelOpen: _savedUser?.workflow_panel_open !== false,
+  setWorkflowPanelOpen: (workflowPanelOpen) => {
+    set((state) => {
+      const user = state.currentUser
+      if (!user) return { workflowPanelOpen }
+      const updatedUser = { ...user, workflow_panel_open: workflowPanelOpen }
+      localStorage.setItem('pyflow_current_user', JSON.stringify(updatedUser))
+      updateUserWorkflowPanelOpen(user.id, workflowPanelOpen).catch(() => {})
+      return { workflowPanelOpen, currentUser: updatedUser }
     })
   },
 

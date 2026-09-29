@@ -25,6 +25,152 @@ def _set_update_error(msg: str) -> None:
     _update_error = msg
 
 
+# ── Hardware & Resource Monitoring ─────────────────────────────
+try:
+    import psutil
+    psutil.cpu_percent(interval=None)
+except Exception:
+    psutil = None
+
+_cached_cpu_name: str | None = None
+_cached_cpu_cores: dict | None = None
+
+
+def _get_cpu_info():
+    global _cached_cpu_name, _cached_cpu_cores
+    if _cached_cpu_name is None:
+        name = ""
+        if sys.platform == "win32":
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+                name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+                name = name.strip()
+            except Exception:
+                pass
+        if not name:
+            import platform
+            name = platform.processor() or "CPU"
+        _cached_cpu_name = name
+
+    if _cached_cpu_cores is None:
+        phys = None
+        logic = os.cpu_count() or 1
+        if psutil:
+            try:
+                phys = psutil.cpu_count(logical=False)
+            except Exception:
+                pass
+        _cached_cpu_cores = {
+            "physical_cores": phys or logic,
+            "logical_cores": logic
+        }
+
+    cpu_pct = 0.0
+    if psutil:
+        try:
+            cpu_pct = psutil.cpu_percent(interval=0.1)
+        except Exception:
+            pass
+
+    return {
+        "name": _cached_cpu_name,
+        "physical_cores": _cached_cpu_cores["physical_cores"],
+        "logical_cores": _cached_cpu_cores["logical_cores"],
+        "percent": round(cpu_pct, 1)
+    }
+
+
+def _get_memory_info():
+    if psutil:
+        try:
+            mem = psutil.virtual_memory()
+            return {
+                "total_gb": round(mem.total / (1024 ** 3), 2),
+                "used_gb": round(mem.used / (1024 ** 3), 2),
+                "free_gb": round(mem.available / (1024 ** 3), 2),
+                "percent": round(mem.percent, 1)
+            }
+        except Exception:
+            pass
+    return {
+        "total_gb": 0,
+        "used_gb": 0,
+        "free_gb": 0,
+        "percent": 0.0
+    }
+
+
+def _get_disk_info():
+    if psutil:
+        try:
+            d = psutil.disk_usage(os.getcwd())
+            return {
+                "total_gb": round(d.total / (1024 ** 3), 1),
+                "free_gb": round(d.free / (1024 ** 3), 1),
+                "used_gb": round((d.total - d.free) / (1024 ** 3), 1),
+                "percent": round(d.percent, 1)
+            }
+        except Exception:
+            pass
+    return {
+        "total_gb": 0,
+        "free_gb": 0,
+        "used_gb": 0,
+        "percent": 0.0
+    }
+
+
+_this_process = None
+
+def _get_app_resource_usage():
+    global _this_process
+    if not psutil:
+        return {"cpu_percent": 0.0, "memory_mb": 0.0}
+    try:
+        if _this_process is None:
+            _this_process = psutil.Process(os.getpid())
+            try:
+                _this_process.cpu_percent()
+            except Exception:
+                pass
+
+        mem_rss = _this_process.memory_info().rss
+        cpu_pct = _this_process.cpu_percent()
+
+        try:
+            for child in _this_process.children(recursive=True):
+                try:
+                    mem_rss += child.memory_info().rss
+                    cpu_pct += child.cpu_percent()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except Exception:
+            pass
+
+        logical_cores = psutil.cpu_count(logical=True) or 1
+        normalized_cpu_pct = round(cpu_pct / logical_cores, 1)
+
+        return {
+            "cpu_percent": normalized_cpu_pct,
+            "memory_mb": round(mem_rss / (1024 * 1024), 1)
+        }
+    except Exception:
+        return {"cpu_percent": 0.0, "memory_mb": 0.0}
+
+
+@router.get("/hardware")
+def get_hardware_info():
+    """Thông tin phần cứng máy tính và tài nguyên CPU/RAM/Disk theo thời gian thực."""
+    cpu_info = _get_cpu_info()
+    return {
+        "cpu": cpu_info,
+        "memory": _get_memory_info(),
+        "disk": _get_disk_info(),
+        "app": _get_app_resource_usage()
+    }
+
+
 @router.get("/update-status")
 def get_update_status():
     """Trạng thái lần cập nhật gần nhất. FE poll sau khi bấm Cập nhật."""

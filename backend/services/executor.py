@@ -21,7 +21,8 @@ async def execute_workflow(
     workflow_name: str,
     graph_json: str,
     log_callback: Callable,
-    stop_flag: asyncio.Event
+    stop_flag: asyncio.Event,
+    language: str = "vi"
 ) -> dict:
     loop = asyncio.get_running_loop()
 
@@ -34,10 +35,10 @@ async def execute_workflow(
     # thứ tự đã xếp và broadcast_log không chờ ở đâu (Queue không giới hạn).
     _last_log_future = None
 
-    def sync_log_cb(block_id, level, msg):
+    def sync_log_cb(block_id, level, msg, event=None):
         nonlocal _last_log_future
         _last_log_future = asyncio.run_coroutine_threadsafe(
-            log_callback(block_id, level, msg),
+            log_callback(block_id, level, msg, event=event),
             loop
         )
 
@@ -59,7 +60,8 @@ async def execute_workflow(
             workflow_name,
             graph_json,
             sync_log_cb,
-            SyncStopEvent()
+            SyncStopEvent(),
+            language
         )
         return result
     except Exception as e:

@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History } from 'lucide-react'
-import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject, API_BASE } from '../api/client'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History, Search, LayoutGrid, List, PanelRightClose, PanelRightOpen, Cpu, HardDrive, Activity } from 'lucide-react'
+import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject, getSystemHardware, API_BASE } from '../api/client'
 import AutoInstallModal from '../components/AutoInstallModal'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App } from 'antd'
+import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App, Switch, Progress } from 'antd'
 const { Text, Title } = Typography
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -33,6 +33,14 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   const { t, i18n } = useTranslation()
 
   const [workflows, setWorkflows] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
+  // Chế độ xem (thẻ/danh sách) — lưu theo user trong DB (giống Language), không
+  // phải localStorage, để đổi máy/trình duyệt vẫn giữ đúng lựa chọn.
+  const viewMode = useStore((s) => s.workflowViewMode)
+  const setViewMode = useStore((s) => s.setWorkflowViewMode)
+  // Đóng/mở panel 1/3 bên phải — cùng cách lưu với viewMode (theo user trong DB).
+  const panelOpen = useStore((s) => s.workflowPanelOpen)
+  const setPanelOpen = useStore((s) => s.setWorkflowPanelOpen)
   const [packages, setPackages] = useState([])
   const [runHistory, setRunHistory] = useState([])
   const [loading, setLoading] = useState(true)
@@ -58,6 +66,42 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   // Modal states for Packages and History
   const [packagesModalOpen, setPackagesModalOpen] = useState(false)
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
+
+  // Hardware monitor state
+  const [hardware, setHardware] = useState(null)
+  const [hwLoading, setHwLoading] = useState(false)
+  const [hwError, setHwError] = useState(null)
+
+  const loadHardware = useCallback(async (showLoading = false) => {
+    if (showLoading) setHwLoading(true)
+    try {
+      setHwError(null)
+      const res = await getSystemHardware()
+      const data = res?.data || res
+      if (data && data.cpu) {
+        setHardware(data)
+      } else {
+        setHwError('Dữ liệu không khớp: ' + JSON.stringify(data || res).slice(0, 120))
+      }
+    } catch (err) {
+      console.error('[Hardware Error]', err)
+      setHwError(err.message || String(err))
+      if (showLoading) {
+        toast.error(err.message || 'Lỗi tải thông tin phần cứng')
+      }
+    } finally {
+      if (showLoading) setHwLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!panelOpen) return
+    loadHardware(true)
+    const timer = setInterval(() => {
+      loadHardware(false)
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [panelOpen, loadHardware])
 
   // Đọc trạng thái đang chạy từ Zustand (nguồn sự thật duy nhất)
   const activeRuns = useStore((s) => s.activeRuns)
@@ -134,6 +178,18 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   }, [proj.id, workflows])
 
   useEffect(() => { loadWorkflows() }, [loadWorkflows])
+
+  // Lọc theo tên/mô tả — chỉ có ý nghĩa kéo-thả sắp xếp khi đang hiện ĐỦ danh
+  // sách (không lọc), nên khi có searchQuery vẫn tính index theo mảng đầy đủ ở
+  // handleDragEnd, còn kéo-thả bị tắt (xem prop dragDisabled của WorkflowCard).
+  const isSearching = searchQuery.trim().length > 0
+  const filteredWorkflows = useMemo(() => {
+    if (!isSearching) return workflows
+    const q = searchQuery.trim().toLowerCase()
+    return workflows.filter((w) =>
+      w.name?.toLowerCase().includes(q) || w.description?.toLowerCase().includes(q)
+    )
+  }, [workflows, searchQuery, isSearching])
 
   const handleCloseWfModal = () => {
     setIsWfModalOpen(false)
@@ -251,6 +307,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const handleDragEnd = async ({ active, over }) => {
+    if (isSearching) return // sắp xếp theo index của danh sách ĐÃ LỌC sẽ ra sort_order sai
     if (!over || active.id === over.id) return
     const oldIndex = workflows.findIndex(w => w.id === active.id)
     const newIndex = workflows.findIndex(w => w.id === over.id)
@@ -542,44 +599,248 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         </Space>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, padding: '0.75rem 2.5rem', overflowY: 'auto' }}>
-        <Spin spinning={loading}>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={workflows.map(w => w.id)} strategy={rectSortingStrategy}>
-              <div className="grid-workflows" style={{ marginTop: '1.5rem' }}>
-                {workflows.length === 0 ? (
-                  <Empty 
-                    image={Empty.PRESENTED_IMAGE_SIMPLE} 
-                    description={
-                      <span style={{ color: 'var(--text-muted)' }}>
-                        {t('projectDetail.emptyWorkflowsPrefix')} <strong>{t('projectDetail.newWorkflow')}</strong> {t('projectDetail.emptyWorkflowsSuffix')}
-                      </span>
-                    }
-                    style={{ gridColumn: '1 / -1', padding: '3rem' }}
-                  />
-                ) : workflows.map((wf) => {
-                  const wColor = wf.color || 'var(--accent-primary)'
-                  return (
-                    <WorkflowCard
-                      key={wf.id}
-                      workflow={wf}
-                      color={wColor}
-                      onOpen={() => onOpenWorkflow(wf)}
-                      onEdit={() => handleEditWf(wf)}
-                      onDuplicate={() => handleDuplicateWorkflow(wf.id)}
-                      onExport={() => handleExportWorkflow(wf)}
-                      onDelete={() => handleDeleteWorkflow(wf.id)}
-                      isRunning={isWfRunning(wf.id)}
-                      onRun={(e) => handleRunWorkflow(wf, e)}
-                      onStop={(e) => handleStopWorkflow(wf, e)}
+      {/* Toolbar phụ — tìm kiếm + chế độ xem (trái), đóng/mở panel (phải) */}
+      <div style={{ height: 'var(--toolbar-height)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2.5rem', background: 'var(--bg-base)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <Input
+            allowClear
+            prefix={<Search size="0.875rem" style={{ color: 'var(--text-muted)' }} />}
+            placeholder={t('projectDetail.searchPlaceholder')}
+            aria-label={t('projectDetail.searchAria')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: 320 }}
+          />
+          <div style={{ width: 1, height: '1.25rem', background: 'var(--border-default)' }} />
+          <Tooltip title={viewMode === 'list' ? t('projectDetail.viewGrid') : t('projectDetail.viewList')}>
+            <Switch
+              aria-label={t('projectDetail.viewModeAria')}
+              checked={viewMode === 'list'}
+              onChange={(checked) => setViewMode(checked ? 'list' : 'grid')}
+              checkedChildren={<span className="ant-switch-icon-wrap"><List size="0.75rem" /></span>}
+              unCheckedChildren={<span className="ant-switch-icon-wrap"><LayoutGrid size="0.75rem" /></span>}
+            />
+          </Tooltip>
+        </div>
+        <Tooltip title={panelOpen ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}>
+          <Button
+            type="text"
+            icon={panelOpen ? <PanelRightClose size="0.938rem" /> : <PanelRightOpen size="0.938rem" />}
+            onClick={() => setPanelOpen(!panelOpen)}
+            aria-label={panelOpen ? t('projectDetail.panelClose') : t('projectDetail.panelOpen')}
+            style={{ color: 'var(--text-secondary)' }}
+          />
+        </Tooltip>
+      </div>
+
+      {/* Content — 2/3 danh sách workflow, 1/3 panel phụ (đang để trống, làm sau) */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: panelOpen ? '0 0 66.6667%' : '1 1 100%', padding: '0.75rem 2.5rem', overflowY: 'auto' }}>
+          <Spin spinning={loading}>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={filteredWorkflows.map(w => w.id)} strategy={rectSortingStrategy}>
+                <div className={viewMode === 'list' ? 'list-workflows' : 'grid-workflows'} style={{ marginTop: '1.5rem' }}>
+                  {workflows.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description={
+                        <span style={{ color: 'var(--text-muted)' }}>
+                          {t('projectDetail.emptyWorkflowsPrefix')} <strong>{t('projectDetail.newWorkflow')}</strong> {t('projectDetail.emptyWorkflowsSuffix')}
+                        </span>
+                      }
+                      style={{ gridColumn: '1 / -1', padding: '3rem' }}
                     />
-                  )
-                })}
+                  ) : filteredWorkflows.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description={
+                        <span style={{ color: 'var(--text-muted)' }}>
+                          {t('projectDetail.searchNoResults', { query: searchQuery.trim() })}
+                        </span>
+                      }
+                      style={{ gridColumn: '1 / -1', padding: '3rem' }}
+                    />
+                  ) : filteredWorkflows.map((wf) => {
+                    const wColor = wf.color || 'var(--accent-primary)'
+                    return (
+                      <WorkflowCard
+                        key={wf.id}
+                        workflow={wf}
+                        color={wColor}
+                        listView={viewMode === 'list'}
+                        dragDisabled={isSearching}
+                        onOpen={() => onOpenWorkflow(wf)}
+                        onEdit={() => handleEditWf(wf)}
+                        onDuplicate={() => handleDuplicateWorkflow(wf.id)}
+                        onExport={() => handleExportWorkflow(wf)}
+                        onDelete={() => handleDeleteWorkflow(wf.id)}
+                        isRunning={isWfRunning(wf.id)}
+                        onRun={(e) => handleRunWorkflow(wf, e)}
+                        onStop={(e) => handleStopWorkflow(wf, e)}
+                      />
+                    )
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </Spin>
+        </div>
+
+        {panelOpen && (
+          <div style={{ flex: '0 0 33.3333%', borderLeft: '1px solid var(--border-default)', background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            {/* Vùng nội dung chính của panel (để trống cho chức năng bổ sung sau) */}
+            <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={<span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{t('projectDetail.sidePanelEmpty')}</span>}
+                style={{ margin: 0 }}
+              />
+            </div>
+
+            {/* Thẻ phần cứng CPU & RAM hiển thị ở đáy panel */}
+            <div style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--border-default)', background: 'var(--bg-base)', flexShrink: 0 }}>
+              {/* Header của riêng widget System Resources */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', padding: '0 0.125rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  <Activity size="0.8125rem" style={{ color: 'var(--accent-primary)' }} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                    {t('projectDetail.hardwareTitle')}
+                  </span>
+                </div>
+                <Tooltip title={t('projectDetail.refreshHardware')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />}
+                    onClick={() => loadHardware(true)}
+                    style={{ color: 'var(--text-muted)', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                  />
+                </Tooltip>
               </div>
-            </SortableContext>
-          </DndContext>
-        </Spin>
+              {hardware && hardware.cpu ? (
+                <div style={{
+                  padding: '0.75rem 0.875rem',
+                  background: 'var(--bg-surface)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  alignItems: 'stretch',
+                  gap: '0.75rem',
+                  boxShadow: 'var(--shadow-sm)'
+                }}>
+                  {/* Cột trái: CPU */}
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <Cpu size="0.875rem" style={{ color: 'var(--accent-primary)' }} />
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>CPU</span>
+                      </div>
+                      <Tag
+                        color={hardware.cpu.percent > 85 ? 'error' : hardware.cpu.percent > 60 ? 'warning' : 'processing'}
+                        style={{ margin: 0, fontSize: '0.6875rem', padding: '0 4px', lineHeight: '18px', fontWeight: 600, borderRadius: 4 }}
+                      >
+                        {hardware.cpu.percent}%
+                      </Tag>
+                    </div>
+
+                    <div
+                      style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={hardware.cpu.name}
+                    >
+                      {hardware.cpu.name || 'Processor'}
+                    </div>
+
+                    <div style={{ fontSize: '0.7188rem', color: 'var(--text-muted)' }}>
+                      {hardware.cpu.physical_cores} {t('projectDetail.coresSuffix')} · {hardware.cpu.logical_cores} {t('projectDetail.threadsSuffix')}
+                    </div>
+
+                    {/* Tiêu thụ của PyFlow App */}
+                    <div style={{
+                      marginTop: '0.125rem',
+                      paddingTop: '0.25rem',
+                      borderTop: '1px dashed var(--border-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.7188rem',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      <span>{t('projectDetail.appUsage')}:</span>
+                      <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>
+                        {hardware.app?.cpu_percent ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vạch ngăn cách giữa CPU và RAM */}
+                  <div style={{ width: 1, background: 'var(--border-default)', alignSelf: 'stretch', margin: '2px 0' }} />
+
+                  {/* Cột phải: RAM */}
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <Activity size="0.875rem" style={{ color: '#00d4aa' }} />
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>RAM</span>
+                      </div>
+                      <Tag
+                        color={hardware.memory?.percent > 85 ? 'error' : hardware.memory?.percent > 70 ? 'warning' : 'success'}
+                        style={{ margin: 0, fontSize: '0.6875rem', padding: '0 4px', lineHeight: '18px', fontWeight: 600, borderRadius: 4 }}
+                      >
+                        {hardware.memory?.percent ?? 0}%
+                      </Tag>
+                    </div>
+
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {hardware.memory?.used_gb ?? '-'} / {hardware.memory?.total_gb ?? '-'} <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-secondary)' }}>GB</span>
+                    </div>
+
+                    <div style={{ fontSize: '0.7188rem', color: 'var(--text-muted)' }}>
+                      {t('projectDetail.ramFree')}: <span style={{ color: '#10b981', fontWeight: 500 }}>{hardware.memory?.free_gb ?? '-'} GB</span>
+                    </div>
+
+                    {/* Tiêu thụ của PyFlow App (đơn vị MB) */}
+                    <div style={{
+                      marginTop: '0.125rem',
+                      paddingTop: '0.25rem',
+                      borderTop: '1px dashed var(--border-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.7188rem',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      <span>{t('projectDetail.appUsage')}:</span>
+                      <span style={{ fontWeight: 600, color: '#00d4aa' }}>
+                        {hardware.app?.memory_mb ?? 0} MB
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '0.625rem 0.875rem',
+                  background: 'var(--bg-surface)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                    <Spin size="small" spinning={hwLoading} />
+                    <span style={{ fontSize: '0.75rem', color: hwError ? '#ef4444' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hwError || ''}>
+                      {hwError ? hwError : (hwLoading ? t('projectDetail.hardwareLoading', { defaultValue: 'Đang tải thông số...' }) : t('projectDetail.hardwareLoadFailed', { defaultValue: 'Chưa có dữ liệu phần cứng' }))}
+                    </span>
+                  </div>
+                  <Button size="small" type="text" icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />} onClick={() => loadHardware(true)}>
+                    {t('projectDetail.refreshHardware', { defaultValue: 'Thử lại' })}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}
@@ -882,7 +1143,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
 }
 
 // WorkflowCard component với drag-drop tích hợp
-function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, onDelete, isRunning, onRun, onStop }) {
+function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit, onDuplicate, onExport, onDelete, isRunning, onRun, onStop }) {
   const { t, i18n } = useTranslation()
   const {
     attributes,
@@ -932,23 +1193,84 @@ function WorkflowCard({ workflow, color, onOpen, onEdit, onDuplicate, onExport, 
     { key: 'delete', label: t('projectDetail.cardMenuDelete'), icon: <Trash2 size="0.938rem"/>, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } }
   ]
 
+  const rootProps = {
+    ref: setNodeRef,
+    style: { ...style, '--wf-color': color },
+    ...(dragDisabled ? {} : attributes),
+    ...(dragDisabled ? {} : listeners),
+    onClick: onOpen,
+    // Cùng lý do với thẻ project ở Dashboard: <div> thuần không nhận Tab/Enter
+    // nên bàn phím không mở được workflow nào.
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': t('projectDetail.cardOpenAria', { name: workflow.name }),
+    onKeyDown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
+    },
+  }
+
+  if (listView) {
+    return (
+      <div {...rootProps} className="workflow-row workflow-row--list">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+          <div style={{
+            width: '2.25rem', height: '2.25rem', borderRadius: '0.5rem', flexShrink: 0,
+            background: `color-mix(in srgb, ${color} 15%, transparent)`,
+            color: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`
+          }}>
+            <Workflow size="1.125rem" strokeWidth={2} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '0.625rem' }}>
+            <Tooltip title={workflow.name} placement="top" mouseEnterDelay={0.5}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '45%', flexShrink: 0 }}>
+                {workflow.name}
+              </span>
+            </Tooltip>
+            <Tooltip title={workflow.description || t('projectDetail.cardNoDescription')} placement="top" mouseEnterDelay={0.5}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {workflow.description || t('projectDetail.cardNoDescription')}
+              </span>
+            </Tooltip>
+          </div>
+
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem', flexShrink: 0 }}>
+            <Clock size="0.75rem" style={{ flexShrink: 0 }} />
+            {formatDate(workflow.updated_at)}
+          </span>
+
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0,
+            padding: '0.15rem 0.5rem', borderRadius: 10,
+            background: statusBadge.bg, color: statusBadge.color,
+            fontSize: '0.7rem', fontWeight: 500, whiteSpace: 'nowrap'
+          }}>
+            {statusBadge.dot}
+            <span style={{ transform: 'translateY(1px)' }}>{statusBadge.text}</span>
+          </span>
+
+          <Button
+            size="small"
+            type={isRunning ? 'default' : 'primary'}
+            icon={isRunning ? <Loader size="0.8rem" className="spinning"/> : <Play size="0.8rem" />}
+            onClick={(e) => { e.stopPropagation(); isRunning ? onStop(e) : onRun(e); }}
+            danger={isRunning}
+            style={{ borderRadius: 6, fontWeight: 500, flexShrink: 0 }}
+          >
+            {isRunning ? t('projectDetail.cardStop') : t('projectDetail.cardRun')}
+          </Button>
+
+          <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+            <Button className="project-menu-btn" type="text" size="small" icon={<MoreVertical size="1rem"/>} onClick={e => e.stopPropagation()} aria-label={t('projectDetail.cardMenuAria')} style={{ flexShrink: 0 }} />
+          </Dropdown>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div
-      ref={setNodeRef}
-      style={{ ...style, '--wf-color': color }}
-      className="workflow-row"
-      {...attributes}
-      {...listeners}
-      onClick={onOpen}
-      // Cùng lý do với thẻ project ở Dashboard: <div> thuần không nhận Tab/Enter
-      // nên bàn phím không mở được workflow nào.
-      role="button"
-      tabIndex={0}
-      aria-label={t('projectDetail.cardOpenAria', { name: workflow.name })}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
-      }}
-    >
+    <div {...rootProps} className="workflow-row">
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
         <div style={{
           width: '2.75rem', height: '2.75rem', borderRadius: '0.625rem',

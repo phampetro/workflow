@@ -33,13 +33,16 @@ const getBlockGroups = (t) => [
   { title: t('workflowEditor.groupSystem'), items: ['error_trigger', 'delete_files'] }
 ];
 
-const DEFAULT_GRAPH = {
+// Nhãn mặc định của Start/End khi TẠO WORKFLOW MỚI theo ngôn ngữ đang chọn lúc đó.
+// Workflow đã lưu trước đây giữ nguyên tên cũ — đây chỉ là giá trị khởi tạo, không
+// migrate ngược, cùng tinh thần "log theo ngôn ngữ tại thời điểm chạy" ở backend.
+const getDefaultGraph = (t) => ({
   nodes: [
-    { id: 'start-1', type: 'block', position: { x: 50, y: 150 },  data: { type: 'start', label: 'Bắt đầu', description: 'Khởi động workflow' } },
-    { id: 'end-1',   type: 'block', position: { x: 500, y: 150 }, data: { type: 'end',   label: 'Hoàn thành', description: 'Workflow kết thúc' } },
+    { id: 'start-1', type: 'block', position: { x: 50, y: 150 },  data: { type: 'start', label: t('workflowEditor.defaultStartLabel'), description: t('workflowEditor.defaultStartDescription') } },
+    { id: 'end-1',   type: 'block', position: { x: 500, y: 150 }, data: { type: 'end',   label: t('workflowEditor.defaultEndLabel'), description: t('workflowEditor.defaultEndDescription') } },
   ],
   edges: [],
-}
+})
 
 const EDGE_STYLE = { stroke: '#0d9488', strokeWidth: 2 }
 
@@ -235,11 +238,12 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           }))
         }
 
-        // 3. Xử lý kết thúc run
-        const msg = data.message || ''
-        const doneOk = msg.includes('✅ Workflow hoàn thành')
-        const doneErr = msg.includes('❌ Lỗi hệ thống khi chạy workflow')
-        const doneStop = msg.includes('⏹ Đã dừng')
+        // 3. Xử lý kết thúc run — dựa vào field `event` (ổn định, không đổi theo
+        // ngôn ngữ log), KHÔNG so khớp chuỗi `message` nữa: từ khi log song ngữ,
+        // message có thể là tiếng Anh tuỳ ngôn ngữ lúc chạy.
+        const doneOk = data.event === 'workflow_done'
+        const doneErr = data.event === 'workflow_system_error' || data.event === 'workflow_failed'
+        const doneStop = data.event === 'workflow_stopped'
         if (doneOk || doneErr || doneStop) {
           // Khối nào còn 'running' thì phải thôi nháy: hoàn thành → success,
           // còn dừng/lỗi hệ thống → idle (không báo success sai sự thật).
@@ -270,8 +274,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   }
 
   const setNodesFromDefault = () => {
-    setNodes(DEFAULT_GRAPH.nodes)
-    setEdges(DEFAULT_GRAPH.edges)
+    const defaultGraph = getDefaultGraph(t)
+    setNodes(defaultGraph.nodes)
+    setEdges(defaultGraph.edges)
     graphLoadedRef.current = true
     // fitView do effect [nodesInitialized] bên dưới lo
   }

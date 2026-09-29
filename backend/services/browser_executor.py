@@ -12,6 +12,8 @@ import traceback
 import time
 from typing import Optional, Callable
 
+from services.log_messages import tr, tr_action
+
 _VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
 
@@ -137,7 +139,7 @@ def resolve_selector(page, candidates, timeout: int) -> str:
     return valid[-1]
 
 
-def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None) -> BrowserStepResult:
+def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None, language: str = "vi") -> BrowserStepResult:
     """Thực thi một bước browser action."""
     action = step.get("action", "")
     selector = step.get("selector", "")
@@ -156,7 +158,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
         if len(candidates) > 1 and action in _SELECTOR_FALLBACK_ACTIONS:
             selector = resolve_selector(page, candidates, timeout)
 
-    label = ACTION_LABELS.get(action, f"[{action}]")
+    label = tr_action(action, language, ACTION_LABELS.get(action, f"[{action}]"))
 
     def log(level, msg):
         if log_callback:
@@ -182,7 +184,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
         elif action == "wait_for_load":
             page.wait_for_load_state("load", timeout=timeout)
-            log("info", "Trang đã tải xong")
+            log("info", tr(language, "page_loaded"))
 
         # ── Tương tác ─────────────────────────────────────────────────────
         elif action == "click":
@@ -233,7 +235,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
         elif action == "clear":
             get_locator(page, selector).first.fill("", timeout=timeout)
-            log("info", f"'{selector}' đã xóa ✓")
+            log("info", tr(language, "field_cleared", selector=selector))
 
         elif action == "press_key":
             actual_key = value if value else "Enter"
@@ -245,10 +247,10 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
         elif action == "upload_file":
             get_locator(page, selector).first.set_input_files(value, timeout=timeout)
-            log("info", f"Đã upload '{value}' 📤")
+            log("info", tr(language, "file_uploaded", value=value))
 
         elif action == "click_and_download":
-            log("info", f"Đang chờ tải file khi click '{selector}'...")
+            log("info", tr(language, "waiting_download_click", selector=selector))
             with page.expect_download(timeout=timeout) as download_info:
                 get_locator(page, selector).first.click(timeout=timeout)
             
@@ -272,7 +274,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
             download.save_as(save_path)
             
             collected_data[key_name] = save_path
-            log("success", f"Đã tải xong file: {original_filename} 📥")
+            log("success", tr(language, "download_done", filename=original_filename))
 
         # ── Form & Select ─────────────────────────────────────────────────
         elif action == "select_option":
@@ -297,16 +299,16 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
             if wait_state not in ("visible", "hidden", "attached", "detached"):
                 wait_state = "visible"
             get_locator(page, selector).first.wait_for(state=wait_state, timeout=timeout)
-            state_label = {"visible": "đã xuất hiện", "hidden": "đã biến mất", "attached": "đã được thêm vào DOM", "detached": "đã bị xóa khỏi DOM"}[wait_state]
-            log("info", f"'{selector}' {state_label} ✓")
+            state_label = tr(language, f"wait_state_{wait_state}")
+            log("info", tr(language, "selector_state_reached", selector=selector, state=state_label))
 
         elif action == "accept_dialog":
             page.once("dialog", lambda d: d.accept())
-            log("info", "Đã đăng ký xử lý dialog ✓")
+            log("info", tr(language, "dialog_accept_registered"))
 
         elif action == "dismiss_dialog":
             page.once("dialog", lambda d: d.dismiss())
-            log("info", "Đã đăng ký dismiss dialog ✓")
+            log("info", tr(language, "dialog_dismiss_registered"))
 
         # ── Thu thập dữ liệu ──────────────────────────────────────────────
         elif action == "get_text":
@@ -327,7 +329,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
                 t = elements.nth(i).inner_text()
                 texts.append(t.strip())
             collected_data[key_name] = texts
-            log("info", f"'{selector}' → {len(texts)} phần tử ✓")
+            log("info", tr(language, "get_all_text_result", selector=selector, count=len(texts)))
 
         elif action == "get_url":
             collected_data[key_name] = page.url
@@ -337,7 +339,7 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
             screenshot_bytes = page.screenshot(full_page=True)
             b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
             collected_data[key_name] = f"data:image/png;base64,{b64}"
-            log("info", f"Đã chụp màn hình → '{key_name}' ✓")
+            log("info", tr(language, "screenshot_taken", key_name=key_name))
 
         elif action == "evaluate_js":
             result = page.evaluate(value)
@@ -347,12 +349,12 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
         # ── Chờ đợi ───────────────────────────────────────────────────────
         elif action == "wait":
             seconds = float(value) if value else 1
-            log("info", f"Chờ {seconds}s...")
+            log("info", tr(language, "waiting_seconds", seconds=seconds))
             waited = 0.0
             interval = 0.3
             while waited < seconds:
                 if stop_event and stop_event.is_set():
-                    log("warning", "⏹ Bị dừng theo yêu cầu người dùng")
+                    log("warning", tr(language, "step_stopped_by_user"))
                     return BrowserStepResult(success=False, error="stopped", stopped=True)
                 sleep_time = min(interval, seconds - waited)
                 time.sleep(sleep_time)
@@ -361,10 +363,10 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
         elif action == "wait_for_url":
             page.wait_for_url(value, timeout=timeout)
-            log("info", f"URL chứa '{value}' ✓")
+            log("info", tr(language, "url_contains", value=value))
 
         else:
-            log("warning", f"Action không được nhận dạng: '{action}'")
+            log("warning", tr(language, "action_not_recognized", action=action))
 
         return BrowserStepResult(success=True)
 
@@ -631,7 +633,7 @@ def force_kill_browser_by_marker(marker: str):
 _poisoned_threads = set()
 
 
-def mark_thread_poisoned(log: Optional[Callable] = None) -> bool:
+def mark_thread_poisoned(log: Optional[Callable] = None, language: str = "vi") -> bool:
     """Phát hiện & ghi nhận thread hiện tại còn sót event loop của Playwright.
 
     Gọi sau mỗi lần dọn Playwright. **Không cứu được thread** — chỉ đánh dấu.
@@ -674,13 +676,11 @@ def mark_thread_poisoned(log: Optional[Callable] = None) -> bool:
 
     _poisoned_threads.add(threading.get_ident())
     if log:
-        log("warning",
-            "⚠ Thread này còn sót session Playwright không đóng được — đã đánh dấu, "
-            "sẽ không mở trình duyệt mới trên nó nữa.")
+        log("warning", tr(language, "browser_thread_poisoned_warning"))
     return True
 
 
-def cleanup_browser(run_id: str, log: Optional[Callable] = None):
+def cleanup_browser(run_id: str, log: Optional[Callable] = None, language: str = "vi"):
     """Đóng dọn dẹp browser của một lượt chạy khi workflow kết thúc.
 
     3 lệnh đóng đều có thể nổ khi browser đã bị force-kill từ thread khác (nút
@@ -701,11 +701,11 @@ def cleanup_browser(run_id: str, log: Optional[Callable] = None):
                 fn()
             except Exception as e:
                 if log:
-                    log("warning", f"⚠ Không đóng gọn được {what}: {type(e).__name__}: {e}")
+                    log("warning", tr(language, "browser_cleanup_warning", what=what, error_type=type(e).__name__, error=e))
     finally:
         # Kiểm tra DÙ pw.stop() thành công hay thất bại: nếu thread còn sót loop
         # thì đánh dấu để không mở Playwright trên nó nữa (không cứu được).
-        mark_thread_poisoned(log)
+        mark_thread_poisoned(log, language)
 
 def run_browser_block(
     block_id: str,
@@ -718,6 +718,7 @@ def run_browser_block(
     output_dir: str = "",
     stop_event=None,
     browser_profile_dir: str = "",
+    language: str = "vi",
 ) -> dict:
     """
     Chạy một block Browser với Playwright.
@@ -727,7 +728,7 @@ def run_browser_block(
         if log_callback:
             log_callback(block_id, level, msg)
 
-    log("info", f"🌐 Block Browser [{block_id}] — {len(steps)} bước | headless={headless}")
+    log("info", tr(language, "browser_block_header", block_id=block_id, count=len(steps), headless=headless))
 
     collected_data = {}
     
@@ -743,7 +744,7 @@ def run_browser_block(
         from playwright.sync_api import sync_playwright
 
         if run_id not in _active_browser_sessions:
-            log("info", "🚀 Khởi động trình duyệt mới cho lượt chạy này...")
+            log("info", tr(language, "browser_launching_new"))
             # KHÔNG cố "dọn rồi start lại" trên thread đã nhiễm: đã thử và thất
             # bại. loop cũ không đóng được (Cannot close a running event loop vì
             # greenlet dispatcher treo giữa run_forever), greenlet cũ vẫn sống nên
@@ -751,11 +752,7 @@ def run_browser_block(
             # "Sync API inside the asyncio loop". Thread nhiễm là không cứu được;
             # cách đúng là đừng để thread pool bị nhiễm (xem _poisoned_threads).
             if threading.get_ident() in _poisoned_threads:
-                raise RuntimeError(
-                    "Thread này còn sót session Playwright của lượt chạy trước (bị Dừng giữa lúc "
-                    "trình duyệt đang mở). Không thể mở trình duyệt mới trên cùng thread — "
-                    "hãy khởi động lại backend, hoặc chạy lại để nhận thread khác."
-                )
+                raise RuntimeError(tr(language, "browser_thread_poisoned_error"))
             pw = sync_playwright().start()
 
             def _abort_playwright_startup():
@@ -777,7 +774,7 @@ def run_browser_block(
                     pw.stop()
                 except Exception:
                     pass
-                mark_thread_poisoned(log)
+                mark_thread_poisoned(log, language)
 
             try:
                 # Dùng Chromium riêng của Playwright (tách khỏi Chrome/Edge người dùng đang
@@ -786,7 +783,7 @@ def run_browser_block(
             except Exception:
                 _abort_playwright_startup()
                 raise
-            log("info", "🧭 Trình duyệt: " + ("Chromium riêng (Playwright)" if browser_exe is None else browser_exe))
+            log("info", tr(language, "browser_engine_label", engine=(tr(language, "browser_engine_playwright") if browser_exe is None else browser_exe)))
             if browser_warn:
                 log("warning", browser_warn)
                 # Chỉ soi policy khi buộc phải dùng Chrome/Edge hệ thống — Chromium
@@ -809,7 +806,7 @@ def run_browser_block(
             # Không hỏi "Lưu mật khẩu?" / không hiện popup gây nhiễu automation
             launch_args += QUIET_BROWSER_ARGS
 
-            log("info", f"🪟 Đang mở cửa sổ trình duyệt (headless={headless})...")
+            log("info", tr(language, "browser_opening_window", headless=headless))
 
             try:
                 if browser_profile_dir:
@@ -841,13 +838,10 @@ def run_browser_block(
             except Exception as e:
                 # Đây là chỗ log hay dừng lại trên máy khách mà không rõ lý do —
                 # in đủ ngữ cảnh để chẩn đoán từ xa thay vì phải mò.
-                log("error", f"✗ Không mở được trình duyệt: {e}")
-                log("error", f"   • Trình duyệt: {browser_exe or 'Chromium riêng (Playwright)'}")
-                log("error", f"   • Thư mục profile: {browser_profile_dir or '(không dùng)'}")
-                log("error", "   • Hay gặp: phần mềm bảo mật/EDR của công ty chặn kênh điều khiển "
-                             "(--remote-debugging-pipe), đường dẫn profile quá dài (>260 ký tự), "
-                             "hoặc Chrome hệ thống bị group policy giữ lại. Cài Chromium riêng bằng "
-                             "`pyflow-backend.exe install-browser` rồi thử lại.")
+                log("error", tr(language, "browser_launch_failed", error=e))
+                log("error", tr(language, "browser_launch_failed_engine_line", engine=(browser_exe or tr(language, "browser_engine_playwright"))))
+                log("error", tr(language, "browser_launch_failed_profile_line", profile=(browser_profile_dir or tr(language, "browser_profile_not_used"))))
+                log("error", tr(language, "browser_launch_failed_hint"))
                 # Session chưa được đăng ký nên cleanup_browser() sẽ không dọn hộ.
                 _abort_playwright_startup()
                 raise
@@ -860,9 +854,9 @@ def run_browser_block(
             try:
                 ua = page.evaluate("() => navigator.userAgent")
                 ver = re.search(r"Chrome/([\d.]+)", ua or "")
-                log("info", f"✅ Trình duyệt đã sẵn sàng — Chrome/{ver.group(1) if ver else '?'}")
+                log("info", tr(language, "browser_ready_with_version", version=(ver.group(1) if ver else '?')))
             except Exception:
-                log("info", "✅ Trình duyệt đã sẵn sàng")
+                log("info", tr(language, "browser_ready"))
 
 
             _active_browser_sessions[run_id] = {
@@ -872,7 +866,7 @@ def run_browser_block(
                 "page": page
             }
         else:
-            log("info", "♻️ Tái sử dụng trình duyệt đang mở...")
+            log("info", tr(language, "browser_reusing"))
 
         session = _active_browser_sessions[run_id]
         page = session["page"]
@@ -880,7 +874,7 @@ def run_browser_block(
         step_count = len(steps)
         for i, step in enumerate(steps, 1):
             if stop_event and stop_event.is_set():
-                log("warning", "⏹ Đã dừng theo yêu cầu người dùng")
+                log("warning", tr(language, "browser_stopped_by_user"))
                 return {
                     "success": False,
                     "output_data": collected_data if collected_data else None,
@@ -892,7 +886,7 @@ def run_browser_block(
                 continue
 
             action = step.get("action", "")
-            label = ACTION_LABELS.get(action, action)
+            label = tr_action(action, language, ACTION_LABELS.get(action, action))
             note_str = f" — {step['note']}" if step.get("note") else ""
             log("info", f"   [{i}/{step_count}] {label}{note_str}")
 
@@ -912,7 +906,7 @@ def run_browser_block(
                         new_step[step_key] = _interpolate_once(step_val, current_vars)
             step = new_step
 
-            result = execute_step(page, step, collected_data, log_callback, block_id, output_dir, stop_event=stop_event)
+            result = execute_step(page, step, collected_data, log_callback, block_id, output_dir, stop_event=stop_event, language=language)
 
             if not result.success:
                 if getattr(result, "stopped", False):
@@ -923,9 +917,9 @@ def run_browser_block(
                         "stopped": True,
                     }
                 if step.get("continue_on_error", False):
-                    log("warning", f"   ⚠ Bước {i} lỗi — bỏ qua (continue_on_error=true)")
+                    log("warning", tr(language, "step_error_skipped", i=i))
                 else:
-                    log("error", f"   ✗ Dừng do bước {i} thất bại")
+                    log("error", tr(language, "step_failed_stopping", i=i))
                     return {
                         "success": False,
                         "output_data": collected_data if collected_data else None,
@@ -933,7 +927,7 @@ def run_browser_block(
                     }
 
         out = collected_data if collected_data else None
-        log("success", f"✓ Browser Block hoàn thành — {len(collected_data)} dữ liệu thu thập")
+        log("success", tr(language, "browser_block_done", count=len(collected_data)))
         return {
             "success": True,
             "output_data": out,
@@ -942,7 +936,7 @@ def run_browser_block(
 
     except Exception as e:
         err = traceback.format_exc()
-        log("error", f"✗ Lỗi nội bộ Browser Block: {e}")
+        log("error", tr(language, "browser_block_internal_error", error=e))
         return {
             "success": False,
             "output_data": collected_data if collected_data else None,

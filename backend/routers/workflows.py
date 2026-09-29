@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from database import get_session, AsyncSessionLocal
-from models import Workflow, WorkflowRun, RunStatus, Project
+from models import Workflow, WorkflowRun, RunStatus, Project, User
 from services.executor import execute_workflow
 from services.venv_manager import delete_workflow_dir, rename_workflow_dir, slugify
 from ws.log_socket import make_log_callback
@@ -80,6 +80,15 @@ async def run_workflow_internal(workflow_id: str, initial_input: dict = None, tr
         workflow_name = wf.name
         graph_json = wf.graph_json
 
+        # Log của run này sinh ra bằng NGUYÊN 1 ngôn ngữ: của user active tại lúc
+        # kích hoạt (nút Run / Telegram / Schedule đều hội tụ vào hàm này). Đổi
+        # ngôn ngữ UI sau đó không dịch lại log của run đã chạy — chỉ áp dụng
+        # cho run mới.
+        active_user = (
+            await session.execute(select(User).where(User.is_active == True))
+        ).scalar_one_or_none()
+        language = (active_user.language if active_user else None) or "vi"
+
         if not run_id:
             run_id = str(uuid.uuid4())
         _workflow_run_ids.setdefault(workflow_id, set()).add(run_id)
@@ -121,7 +130,8 @@ async def run_workflow_internal(workflow_id: str, initial_input: dict = None, tr
             workflow_name=workflow_name,
             graph_json=graph_json,
             log_callback=log_callback,
-            stop_flag=stop_flag
+            stop_flag=stop_flag,
+            language=language
         )
         # Trạng thái run đã được _finish_run ghi từ trong execute_workflow_thread
     except Exception as e:
