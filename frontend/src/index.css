@@ -492,6 +492,30 @@ body {
   gap: 1rem;
 }
 
+.list-workflows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+/* Switch dùng icon làm checkedChildren/unCheckedChildren (thay vì chữ): antd
+   canh giữa nội dung bằng line-height của .ant-switch-inner-checked/unchecked,
+   đúng cho text nhưng icon (span/svg) không nằm trong dòng chữ nên bị dính lên
+   trên. .ant-switch-icon-wrap tự canh giữa bằng absolute + flex, không phụ
+   thuộc line-height. Chỉ khớp span do chính mình thêm (className riêng) nên
+   không ảnh hưởng các Switch dùng chữ (checkedChildren="Headed"...) khác. */
+.ant-switch-inner-checked,
+.ant-switch-inner-unchecked {
+  position: relative;
+}
+.ant-switch-icon-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* --- Sortable Card Styling --- */
 .sortable-card {
   border-radius: var(--radius-md);
@@ -530,6 +554,16 @@ body {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
   border-color: var(--wf-color, var(--accent-primary));
+}
+
+/* Chế độ xem danh sách — hàng mỏng hơn thẻ lưới, không cần nhấc lên khi hover */
+.workflow-row--list {
+  padding: 0.625rem 1.25rem;
+}
+
+.workflow-row--list:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
 }
 
 /* --- Project Row Styling --- */

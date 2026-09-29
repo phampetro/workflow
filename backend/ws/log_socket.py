@@ -43,12 +43,17 @@ def cleanup_log(run_id: str):
     _run_history.pop(run_id, None)
     _run_dropped.pop(run_id, None)
 
-async def broadcast_log(run_id: str, block_id: str, level: str, message: str):
+async def broadcast_log(run_id: str, block_id: str, level: str, message: str, event: str = None):
     payload = json.dumps({
         "run_id": run_id,
         "block_id": block_id,
         "level": level,
         "message": message,
+        # Mã sự kiện ổn định, KHÔNG dịch theo ngôn ngữ — chỉ đặt cho 4 dòng log
+        # kết thúc workflow (workflow_done/stopped/failed/system_error). FE dùng
+        # field này để phát hiện run xong thay vì so khớp chuỗi `message`, vì
+        # message giờ có thể là tiếng Anh tuỳ ngôn ngữ lúc chạy.
+        "event": event,
         # "time" = GIỜ THỰC lúc sinh ra dòng log, ISO kèm timezone. Bắt buộc phải
         # có: FE hiển thị theo field này. Trước đây chỉ gửi "timestamp" (đồng hồ
         # monotonic) nên FE không tìm thấy "time" và rơi vào nhánh dự phòng
@@ -119,6 +124,6 @@ def get_run_history(run_id: str, offset: int = 0) -> list:
 
 def make_log_callback(run_id: str):
     """Tạo callback function để truyền vào executor"""
-    async def callback(block_id: str, level: str, message: str):
-        await broadcast_log(run_id, block_id, level, message)
+    async def callback(block_id: str, level: str, message: str, event: str = None):
+        await broadcast_log(run_id, block_id, level, message, event=event)
     return callback

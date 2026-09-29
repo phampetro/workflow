@@ -28,6 +28,7 @@ from services import venv_manager
 # SQLAlchemy async của tầng API, chỉ cần một kết nối quên bật là đủ gây
 # "database is locked" và làm run kẹt RUNNING (xem database.apply_sqlite_pragmas).
 from database import connect_sqlite
+from services.log_messages import tr
 
 DATA_DIR = venv_manager.DATA_DIR
 WORKFLOW_DB = DATA_DIR / "pyflow.db"
@@ -211,7 +212,7 @@ def get_pip_cmd(project_id: str) -> list:
 def venv_exists(project_id: str) -> bool:
     return venv_manager.venv_exists(project_id)
 
-def _stop_telegram_listener_sync(workflow_id: str, log_fn=None):
+def _stop_telegram_listener_sync(workflow_id: str, log_fn=None, language="vi"):
     """Dừng Telegram Listener từ thread thực thi workflow (đồng bộ, không có event loop riêng)."""
     try:
         from services.telegram_listener import _stop_events, _active_listeners
@@ -230,7 +231,7 @@ def _stop_telegram_listener_sync(workflow_id: str, log_fn=None):
                 pass
     except Exception as e:
         if log_fn:
-            log_fn("system", "warning", f"⚠ Không tắt được listener: {e}")
+            log_fn("system", "warning", tr(language, "listener_stop_error", error=e))
 
 
 def _set_workflow_listener_flag(workflow_id: str, on: bool):
@@ -274,7 +275,7 @@ def uninstall_pkg_sync(project_id: str, package: str) -> dict:
     subprocess.run(pip + ["uninstall", package, "-y"], capture_output=True, text=True, timeout=60)
     return {"package": package, "status": "uninstalled"}
 
-def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, label="", stop_event=None):
+def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, label="", stop_event=None, language="vi"):
     if not packages: return
     if not venv_exists(project_id):
         create_venv_sync(project_id)
@@ -291,7 +292,7 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
             
     if missing:
         if log_fn:
-            log_fn(bid, "info", f"📦 [{label}] Đang tải & cài đặt: {', '.join(missing)}...")
+            log_fn(bid, "info", tr(language, "ensure_packages_installing", label=label, packages=', '.join(missing)))
         
         import time
         res = subprocess.Popen(
@@ -312,7 +313,7 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
             if stop_event and stop_event.is_set():
                 res.kill()
                 if log_fn:
-                    log_fn(bid, "warning", f"⏹ Cài đặt bị dừng bởi người dùng")
+                    log_fn(bid, "warning", tr(language, "ensure_packages_stopped"))
                 raise RuntimeError("Installation stopped by user")
             
             # Non-blocking read with timeout
@@ -333,12 +334,12 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
                 if time.time() - last_check > 300:
                     res.kill()
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Cài đặt timeout sau 5 phút")
+                        log_fn(bid, "error", tr(language, "ensure_packages_timeout"))
                     raise RuntimeError(f"Cài đặt {missing} timeout")
         
         if res.returncode != 0:
             if log_fn:
-                log_fn(bid, "error", f"❌ Cài đặt thất bại mã {res.returncode}")
+                log_fn(bid, "error", tr(language, "ensure_packages_failed", code=res.returncode))
             raise RuntimeError(f"Không thể cài đặt {missing}")
 
 def list_pkgs_sync(project_id: str) -> list:
@@ -507,7 +508,7 @@ def rename_output_keys(btype: str, bdata: dict, data):
     return out
 
 
-def describe_output_vars(btype: str, bdata: dict, data) -> str:
+def describe_output_vars(btype: str, bdata: dict, data, language="vi") -> str:
     """Mô tả biến khối vừa trả về (TÊN THẬT + gợi ý giá trị) để in ra log.
 
     Sai 1 chữ trong ô đặt tên biến thì khối Python phía sau đọc ra rỗng mà không
@@ -528,11 +529,11 @@ def describe_output_vars(btype: str, bdata: dict, data) -> str:
             continue
         val = data[name]
         if isinstance(val, list):
-            parts.append(f"{name} ({len(val)} phần tử)")
+            parts.append(tr(language, "output_var_elements", name=name, count=len(val)))
         elif isinstance(val, dict):
-            parts.append(f"{name} (object, {len(val)} khoá)")
+            parts.append(tr(language, "output_var_object", name=name, count=len(val)))
         elif val is None:
-            parts.append(f"{name} (rỗng)")
+            parts.append(tr(language, "output_var_empty", name=name))
         else:
             s = str(val)
             parts.append(f"{name} = {s[:40] + '…' if len(s) > 40 else s}")
@@ -566,7 +567,7 @@ def get_workflow_dir(project_id: str, workflow_id: str) -> Path:
         name = row[0] if row else "unknown"
     return get_project_dir(project_id) / f"wf_{slugify(name)}"
 
-def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None, workflow_env=None, run_id=None):
+def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, timeout=60, label=None, log_fn=None, input_dir=None, stop_event=None, workflow_env=None, run_id=None, language="vi"):
     """Chạy 1 block Python synchronously, có thể bị ngắt bởi stop_event.
 
     ``timeout`` <= 0 (hoặc None) = chờ vô hạn, dùng cho thủ tục SQL chạy vài tiếng.
@@ -618,7 +619,7 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
     input_json = json.dumps(payload, ensure_ascii=False, default=str)
 
     if log_fn:
-        log_fn(block_id, "info", f"▶  Chạy block [{label or block_id}]")
+        log_fn(block_id, "info", tr(language, "block_start", label=label or block_id))
 
     start = datetime.now()
     run_id_for_proc = None
@@ -702,7 +703,7 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
                     pass
                 duration = int((datetime.now() - start).total_seconds() * 1000)
                 if log_fn:
-                    log_fn(block_id, "warning", f"⏹ Block đã bị dừng ({duration}ms)")
+                    log_fn(block_id, "warning", tr(language, "block_stopped", duration=duration))
                 if run_id_for_proc:
                     _active_procs.pop(run_id_for_proc, None)
                 return False, None, "stopped", duration
@@ -714,7 +715,7 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
                 except Exception:
                     pass
                 duration = int((datetime.now() - start).total_seconds() * 1000)
-                msg = f"⏰ Timeout sau {timeout}s"
+                msg = tr(language, "block_timeout", timeout=timeout)
                 if log_fn:
                     log_fn(block_id, "error", msg)
                 if run_id_for_proc:
@@ -738,7 +739,7 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
         # dù người dùng chỉ bấm Dừng.
         if stop_event and stop_event.is_set():
             if log_fn:
-                log_fn(block_id, "warning", f"⏹ Block đã bị dừng ({duration}ms)")
+                log_fn(block_id, "warning", tr(language, "block_stopped", duration=duration))
             return False, None, "stopped", duration
 
         for line in output_lines:
@@ -750,11 +751,11 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
         if proc.returncode != 0:
             err = "\n".join(stderr_lines).strip() or "Unknown error"
             if log_fn:
-                log_fn(block_id, "error", f"✗ Block thất bại ({duration}ms)")
+                log_fn(block_id, "error", tr(language, "block_failed", duration=duration))
             return False, None, err, duration
 
         if log_fn:
-            log_fn(block_id, "success", f"✓ Block hoàn thành ({duration}ms)")
+            log_fn(block_id, "success", tr(language, "block_success", duration=duration))
         return True, output_data, None, duration
 
     except Exception as e:
@@ -762,11 +763,11 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
             _active_procs.pop(run_id_for_proc, None)
         duration = int((datetime.now() - start).total_seconds() * 1000)
         if log_fn:
-            log_fn(block_id, "error", f"✗ Lỗi: {e}")
+            log_fn(block_id, "error", tr(language, "block_exception", error=e))
         return False, None, str(e), duration
 
 
-def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, graph_json, log_fn, stop_event):
+def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, graph_json, log_fn, stop_event, language="vi"):
     """Chạy toàn bộ workflow trong thread riêng"""
     import time
     time.sleep(0.5) # Đợi client SSE kết nối trước khi chạy nhanh
@@ -797,7 +798,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
         # để run kẹt ở trạng thái RUNNING vĩnh viễn
         _finish_run(run_id, "error", start, error=str(e))
         if log_fn:
-            log_fn("system", "error", f"❌ Lỗi chuẩn bị thư mục workflow: {e}")
+            log_fn("system", "error", tr(language, "workflow_prepare_dir_error", error=e))
         return
 
     try:
@@ -836,7 +837,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
         if not start_nodes:
             if log_fn:
-                log_fn("system", "error", "❌ Không tìm thấy khối Bắt đầu!")
+                log_fn("system", "error", tr(language, "no_start_block"))
             _finish_run(run_id, "error", start, error="Missing Start block")
             return
 
@@ -857,12 +858,13 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
             if final_error is None:
                 final_error = error_msg
             if in_error_mode:
-                _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn)
+                _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn, language=language)
                 return True
-            
+
             if error_trigger_nodes:
                 if log_fn:
-                    log_fn("system", "warning", f"⚠️ Phát hiện lỗi{' tại ['+failed_label+']' if failed_label else ''}. Đang chuyển hướng sang khối Bắt Lỗi toàn cục...")
+                    _suffix = tr(language, "error_redirect_suffix", label=failed_label) if failed_label else ""
+                    log_fn("system", "warning", tr(language, "error_redirect", suffix=_suffix))
                 queue.clear()
                 in_error_mode = True
                 
@@ -876,7 +878,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     queue.append((et_node["id"], error_payload))
                 return False
             else:
-                _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn)
+                _finish_run(run_id, "error", start, error=error_msg, log_fn=log_fn, language=language)
                 return True
 
         def on_block_failed(error_msg, failed_bid, failed_label, fail_log=None):
@@ -894,13 +896,13 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 return "stopped"
             if log_fn:
                 log_fn("system", "error", fail_log or
-                       f"❌ Workflow thất bại sau {int((datetime.now()-start).total_seconds()*1000)}ms")
+                       tr(language, "workflow_failed", ms=int((datetime.now()-start).total_seconds()*1000)))
             return "abort" if handle_workflow_error(error_msg, failed_bid, failed_label) else "continue"
 
         queue.append((start_nodes[0]["id"], initial_input))
 
         if log_fn:
-            log_fn("system", "info", f"🚀 Bắt đầu workflow (Dynamic Routing)")
+            log_fn("system", "info", tr(language, "workflow_start"))
 
         import collections
         final_status = "success"
@@ -919,14 +921,14 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
         while queue:
             if stop_event and stop_event.is_set():
-                log_fn("system", "warning", "⏹ Đã dừng bởi người dùng")
+                log_fn("system", "warning", tr(language, "workflow_stopped_by_user"))
                 final_status = "stopped"
                 break
 
             node_id, current_input = queue.popleft()
             if run_counts[node_id] > 2000:
                 if log_fn:
-                    log_fn("system", "error", f"❌ Phát hiện lặp vô hạn ở Node {node_id} (>2000 lần). Dừng luồng.")
+                    log_fn("system", "error", tr(language, "infinite_loop_detected", node_id=node_id))
                 final_status = "error"
                 final_error = f"Phát hiện lặp vô hạn ở Node {node_id} (>2000 lần)"
                 break
@@ -1010,15 +1012,15 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
             if btype == "start":
                 if log_fn:
-                    log_fn(bid, "info", f"▶  [Start] {label}")
+                    log_fn(bid, "info", tr(language, "start_block", label=label))
             elif btype == "end":
                 if log_fn:
-                    log_fn(bid, "info", f"🏁 [End] {label}")
+                    log_fn(bid, "info", tr(language, "end_block", label=label))
                 break
             elif btype == "delay":
                 delay_sec = float(bdata.get("delaySeconds", 3))
                 if log_fn:
-                    log_fn(bid, "info", f"⏳ [Delay] {label} - Đang chờ {delay_sec} giây...")
+                    log_fn(bid, "info", tr(language, "delay_waiting", label=label, delay=delay_sec))
                 
                 # Chờ có kiểm tra stop_event định kỳ (mỗi 0.5s)
                 import time
@@ -1027,7 +1029,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 while waited < delay_sec:
                     if stop_event and stop_event.is_set():
                         if log_fn:
-                            log_fn(bid, "warning", f"⏹ Delay bị dừng sau {int(waited)}s")
+                            log_fn(bid, "warning", tr(language, "delay_stopped", waited=int(waited)))
                         final_status = "stopped"
                         break
                     sleep_time = min(check_interval, delay_sec - waited)
@@ -1035,7 +1037,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     waited += sleep_time
                 else:
                     if log_fn:
-                        log_fn(bid, "success", f"✅ Đã chờ xong {delay_sec} giây.")
+                        log_fn(bid, "success", tr(language, "delay_done", delay=delay_sec))
             elif btype == "input_vars":
                 import time
                 fields = bdata.get("inputFields") or []
@@ -1054,12 +1056,12 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 ]
                 if not safe_fields:
                     if log_fn:
-                        log_fn(bid, "warning", f"⚠️ [Biến đầu vào] {label} - Chưa cấu hình biến, bỏ qua.")
+                        log_fn(bid, "warning", tr(language, "input_vars_not_configured", label=label))
                 else:
                     deadline = time.time() + timeout
                     ev = register_pending_input(run_id, bid, label, safe_fields, deadline)
                     if log_fn:
-                        log_fn(bid, "info", f"⌨️ [Biến đầu vào] {label} - Chờ người dùng nhập {len(safe_fields)} biến (tối đa {int(timeout)}s)...")
+                        log_fn(bid, "info", tr(language, "input_vars_waiting", label=label, count=len(safe_fields), timeout=int(timeout)))
 
                     got_input = False
                     stopped = False
@@ -1078,14 +1080,14 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
                     if stopped:
                         if log_fn:
-                            log_fn(bid, "warning", "⏹ [Biến đầu vào] Bị dừng bởi người dùng")
+                            log_fn(bid, "warning", tr(language, "input_vars_stopped"))
                         final_status = "stopped"
                         break
 
                     if not got_input or values is None:
                         err = f"Hết thời gian chờ nhập biến ({int(timeout)}s) tại khối [{label}]"
                         if log_fn:
-                            log_fn(bid, "error", f"⏱ {err}")
+                            log_fn(bid, "error", tr(language, "input_vars_timeout", timeout=int(timeout), label=label))
                         if handle_workflow_error(err, bid, label):
                             return
                         else:
@@ -1100,7 +1102,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         current_input[name] = values.get(name, f.get("defaultValue", "")) if isinstance(values, dict) else f.get("defaultValue", "")
                         applied.append(name)
                     if log_fn:
-                        log_fn(bid, "success", f"✅ [Biến đầu vào] Đã nhận: {', '.join(applied)}")
+                        log_fn(bid, "success", tr(language, "input_vars_received", names=', '.join(applied)))
             elif btype == "queue":
                 # Khối "Xếp hàng": 1 vào - 1 ra, không xử lý gì, không đổi biến.
                 # Cơ chế "lấy số chờ tới lượt": nếu trong hàng đợi còn khối THƯỜNG
@@ -1117,11 +1119,11 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     queue.append((node_id, current_input))
                     continue
                 if log_fn:
-                    log_fn(bid, "info", f"⏳ [Xếp hàng] {label} - Đã tới lượt, chạy tiếp")
+                    log_fn(bid, "info", tr(language, "queue_turn", label=label))
             elif btype == "telegram_listener":
                 if "_initial_input" in bdata:
                     if log_fn:
-                        log_fn(bid, "info", f"🎧 [Telegram Listener] {label} - Đã nhận tin nhắn và chạy workflow")
+                        log_fn(bid, "info", tr(language, "tg_listener_received", label=label))
                     # Đổi tên key theo tên biến đặt trên UI (raw_message giữ nguyên
                     # vì không có field đặt tên). workflow_env được cập nhật ở cuối
                     # vòng lặp qua workflow_env.update(current_input).
@@ -1129,7 +1131,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 else:
                     # Manual run (bấm nút Chạy/Start) → bật Listener, workflow giữ RUNNING chờ tin nhắn
                     if log_fn:
-                        log_fn(bid, "info", f"🎧 [Telegram Listener] {label} - Đang bật Listener để chờ tin nhắn...")
+                        log_fn(bid, "info", tr(language, "tg_listener_enabling", label=label))
 
                     # Tự động bật Listener (nếu chưa bật) - chạy trong thread riêng có event loop
                     try:
@@ -1169,8 +1171,8 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             cur_cfg = get_listener_config(workflow_id) or {}
                             if cur_cfg.get("token") != tg_token or cur_cfg.get("commands") != tg_commands:
                                 if log_fn:
-                                    log_fn(bid, "info", "🔄 Bot Token/lệnh đã đổi - khởi động lại Listener...")
-                                _stop_telegram_listener_sync(workflow_id, log_fn=log_fn)
+                                    log_fn(bid, "info", tr(language, "tg_listener_config_changed"))
+                                _stop_telegram_listener_sync(workflow_id, log_fn=log_fn, language=language)
                                 # Đợi ngắn để bảng _active_listeners được dọn
                                 import time as _t_wait
                                 for _ in range(20):
@@ -1253,14 +1255,14 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             _set_workflow_listener_flag(workflow_id, True)
 
                             if log_fn:
-                                log_fn(bid, "success", f"✅ Listener đã được bật. Đang lắng nghe tin nhắn Telegram...")
+                                log_fn(bid, "success", tr(language, "tg_listener_enabled"))
                         else:
                             _set_workflow_listener_flag(workflow_id, True)
                             if log_fn:
-                                log_fn(bid, "info", f"ℹ️ Listener đã chạy sẵn.")
+                                log_fn(bid, "info", tr(language, "tg_listener_already_running"))
                     except Exception as e:
                         if log_fn:
-                            log_fn(bid, "warning", f"⚠ Lỗi khi bật listener: {e}")
+                            log_fn(bid, "warning", tr(language, "tg_listener_enable_error", error=e))
 
                     # Listener chỉ được bật ở đây (từ khối Start) và chỉ tắt khi
                     # người dùng bấm Dừng - workflow giữ trạng thái RUNNING trong
@@ -1272,8 +1274,8 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     while True:
                         if stop_event and stop_event.is_set():
                             if log_fn:
-                                log_fn(bid, "warning", f"⏹ Đang tắt Listener theo yêu cầu người dùng...")
-                            _stop_telegram_listener_sync(workflow_id, log_fn=log_fn)
+                                log_fn(bid, "warning", tr(language, "tg_listener_stopping"))
+                            _stop_telegram_listener_sync(workflow_id, log_fn=log_fn, language=language)
                             _set_workflow_listener_flag(workflow_id, False)
                             final_status = "stopped"
                             break
@@ -1284,7 +1286,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         if not is_listener_running(workflow_id):
                             _set_workflow_listener_flag(workflow_id, False)
                             if log_fn:
-                                log_fn(bid, "error", "❌ Telegram Listener đã ngừng hoạt động (token bị thu hồi hoặc mất kết nối). Bấm Chạy lại sau khi kiểm tra cấu hình.")
+                                log_fn(bid, "error", tr(language, "tg_listener_dead"))
                             final_status = "error"
                             final_error = "Telegram Listener ngừng hoạt động ngoài ý muốn"
                             break
@@ -1301,7 +1303,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 
                 if not bot_token or not chat_id:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ [Telegram] {label} - Thiếu Bot Token hoặc Chat ID")
+                        log_fn(bid, "error", tr(language, "tg_missing_config", label=label))
                     if handle_workflow_error("Thiếu Bot Token hoặc Chat ID cho khối Telegram", bid, label):
                         return
                     else:
@@ -1324,7 +1326,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         resolved_files.append((att_name, att_path))
                     else:
                         if log_fn:
-                            log_fn(bid, "warning", f"⚠ [Telegram] Không tìm thấy file đính kèm: {att_name}")
+                            log_fn(bid, "warning", tr(language, "tg_attachment_not_found", name=att_name))
 
                 def _tg_send_message(bot_token, chat_id, text, parse_mode, reply_to=None):
                     """Gửi tin nhắn văn bản qua Telegram sendMessage"""
@@ -1398,7 +1400,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         return json.loads(response.read().decode('utf-8'))
                     
                 if log_fn:
-                    log_fn(bid, "info", f"✉️ [Telegram] {label} - Đang gửi tin nhắn tới {chat_id}...")
+                    log_fn(bid, "info", tr(language, "tg_sending", label=label, chat_id=chat_id))
                 
                 try:
                     # Chuỗi rỗng = không lỗi; khi lỗi thì mang luôn mô tả để đẩy
@@ -1409,7 +1411,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     if telegram_action == "edit":
                         if not msg_id:
                             if log_fn:
-                                log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Chế độ 'Sửa tin nhắn' yêu cầu Message ID hợp lệ.")
+                                log_fn(bid, "error", tr(language, "tg_edit_invalid_id", label=label))
                             if handle_workflow_error("Chế độ 'Sửa tin nhắn' yêu cầu Message ID hợp lệ", bid, label):
                                 return
                             else:
@@ -1417,14 +1419,14 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                         try:
                             msg_id_int = int(msg_id)
                         except ValueError:
-                            if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Message ID phải là số (hiện tại là '{msg_id}'). Hãy kiểm tra lại biến.")
+                            if log_fn: log_fn(bid, "error", tr(language, "tg_msg_id_not_number", label=label, msg_id=msg_id))
                             if handle_workflow_error(f"Message ID phải là số (hiện tại là '{msg_id}')", bid, label):
                                 return
                             else:
                                 continue
                         res = _tg_edit_message_text(bot_token, chat_id, text, msg_id_int, parse_mode)
                         if not res.get("ok"):
-                            if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi sửa tin nhắn: {res.get('description')}")
+                            if log_fn: log_fn(bid, "error", tr(language, "tg_edit_error", label=label, description=res.get('description')))
                             telegram_error = f"Lỗi sửa tin nhắn Telegram: {res.get('description')}"
                         else:
                             last_message_id = res.get("result", {}).get("message_id")
@@ -1434,7 +1436,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             try:
                                 reply_to_id = int(msg_id)
                             except ValueError:
-                                if log_fn: log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi: Message ID phải là số (hiện tại là '{msg_id}').")
+                                if log_fn: log_fn(bid, "error", tr(language, "tg_msg_id_not_number_short", label=label, msg_id=msg_id))
                                 if handle_workflow_error(f"Message ID phải là số (hiện tại là '{msg_id}')", bid, label):
                                     return
                                 else:
@@ -1445,7 +1447,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             res = _tg_send_message(bot_token, chat_id, text, parse_mode, reply_to_id)
                             if not res.get("ok"):
                                 if log_fn:
-                                    log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi API: {res.get('description')}")
+                                    log_fn(bid, "error", tr(language, "tg_api_error", label=label, description=res.get('description')))
                                 telegram_error = f"Lỗi API Telegram: {res.get('description')}"
                             else:
                                 last_message_id = res.get("result", {}).get("message_id")
@@ -1453,11 +1455,11 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             # 1 file
                             fname, fpath = resolved_files[0]
                             if log_fn:
-                                log_fn(bid, "info", f"📎 [Telegram] {label} - Đính kèm file: {fname}")
+                                log_fn(bid, "info", tr(language, "tg_attachment_sending", label=label, name=fname))
                             res = _tg_send_document(bot_token, chat_id, str(fpath), fname, caption=text, parse_mode=parse_mode, reply_to=reply_to_id)
                             if not res.get("ok"):
                                 if log_fn:
-                                    log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi gửi file {fname}: {res.get('description')}")
+                                    log_fn(bid, "error", tr(language, "tg_send_file_error", label=label, name=fname, description=res.get('description')))
                                 telegram_error = f"Lỗi gửi file '{fname}' qua Telegram: {res.get('description')}"
                             else:
                                 last_message_id = res.get("result", {}).get("message_id")
@@ -1467,7 +1469,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 res = _tg_send_message(bot_token, chat_id, text, parse_mode, reply_to_id)
                                 if not res.get("ok"):
                                     if log_fn:
-                                        log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi gửi tin nhắn: {res.get('description')}")
+                                        log_fn(bid, "error", tr(language, "tg_send_message_error", label=label, description=res.get('description')))
                                     telegram_error = f"Lỗi gửi tin nhắn Telegram: {res.get('description')}"
                                 else:
                                     last_message_id = res.get("result", {}).get("message_id")
@@ -1475,13 +1477,13 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             if not telegram_error:
                                 for i, (fname, fpath) in enumerate(resolved_files):
                                     if log_fn:
-                                        log_fn(bid, "info", f"📎 [Telegram] {label} - Đính kèm file: {fname}")
+                                        log_fn(bid, "info", tr(language, "tg_attachment_sending", label=label, name=fname))
                                     # File đầu tiên reply to the message (nếu text trống và có reply_to_id)
                                     cur_reply_to = reply_to_id if (i == 0 and not text.strip()) else None
                                     res = _tg_send_document(bot_token, chat_id, str(fpath), fname, reply_to=cur_reply_to)
                                     if not res.get("ok"):
                                         if log_fn:
-                                            log_fn(bid, "error", f"❌ [Telegram] {label} - Lỗi gửi file {fname}: {res.get('description')}")
+                                            log_fn(bid, "error", tr(language, "tg_send_file_error", label=label, name=fname, description=res.get('description')))
                                         telegram_error = f"Lỗi gửi file '{fname}' qua Telegram: {res.get('description')}"
                                         break
                                     if not last_message_id:
@@ -1494,7 +1496,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             continue
                     else:
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Telegram] {label} - Đã gửi thánh công! (message_id={last_message_id})")
+                            log_fn(bid, "success", tr(language, "tg_send_success", label=label, message_id=last_message_id))
                         # Đổi tên key theo tên biến đặt trên UI. Nếu người dùng đổi
                         # tên chat_id thành tên riêng thì chat_id cũ (của Listener /
                         # tin nhắn người dùng) KHÔNG còn bị ghi đè nữa.
@@ -1509,7 +1511,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             current_input = {"message_id": last_message_id, **tg_out}
                 except Exception as e:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ [Telegram] {label} - Gửi thất bại: {str(e)}")
+                        log_fn(bid, "error", tr(language, "tg_send_failed_exception", label=label, error=str(e)))
                     if handle_workflow_error(f"Telegram gửi thất bại: {e}", bid, label):
                         return
                     else:
@@ -1531,7 +1533,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 final_body = mail_body
 
                 if log_fn:
-                    log_fn(bid, "info", f"📧 [Email] {label} - Đang gửi thư tới {final_to}...")
+                    log_fn(bid, "info", tr(language, "email_sending", label=label, to=final_to))
 
                 msg = EmailMessage()
                 msg['Subject'] = final_subject
@@ -1568,7 +1570,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             msg.add_attachment(fp.read(), maintype=maintype, subtype=subtype, filename=att_name)
                     else:
                         if log_fn:
-                            log_fn(bid, "warning", f"⚠ [Email] Không tìm thấy file đính kèm: {att_name}")
+                            log_fn(bid, "warning", tr(language, "email_attachment_not_found", name=att_name))
 
                 smtp = None
                 try:
@@ -1583,10 +1585,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     smtp.send_message(msg)
 
                     if log_fn:
-                        log_fn(bid, "success", f"✅ [Email] {label} - Đã gửi thư thánh công!")
+                        log_fn(bid, "success", tr(language, "email_success", label=label))
                 except Exception as e:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ [Email] {label} - Lỗi gửi thư: {str(e)}")
+                        log_fn(bid, "error", tr(language, "email_error", label=label, error=str(e)))
                     if handle_workflow_error(f"Gửi email thất bại: {e}", bid, label):
                         return
                     else:
@@ -1617,10 +1619,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 elif item.is_dir():
                                     shutil.rmtree(item)
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Xóa] Đã dọn dẹp thư mục Input.")
+                            log_fn(bid, "success", tr(language, "delete_input_success"))
                     except Exception as e:
                         if log_fn:
-                            log_fn(bid, "error", f"❌ [Xóa] Lỗi xóa Input: {e}")
+                            log_fn(bid, "error", tr(language, "delete_input_error", error=e))
                 
                 if delete_output:
                     try:
@@ -1632,21 +1634,21 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 elif item.is_dir():
                                     shutil.rmtree(item)
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Xóa] Đã dọn dẹp thư mục Output.")
+                            log_fn(bid, "success", tr(language, "delete_output_success"))
                     except Exception as e:
                         if log_fn:
-                            log_fn(bid, "error", f"❌ [Xóa] Lỗi xóa Output: {e}")
+                            log_fn(bid, "error", tr(language, "delete_output_error", error=e))
                             
             elif btype == "browser":
                 steps = bdata.get("steps", [])
                 headless = not bdata.get("debugMode", False)
                 if not steps:
                     if log_fn:
-                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có bước nào, bỏ qua")
+                        log_fn(bid, "warning", tr(language, "browser_no_steps", label=label))
                     continue_branch = False
                 else:
                     if log_fn:
-                        log_fn(bid, "info", f"🌐 Đang chạy Browser: {label}...")
+                        log_fn(bid, "info", tr(language, "browser_running", label=label))
                     
                     from services.browser_executor import run_browser_block
                     
@@ -1673,6 +1675,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                             output_dir=str(output_dir).replace('\\', '/'),
                             stop_event=stop_event,
                             browser_profile_dir=str(browser_profile_dir).replace('\\', '/'),
+                            language=language,
                         )
                         if not b_result.get("success"):
                             if b_result.get("stopped"):
@@ -1681,7 +1684,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                 final_status = "stopped"
                                 break
                             if log_fn:
-                                log_fn("system", "error", f"❌ Workflow thất bại (Browser lỗi)")
+                                log_fn("system", "error", tr(language, "workflow_failed_browser"))
                             if handle_workflow_error(b_result.get("error"), bid, label):
                                 return
                             else:
@@ -1699,7 +1702,7 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                                     current_input = browser_out
                     except Exception as e:
                         if log_fn:
-                            log_fn("system", "error", f"❌ Lỗi ngoại lệ Browser: {e}")
+                            log_fn("system", "error", tr(language, "browser_exception", error=e))
                         if handle_workflow_error(str(e), bid, label):
                             return
                         else:
@@ -1708,15 +1711,15 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                 code = bdata.get("code", "").strip()
                 if not code:
                     if log_fn:
-                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có code")
+                        log_fn(bid, "warning", tr(language, "python_no_code", label=label))
                     continue_branch = False
                 else:
                     if log_fn:
-                        log_fn(bid, "info", f"⚡ Đang chạy: {label}...")
+                        log_fn(bid, "info", tr(language, "python_running", label=label))
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input, 
                         timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event, workflow_env=workflow_env, run_id=run_id
+                        stop_event=stop_event, workflow_env=workflow_env, run_id=run_id, language=language
                     )
                     if not success:
                         _act = on_block_failed(error, bid, label)
@@ -1736,11 +1739,11 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
 
                 if not sql_query:
                     if log_fn:
-                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có câu lệnh SQL")
+                        log_fn(bid, "warning", tr(language, "sql_missing_query", label=label))
                     continue_branch = False
                 elif not db_config:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Block [{label}] chưa chọn Kết nối Database")
+                        log_fn(bid, "error", tr(language, "block_missing_db_connection", label=label))
                     if handle_workflow_error("Chưa chọn Kết nối Database cho khối SQL to Excel", bid, label):
                         return
                     else:
@@ -1753,10 +1756,10 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
                     elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
                     else: packages_to_install.append("pyodbc")
 
-                    ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+                    ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event, language=language)
 
                     if log_fn:
-                        log_fn(bid, "info", f"⚡ Đang chạy SQL to Excel: {label}...")
+                        log_fn(bid, "info", tr(language, "sql_to_excel_running", label=label))
 
                     code = f'''
 import pandas as pd
@@ -1785,7 +1788,7 @@ output_data = {{"file_name": out_file}}
                     success, output, error, duration = run_python_block_sync(
                         project_id, bid, workflow_id, code, current_input,
                         timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event, run_id=run_id
+                        stop_event=stop_event, run_id=run_id, language=language
                     )
                     if not success:
                         _act = on_block_failed(error, bid, label)
@@ -1810,17 +1813,17 @@ output_data = {{"file_name": out_file}}
                     selected_files = None  # Sẽ tự quét trong code Python
                 elif not selected_files:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Merge Excel: Bạn chưa chọn file nào để gộp!")
+                        log_fn(bid, "error", tr(language, "merge_excel_no_files"))
                     if handle_workflow_error("No files selected", bid, label):
                         return
                     else:
                         continue
                 
                 packages_to_install = ["pandas", "openpyxl", "xlrd"]
-                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event, language=language)
                 
                 if log_fn:
-                    log_fn(bid, "info", f"⚡ Đang chạy Merge Excel: {label}...")
+                    log_fn(bid, "info", tr(language, "merge_excel_running", label=label))
                 
                 if merge_all_input:
                     file_list_code = """
@@ -1903,7 +1906,7 @@ output_data = {{"file_name": out_file}}
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
                     timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                    stop_event=stop_event, run_id=run_id
+                    stop_event=stop_event, run_id=run_id, language=language
                 )
                 if not success:
                     _act = on_block_failed(error, bid, label)
@@ -1934,17 +1937,17 @@ output_data = {{"file_name": out_file}}
                 
                 if not selected_files:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Pivot Excel: Bạn chưa chọn file nào để tổng hợp!")
+                        log_fn(bid, "error", tr(language, "pivot_excel_no_files"))
                     if handle_workflow_error("No files selected", bid, label):
                         return
                     else:
                         continue
                 
                 packages_to_install = ["pandas", "openpyxl", "xlrd"]
-                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event, language=language)
                 
                 if log_fn:
-                    log_fn(bid, "info", f"📊 Đang chạy Pivot Excel: {label}...")
+                    log_fn(bid, "info", tr(language, "pivot_excel_running", label=label))
                 
                 code = f'''
 import os
@@ -2089,7 +2092,7 @@ output_data = {{"file_name": out_file}}
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
                     timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                    stop_event=stop_event, run_id=run_id
+                    stop_event=stop_event, run_id=run_id, language=language
                 )
                 if not success:
                     _act = on_block_failed(error, bid, label)
@@ -2124,7 +2127,7 @@ output_data = {{"file_name": out_file}}
 
                 if not input_file or not table_name:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Thiếu cấu hình: File nguồn hoặc Bảng đích")
+                        log_fn(bid, "error", tr(language, "excel_to_sql_missing_config"))
                     if handle_workflow_error("Chưa cấu hình đủ bảng đích hoặc file nguồn", bid, label):
                         return
                     else:
@@ -2137,14 +2140,14 @@ output_data = {{"file_name": out_file}}
                 # SQL thường (cho phép schema dạng dbo.ten_bang).
                 if not _VALID_TABLE_NAME.match(table_name):
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Tên bảng đích không hợp lệ: {table_name!r}. Chỉ cho phép chữ, số, _ và dấu chấm (VD: dbo.don_hang).")
+                        log_fn(bid, "error", tr(language, "excel_to_sql_invalid_table_name", table_name=repr(table_name)))
                     if handle_workflow_error(f"Tên bảng đích không hợp lệ: {table_name!r}", bid, label):
                         return
                     else:
                         continue
                 elif not db_config:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Block [{label}] chưa chọn Kết nối Database")
+                        log_fn(bid, "error", tr(language, "block_missing_db_connection", label=label))
                     if handle_workflow_error("Chưa chọn Kết nối Database cho khối Excel to SQL", bid, label):
                         return
                     else:
@@ -2156,10 +2159,10 @@ output_data = {{"file_name": out_file}}
                 if db_type == "postgresql": packages_to_install.append("psycopg2-binary")
                 elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
                 else: packages_to_install.append("pyodbc")
-                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+                ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event, language=language)
 
                 if log_fn:
-                    log_fn(bid, "info", "⚡ Đang Import Excel vào SQL Server: " + label + "...")
+                    log_fn(bid, "info", tr(language, "excel_to_sql_running", label=label))
 
                 code = f'''
 import os
@@ -2255,7 +2258,7 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
                 success, output, error, duration = run_python_block_sync(
                     project_id, bid, workflow_id, code, current_input,
                     timeout=7200, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                    stop_event=stop_event, run_id=run_id
+                    stop_event=stop_event, run_id=run_id, language=language
                 )
                 if not success:
                     _act = on_block_failed(
@@ -2277,11 +2280,11 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
 
                 if not sql_command:
                     if log_fn:
-                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có câu lệnh SQL/EXEC")
+                        log_fn(bid, "warning", tr(language, "sql_exec_missing_query", label=label))
                     continue_branch = False
                 elif not db_config:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Block [{label}] chưa chọn Kết nối Database")
+                        log_fn(bid, "error", tr(language, "block_missing_db_connection", label=label))
                     if handle_workflow_error("Chưa chọn Kết nối Database cho khối Chạy Hàm SQL (EXEC)", bid, label):
                         return
                     else:
@@ -2294,7 +2297,7 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
                     elif db_type == "mysql": packages_to_install.extend(["pymysql", "cryptography"])
                     else: packages_to_install.append("pyodbc")
 
-                    ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event)
+                    ensure_packages(project_id, packages_to_install, log_fn, bid, label, stop_event, language=language)
 
                     # Thủ tục nặng có thể chạy vài tiếng → cho phép cấu hình.
                     # 0 = chờ tới khi SQL trả kết quả (không giới hạn). Không set = 7200s như cũ.
@@ -2308,11 +2311,11 @@ output_data = {{"rows_inserted": len(sql_df), "table": table_name}}
                             sql_timeout = 7200
 
                     if log_fn:
-                        log_fn(bid, "info", "⚡ Đang chạy Hàm/Thủ tục SQL: " + label + "...")
+                        log_fn(bid, "info", tr(language, "sql_exec_running", label=label))
                         if sql_timeout == 0:
-                            log_fn(bid, "info", "   ⏳ Không giới hạn thời gian — chờ tới khi SQL trả kết quả (bấm Dừng để huỷ)")
+                            log_fn(bid, "info", tr(language, "sql_exec_no_timeout"))
                         else:
-                            log_fn(bid, "info", f"   ⏳ Giới hạn thời gian: {sql_timeout}s")
+                            log_fn(bid, "info", tr(language, "sql_exec_timeout_limit", timeout=sql_timeout))
 
                     code = f'''
 from sqlalchemy import create_engine, text
@@ -2353,7 +2356,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                         # hình là vô nghĩa: log in ra "Không giới hạn thời gian" rồi
                         # vẫn kill stored procedure đúng phút thứ 120.
                         timeout=sql_timeout, label=label, log_fn=log_fn, input_dir=str(input_dir),
-                        stop_event=stop_event, run_id=run_id
+                        stop_event=stop_event, run_id=run_id, language=language
                     )
                     if not success:
                         # duration = thời gian của CHÍNH khối này. Trước đây dùng
@@ -2451,13 +2454,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                     workflow_env[row_count_var] = len(records)
 
                     if log_fn:
-                        log_fn(bid, "success", f"🟢 [Google Sheets] Đọc thành công {len(records)} dòng vào biến '{output_var}' (Số dòng: '{row_count_var}')")
+                        log_fn(bid, "success", tr(language, "gsheets_read_success", count=len(records), output_var=output_var, row_count_var=row_count_var))
                 except Exception as e:
                     # Trước đây khối này `raise` trần → ngoại lệ bay lên except
                     # ngoài cùng, chỉ log "Lỗi hệ thống" và KHÔNG bao giờ chạy khối
                     # Bắt Lỗi dù đã nối. Nay đi cùng đường với các khối khác.
                     if log_fn:
-                        log_fn(bid, "error", f"❌ [Google Sheets] {label} - {e}")
+                        log_fn(bid, "error", tr(language, "gsheets_error", label=label, error=e))
                     if handle_workflow_error(str(e), bid, label):
                         return
                     else:
@@ -2525,13 +2528,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                     workflow_env[row_count_var] = len(records)
 
                     if log_fn:
-                        log_fn(bid, "success", f"🟢 [Đọc Excel] Đọc thành công {len(records)} dòng từ '{file_name}' vào biến '{output_var}' (Số dòng: '{row_count_var}')")
+                        log_fn(bid, "success", tr(language, "read_excel_success", count=len(records), file_name=file_name, output_var=output_var, row_count_var=row_count_var))
                 except Exception as e:
                     # Trước đây khối này `raise` trần → ngoại lệ bay lên except
                     # ngoài cùng, chỉ log "Lỗi hệ thống" và KHÔNG bao giờ chạy khối
                     # Bắt Lỗi dù đã nối. Nay đi cùng đường với các khối khác.
                     if log_fn:
-                        log_fn(bid, "error", f"❌ [Đọc Excel] {label} - {e}")
+                        log_fn(bid, "error", tr(language, "read_excel_error", label=label, error=e))
                     if handle_workflow_error(str(e), bid, label):
                         return
                     else:
@@ -2550,12 +2553,12 @@ output_data = {{"result": rows, "row_count": row_count}}
 
                 if not conditions:
                     if log_fn:
-                        log_fn(bid, "warning", f"⚠️ Block [{label}] không có điều kiện nào")
+                        log_fn(bid, "warning", tr(language, "condition_no_conditions", label=label))
                     continue_branch = False
                     continue
 
                 if log_fn:
-                    log_fn(bid, "info", f"🔀 [Condition] Kiểm tra {len(conditions)} điều kiện ({logical_op})")
+                    log_fn(bid, "info", tr(language, "condition_checking", count=len(conditions), op=logical_op))
 
                 try:
                     results = []
@@ -2586,7 +2589,7 @@ output_data = {{"result": rows, "row_count": row_count}}
                             
                         results.append(result)
                         if log_fn:
-                            log_fn(bid, "info", f"   [{idx+1}] {cond_var} ({actual_val}) {cond_op} {cond_val} ➜ {result}")
+                            log_fn(bid, "info", tr(language, "condition_detail_line", idx=idx+1, var=cond_var, actual=actual_val, op=cond_op, cmp=cond_val, result=result))
                             
                     # Calculate final result
                     if logical_op == "OR":
@@ -2596,10 +2599,10 @@ output_data = {{"result": rows, "row_count": row_count}}
                         
                     cond_branch_taken = "true" if final_result else "false"
                     if log_fn:
-                        log_fn(bid, "success", f"✅ Kết quả chung: {final_result}")
+                        log_fn(bid, "success", tr(language, "condition_final_result", result=final_result))
                 except Exception as e:
                     if log_fn:
-                        log_fn(bid, "error", f"❌ Lỗi so sánh: {e}")
+                        log_fn(bid, "error", tr(language, "condition_compare_error", error=e))
                     if handle_workflow_error(f"Lỗi so sánh điều kiện: {e}", bid, label):
                         return
                     else:
@@ -2620,13 +2623,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                 if mode == "count":
                     max_count = int(bdata.get("loopCount", 0))
                     if log_fn:
-                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']} / {max_count}")
+                        log_fn(bid, "info", tr(language, "loop_iteration_count", runs=state['runs'], max_count=max_count))
                     # "< " chứ không phải "<=": ở lần lặp thứ max_count, phải dừng NGAY (không
                     # ra lệnh chạy lại khối trước Loop thêm 1 lần thừa) - cùng lỗi off-by-one
                     # như chế độ điều kiện.
                     cond_branch_taken = "loop" if state["runs"] < max_count else "endloop"
                     if log_fn:
-                        log_fn(bid, "success", f"✅ [Loop] Đi nhánh: {cond_branch_taken}")
+                        log_fn(bid, "success", tr(language, "loop_branch_taken", branch=cond_branch_taken))
                 elif mode == "array":
                     raw_var = bdata.get("loopArrayVar", "sheets_data")
                     array_var_name = str(raw_var).strip()
@@ -2655,7 +2658,7 @@ output_data = {{"result": rows, "row_count": row_count}}
 
                     total_items = len(array_data)
                     if log_fn:
-                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']} / {total_items} (Mảng: {array_var_name})")
+                        log_fn(bid, "info", tr(language, "loop_iteration_array", runs=state['runs'], total=total_items, array_var=array_var_name))
 
                     if state["runs"] <= total_items and total_items > 0:
                         current_item = array_data[state["runs"] - 1]
@@ -2679,11 +2682,11 @@ output_data = {{"result": rows, "row_count": row_count}}
 
                         cond_branch_taken = "loop"
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Loop] Đi nhánh: loop (Dòng {state['runs']}/{total_items})")
+                            log_fn(bid, "success", tr(language, "loop_branch_continue_array", runs=state['runs'], total=total_items))
                     else:
                         cond_branch_taken = "endloop"
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Loop] Hoàn tất {total_items} phần tử mảng -> Đi nhánh: endloop")
+                            log_fn(bid, "success", tr(language, "loop_array_done", total=total_items))
                 else: # condition
                     logical_op = bdata.get("logicalOperator", "AND").upper()
                     conditions = bdata.get("conditions")
@@ -2691,12 +2694,12 @@ output_data = {{"result": rows, "row_count": row_count}}
 
                     if not conditions:
                         if log_fn:
-                            log_fn(bid, "warning", f"⚠️ Block [{label}] không có điều kiện nào")
+                            log_fn(bid, "warning", tr(language, "condition_no_conditions", label=label))
                         continue_branch = False
                         continue
 
                     if log_fn:
-                        log_fn(bid, "info", f"🔁 [Loop] Lần lặp {state['runs']}/{max_count or '∞'} - Kiểm tra {len(conditions)} điều kiện ({logical_op})")
+                        log_fn(bid, "info", tr(language, "loop_condition_iteration", runs=state['runs'], max_count=max_count or '∞', count=len(conditions), op=logical_op))
 
                     try:
                         results = []
@@ -2737,7 +2740,7 @@ output_data = {{"result": rows, "row_count": row_count}}
 
                             results.append(result)
                             if log_fn:
-                                log_fn(bid, "info", f"   [{idx+1}] {cond_var} ({actual_val}) {cond_op} {cmp_val} ➜ {result}")
+                                log_fn(bid, "info", tr(language, "condition_detail_line", idx=idx+1, var=cond_var, actual=actual_val, op=cond_op, cmp=cmp_val, result=result))
 
                         if logical_op == "OR":
                             final_result = any(results)
@@ -2754,15 +2757,15 @@ output_data = {{"result": rows, "row_count": row_count}}
                             # -> tổng số lần chạy khối trước Loop = max_count + 1.
                             cond_branch_taken = "endloop"
                             if log_fn:
-                                log_fn(bid, "warning", f"⚠️ [Loop] Đã dùng hết {max_count} lần quay lại cho phép - dừng dù điều kiện chưa đúng")
+                                log_fn(bid, "warning", tr(language, "loop_max_reached", max_count=max_count))
                         else:
                             cond_branch_taken = "loop"
 
                         if log_fn:
-                            log_fn(bid, "success", f"✅ [Loop] Kết quả chung: {final_result} -> {cond_branch_taken}")
+                            log_fn(bid, "success", tr(language, "loop_condition_result", result=final_result, branch=cond_branch_taken))
                     except Exception as e:
                         if log_fn:
-                            log_fn(bid, "error", f"❌ Lỗi so sánh vòng lặp: {e}")
+                            log_fn(bid, "error", tr(language, "loop_compare_error", error=e))
                         if handle_workflow_error(f"Lỗi so sánh vòng lặp: {e}", bid, label):
                             return
                         else:
@@ -2779,15 +2782,14 @@ output_data = {{"result": rows, "row_count": row_count}}
                 # các workflow đang chạy được.
                 if log_fn:
                     log_fn(bid, "warning",
-                           f"⚠️ Khối [{label}] có loại '{btype}' không còn được hỗ trợ — "
-                           f"đã bỏ qua, dữ liệu truyền thẳng sang khối kế. Hãy xoá khối này khỏi sơ đồ.")
+                           tr(language, "unsupported_block_type", label=label, btype=btype))
 
             if continue_branch and final_status != "error":
                 if btype == "loop" and cond_branch_taken == "loop":
                     delay = float(bdata.get("loopDelay") or 0)
                     if delay > 0:
                         if log_fn:
-                            log_fn(bid, "info", f"⏳ [Loop] Nghỉ {delay}s trước khi lặp lại...")
+                            log_fn(bid, "info", tr(language, "loop_delay", delay=delay))
                         # Chia nhỏ để check stop_event mỗi 0.5s - trước đây time.sleep(delay)
                         # nguyên khối khiến nút Dừng phải đợi hết loopDelay mới có hiệu lực.
                         _waited = 0.0
@@ -2815,9 +2817,9 @@ output_data = {{"result": rows, "row_count": row_count}}
                     # Hiện TÊN THẬT của biến khối vừa tạo ra. Chỉ 1 chỗ duy nhất:
                     # khối nào khai trong BLOCK_OUTPUT_VARS là tự có log này.
                     if log_fn:
-                        _out_desc = describe_output_vars(btype, bdata, current_input)
+                        _out_desc = describe_output_vars(btype, bdata, current_input, language=language)
                         if _out_desc:
-                            log_fn(bid, "info", f"📦 [{label}] Biến trả về: {_out_desc}")
+                            log_fn(bid, "info", tr(language, "output_vars_line", label=label, desc=_out_desc))
 
                 out_edges = edges_from.get(node_id, [])
                 for e in out_edges:
@@ -2836,26 +2838,26 @@ output_data = {{"result": rows, "row_count": row_count}}
         # Không đè lên "stopped" — người dùng bấm Dừng là chủ ý, không phải lỗi.
         if workflow_failed and final_status == "success":
             final_status = "error"
-        _finish_run(run_id, final_status, start, error=final_error, log_fn=log_fn)
+        _finish_run(run_id, final_status, start, error=final_error, log_fn=log_fn, language=language)
         if log_fn:
             if final_status == "success":
-                log_fn("system", "success", f"✅ Workflow hoàn thành trong {total_ms}ms")
+                log_fn("system", "success", tr(language, "workflow_done", ms=total_ms), event="workflow_done")
             elif final_status == "stopped":
-                log_fn("system", "warning", f"⏹ Đã dừng sau {total_ms}ms")
+                log_fn("system", "warning", tr(language, "workflow_stopped_total", ms=total_ms), event="workflow_stopped")
             else:
                 # Trước đây không log gì cho trạng thái error ở nhánh này → log
                 # kết thúc lửng, người dùng không biết workflow đã dừng hẳn chưa.
-                log_fn("system", "error", f"❌ Workflow thất bại sau {total_ms}ms")
+                log_fn("system", "error", tr(language, "workflow_failed", ms=total_ms), event="workflow_failed")
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
-        _finish_run(run_id, "error", start, error=str(e), log_fn=log_fn)
+        _finish_run(run_id, "error", start, error=str(e), log_fn=log_fn, language=language)
         if log_fn:
-            log_fn("system", "error", f"❌ Lỗi hệ thống khi chạy workflow: {str(e)}")
+            log_fn("system", "error", tr(language, "workflow_system_error", error=str(e)), event="workflow_system_error")
         print(f"CRITICAL ERROR IN WORKFLOW THREAD: {err_msg}")
 
 
-def _finish_run(run_id, status, start, error=None, log_fn=None):
+def _finish_run(run_id, status, start, error=None, log_fn=None, language="vi"):
     finished = datetime.now()
     duration = int((finished - start).total_seconds() * 1000)
 
@@ -2877,7 +2879,7 @@ def _finish_run(run_id, status, start, error=None, log_fn=None):
             if attempt == 2:
                 logger.error(f"Không ghi được trạng thái kết thúc cho run {run_id}: {e}")
                 if log_fn:
-                    log_fn("system", "warning", f"⚠ Không ghi được trạng thái kết thúc vào database: {e}")
+                    log_fn("system", "warning", tr(language, "finish_run_write_error", error=e))
             else:
                 import time as _t_retry
                 _t_retry.sleep(0.5 * (attempt + 1))
@@ -2905,7 +2907,7 @@ def _finish_run(run_id, status, start, error=None, log_fn=None):
         from services.browser_executor import cleanup_browser
         # cleanup_browser nhận log(level, msg) 2 tham số, log_fn ở đây là 3 tham số
         _blog = (lambda lv, msg: log_fn("system", lv, msg)) if log_fn else None
-        cleanup_browser(run_id, _blog)
+        cleanup_browser(run_id, _blog, language)
     except Exception:
         pass
     # Xóa run_id khỏi workflow mapping

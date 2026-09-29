@@ -20,6 +20,13 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=False)
     language = Column(String, default="vi")
+    # Chế độ xem danh sách workflow (thẻ/danh sách) — theo user trong DB, cùng
+    # cách với `language`, không phải tiện ích riêng trình duyệt (localStorage)
+    # để đổi máy/đổi trình duyệt vẫn giữ đúng lựa chọn.
+    workflow_view_mode = Column(String, default="grid")
+    # Đóng/mở panel 1/3 bên phải màn hình workflow — cùng lý do với
+    # workflow_view_mode: theo user trong DB, không phải localStorage.
+    workflow_panel_open = Column(Boolean, default=True)
 
     def to_dict(self):
         return {
@@ -28,6 +35,8 @@ class User(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "is_active": self.is_active,
             "language": self.language or "vi",
+            "workflow_view_mode": self.workflow_view_mode or "grid",
+            "workflow_panel_open": self.workflow_panel_open if self.workflow_panel_open is not None else True,
         }
 
 

@@ -57,6 +57,8 @@ export const deleteUser      = (id)         => api.delete(`/api/users/${id}`)
 export const activateUser    = (id)         => api.post(`/api/users/${id}/activate`)
 export const getUserStats    = (id)         => api.get(`/api/users/${id}/stats`)
 export const updateUserLanguage = (id, language) => api.patch(`/api/users/${id}/language`, { language })
+export const updateUserWorkflowViewMode = (id, workflow_view_mode) => api.patch(`/api/users/${id}/workflow-view-mode`, { workflow_view_mode })
+export const updateUserWorkflowPanelOpen = (id, workflow_panel_open) => api.patch(`/api/users/${id}/workflow-panel-open`, { workflow_panel_open })
 
 // ── License ───────────────────────────────────────────────
 export const getLicenseStatus  = ()          => api.get('/api/license/status')
@@ -290,5 +292,7 @@ export const systemApi = {
   // thread nền SAU KHI /update đã trả về, nên lỗi chỉ lấy được qua đây.
   getUpdateStatus: () => api.get('/api/system/update-status').then(res => res.data)
 }
+
+export const getSystemHardware = () => api.get(`/api/system/hardware?_t=${Date.now()}`)
 
 export default api
