@@ -106,7 +106,8 @@ def _sqlite_apply_schema_updates(conn):
         "user": {
             "language": ("TEXT", "'vi'"),
             "workflow_view_mode": ("TEXT", "'grid'"),
-            "workflow_panel_open": ("INTEGER", "1"),
+            "project_view_mode": ("TEXT", "'grid'"),
+            "side_panel_open": ("INTEGER", "1"),
         },
     }
 

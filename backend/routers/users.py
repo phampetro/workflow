@@ -104,9 +104,25 @@ async def update_user_workflow_view_mode(user_id: str, body: dict, session: Asyn
     return user.to_dict()
 
 
-@router.patch("/{user_id}/workflow-panel-open")
-async def update_user_workflow_panel_open(user_id: str, body: dict, session: AsyncSession = Depends(get_session)):
-    panel_open = body.get("workflow_panel_open")
+@router.patch("/{user_id}/project-view-mode")
+async def update_user_project_view_mode(user_id: str, body: dict, session: AsyncSession = Depends(get_session)):
+    view_mode = body.get("project_view_mode")
+    if view_mode not in ("grid", "list"):
+        raise HTTPException(400, "Chế độ xem không hợp lệ")
+
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User không tồn tại")
+
+    user.project_view_mode = view_mode
+    await session.commit()
+    await session.refresh(user)
+    return user.to_dict()
+
+
+@router.patch("/{user_id}/side-panel-open")
+async def update_user_side_panel_open(user_id: str, body: dict, session: AsyncSession = Depends(get_session)):
+    panel_open = body.get("side_panel_open")
     if not isinstance(panel_open, bool):
         raise HTTPException(400, "Giá trị không hợp lệ")
 
@@ -114,7 +130,7 @@ async def update_user_workflow_panel_open(user_id: str, body: dict, session: Asy
     if not user:
         raise HTTPException(404, "User không tồn tại")
 
-    user.workflow_panel_open = panel_open
+    user.side_panel_open = panel_open
     await session.commit()
     await session.refresh(user)
     return user.to_dict()

@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Check, Plus, FolderOpen, Clock, Trash2, Settings, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Download } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { Check, Plus, FolderOpen, Clock, Trash2, Settings, Workflow, RefreshCw, WifiOff, MoreVertical, Box, Database, Globe, Layout, Server, Sparkles, Terminal, Activity, Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor, Download, Search, LayoutGrid, List } from 'lucide-react'
 import { getProjects, createProject, updateProject, deleteProject, checkHealth, getDashboardStats, reorderProjects, API_BASE } from '../api/client'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Button, Modal, Form, Input, Dropdown, Spin, Tag, Space, Alert, Tooltip, App } from 'antd'
+import { Button, Modal, Form, Input, Dropdown, Spin, Tag, Space, Alert, Tooltip, App, Switch, Empty } from 'antd'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
+import useStore from '../store/useStore'
+import SidePanel from '../components/SidePanel'
 
 const COLORS = ['#6c63ff','#00d4aa','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
 const ICONS = {
@@ -15,7 +17,7 @@ const ICONS = {
   Code, Cloud, Cpu, FileText, Layers, Rocket, Shield, Target, Zap, Folder, HardDrive, Monitor
 }
 
-export default function Dashboard({ onOpenProject, refreshTick, openCreateModal, onCloseCreateModal, onStatsChange, currentUser }) {
+export default function Dashboard({ onOpenProject, refreshTick, openCreateModal, onCloseCreateModal, onStatsChange, currentUser, panelVisible, isSmallScreen }) {
   // Modal.confirm TĨNH không đọc được context của ConfigProvider: dialog xác nhận
   // hiện ra với style antd mặc định (xanh dương, bo góc khác, cao khác) lệch hẳn
   // phần còn lại của app, mất luôn locale vi_VN, và antd v6 in warning
@@ -27,6 +29,11 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [backendOnline, setBackendOnline] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  // Chế độ xem (thẻ/danh sách) — lưu theo user trong DB, độc lập với workflowViewMode
+  // của ProjectDetail vì đây là 2 danh sách khác nhau (project vs workflow).
+  const viewMode = useStore((s) => s.projectViewMode)
+  const setViewMode = useStore((s) => s.setProjectViewMode)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
@@ -182,9 +189,21 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     toast.success(t('dashboard.exporting', { name: project.name }))
   }
 
+  // Lọc theo tên/mô tả — cùng cách với ProjectDetail: chỉ có ý nghĩa kéo-thả sắp
+  // xếp khi đang hiện ĐỦ danh sách (không lọc).
+  const isSearching = searchQuery.trim().length > 0
+  const filteredProjects = useMemo(() => {
+    if (!isSearching) return projects
+    const q = searchQuery.trim().toLowerCase()
+    return projects.filter((p) =>
+      p.name?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q)
+    )
+  }, [projects, searchQuery, isSearching])
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const handleDragEnd = async ({ active, over }) => {
+    if (isSearching) return // sắp xếp theo index của danh sách ĐÃ LỌC sẽ ra sort_order sai
     if (!over || active.id === over.id) return
     const oldIndex = projects.findIndex(p => p.id === active.id)
     const newIndex = projects.findIndex(p => p.id === over.id)
@@ -224,61 +243,129 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   }
 
   return (
-    <div style={{ padding: '2rem 2.5rem', overflowY: 'auto', height: '100%' }}>
-      {/* Greeting */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <div>
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-base)' }}>
+      {/* Header — đồng bộ height/padding/background với header của ProjectDetail */}
+      <div className="section-header" style={{ height: 'var(--navbar-height)', display: 'flex', alignItems: 'center', padding: '0 1rem', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-default)', margin: 0, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.625rem', minWidth: 0 }}>
+          <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
             {currentUser ? t('dashboard.greetingUser', { name: currentUser.name }) : t('dashboard.greetingGuest')}
-          </h2>
-          <p style={{ color: 'var(--text-muted)', margin: '3px 0 0 0', fontSize: '0.83rem' }}>
+          </span>
+          <span style={{ color: 'var(--border-subtle)' }}>|</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {currentUser
               ? t('dashboard.subtitleUser', { count: projects.length })
               : t('dashboard.subtitleGuest', { count: projects.length })
             }
-          </p>
+          </span>
         </div>
       </div>
 
-      {/* Error state */}
-      {error && (
-        <Alert title={error} type="error" showIcon style={{ marginBottom: 20 }}
-          action={<Button size="small" onClick={loadData}>{t('dashboard.retry')}</Button>}
+      {/* Toolbar — tìm kiếm + chế độ xem, cùng kích thước/vị trí với toolbar của ProjectDetail */}
+      <div style={{ height: 'var(--toolbar-height)', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0 1rem', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
+        <Input
+          allowClear
+          prefix={<Search size="0.875rem" style={{ color: 'var(--text-muted)' }} />}
+          placeholder={t('dashboard.searchPlaceholder')}
+          aria-label={t('dashboard.searchAria')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ width: 320 }}
         />
-      )}
+        <div style={{ width: 1, height: '1.25rem', background: 'var(--border-default)' }} />
+        <Tooltip title={viewMode === 'list' ? t('dashboard.viewGrid') : t('dashboard.viewList')}>
+          <Switch
+            aria-label={t('dashboard.viewModeAria')}
+            checked={viewMode === 'list'}
+            onChange={(checked) => setViewMode(checked ? 'list' : 'grid')}
+            checkedChildren={<span className="ant-switch-icon-wrap"><List size="0.75rem" /></span>}
+            unCheckedChildren={<span className="ant-switch-icon-wrap"><LayoutGrid size="0.75rem" /></span>}
+          />
+        </Tooltip>
+      </div>
 
-      {/* Projects Grid */}
-      <Spin spinning={loading}>
-        {!loading && projects.length === 0 && !error ? (
-          <div className="empty-state">
-            <FolderOpen className="empty-state-icon" />
-            <div>
-              <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 600 }}>{t('dashboard.emptyTitle')}</h3>
-              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>{t('dashboard.emptyDesc')}</p>
-            </div>
-            <Button type="primary" onClick={() => setIsModalOpen(true)} icon={<Plus size="1rem" />} size="large" style={{ marginTop: '0.5rem' }}>
-              {t('dashboard.createProject')}
-            </Button>
-          </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={projects.map(p => p.id)} strategy={rectSortingStrategy}>
-              <div className="grid-projects">
-                {projects.map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    project={project}
-                    onOpen={() => onOpenProject?.(project)}
-                    onEdit={() => handleEdit(project)}
-                    onExport={() => handleExport(project)}
-                    onDelete={() => handleDelete(project.id)}
+      {/* Content — panel 1/3 chỉ chia cột từ đây trở xuống, không kéo lên header/toolbar.
+          Padding ngang 1rem khớp đúng với thanh tìm kiếm/header phía trên (bằng đúng
+          gap giữa content-panel), để mép card thẳng hàng với mép ô Input. */}
+      <div style={{ flex: 1, display: 'flex', gap: '1rem', overflow: 'hidden', padding: '0.875rem 1rem', background: 'var(--bg-base)' }}>
+        <div style={{ flex: panelVisible ? '1 1 67%' : '1 1 100%', minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            background: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-lg, 16px)',
+            border: '1px solid var(--border-default)',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <div style={{ flex: 1, padding: '1rem 1.75rem', overflowY: 'auto' }}>
+              {error && (
+                <Alert title={error} type="error" showIcon style={{ marginBottom: 20 }}
+                  action={<Button size="small" onClick={loadData}>{t('dashboard.retry')}</Button>}
+                />
+              )}
+
+              <Spin spinning={loading}>
+                {!loading && projects.length === 0 && !error ? (
+                  <div className="empty-state">
+                    <FolderOpen className="empty-state-icon" />
+                    <div>
+                      <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 600 }}>{t('dashboard.emptyTitle')}</h3>
+                      <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>{t('dashboard.emptyDesc')}</p>
+                    </div>
+                    <Button type="primary" onClick={() => setIsModalOpen(true)} icon={<Plus size="1rem" />} size="large" style={{ marginTop: '0.5rem' }}>
+                      {t('dashboard.createProject')}
+                    </Button>
+                  </div>
+                ) : filteredProjects.length === 0 ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={<span style={{ color: 'var(--text-muted)' }}>{t('dashboard.searchNoResults', { query: searchQuery.trim() })}</span>}
+                    style={{ padding: '3rem' }}
                   />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+                ) : (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={filteredProjects.map(p => p.id)} strategy={rectSortingStrategy}>
+                      <div className={viewMode === 'list' ? 'list-projects' : 'grid-projects'} style={{ marginTop: '0.5rem' }}>
+                        {filteredProjects.map((project) => (
+                          <ProjectCard
+                            key={project.id}
+                            project={project}
+                            listView={viewMode === 'list'}
+                            dragDisabled={isSearching}
+                            onOpen={() => onOpenProject?.(project)}
+                            onEdit={() => handleEdit(project)}
+                            onExport={() => handleExport(project)}
+                            onDelete={() => handleDelete(project.id)}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                )}
+              </Spin>
+            </div>
+          </div>
+        </div>
+
+        {/* Panel 1/3 bên phải — bắt đầu từ dưới toolbar, không kéo lên ngang header */}
+        {panelVisible && (
+          <div style={{
+            flex: '0 0 33%',
+            maxWidth: 420,
+            minWidth: 320,
+            background: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-lg, 16px)',
+            border: '1px solid var(--border-default)',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <SidePanel active={!isSmallScreen} />
+          </div>
         )}
-      </Spin>
+      </div>
 
       {/* Create Modal */}
       <Modal
@@ -370,7 +457,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
   )
 }
 
-function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
+function ProjectCard({ project, listView, dragDisabled, onOpen, onEdit, onExport, onDelete }) {
   const { t, i18n } = useTranslation()
   const {
     attributes,
@@ -429,24 +516,81 @@ function ProjectCard({ project, onOpen, onEdit, onExport, onDelete }) {
     { key: 'delete', label: t('dashboard.menuDelete'), icon: <Trash2 size="0.938rem" />, danger: true, onClick: (e) => { e.domEvent.stopPropagation(); onDelete(); } },
   ]
 
+  const rootProps = {
+    ref: setNodeRef,
+    style: { ...style, '--proj-color': pColor },
+    ...(dragDisabled ? {} : attributes),
+    ...(dragDisabled ? {} : listeners),
+    onClick: onOpen,
+    // Thẻ project là <div> nên bàn phím không mở được project nào — với người
+    // chỉ dùng bàn phím thì app coi như không dùng được. role/tabIndex/onKeyDown
+    // biến nó thành điểm dừng Tab hợp lệ và nhận Enter/Space như một nút.
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': t('dashboard.openProjectAria', { name: project.name }),
+    onKeyDown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
+    },
+  }
+
+  if (listView) {
+    return (
+      <div {...rootProps} className="project-row project-row--list">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+          <div style={{
+            width: '2.25rem', height: '2.25rem', borderRadius: '0.5rem', flexShrink: 0,
+            background: `color-mix(in srgb, ${pColor} 15%, transparent)`,
+            color: pColor, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: `1px solid color-mix(in srgb, ${pColor} 30%, transparent)`
+          }}>
+            <IconComponent size="1.125rem" strokeWidth={2} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '0.625rem' }}>
+            <Tooltip title={project.name} placement="top" mouseEnterDelay={0.5}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '45%', flexShrink: 0 }}>
+                {project.name}
+              </span>
+            </Tooltip>
+            <Tooltip title={project.description || t('dashboard.noDescription')} placement="top" mouseEnterDelay={0.5}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {project.description || t('dashboard.noDescription')}
+              </span>
+            </Tooltip>
+          </div>
+
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem', flexShrink: 0 }}>
+            <Clock size="0.75rem" style={{ flexShrink: 0 }} />
+            {formatDate(project.updated_at || project.created_at)}
+          </span>
+
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem', flexShrink: 0 }}>
+            <Workflow size="0.75rem" style={{ flexShrink: 0 }} />
+            {project.workflow_count || 0}
+          </span>
+
+          <Tag color={statusColor} style={{ margin: 0, borderRadius: '0.375rem', border: 'none', padding: '0.125rem 0.5rem', fontSize: '0.75rem', fontWeight: 500, flexShrink: 0 }}>
+            {statusText}
+          </Tag>
+
+          <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreVertical size="1rem" />}
+              aria-label={t('dashboard.projectMenuAria')}
+              onClick={e => e.stopPropagation()}
+              className="project-menu-btn"
+              style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+            />
+          </Dropdown>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div
-      ref={setNodeRef}
-      style={{ ...style, '--proj-color': pColor }}
-      className="project-row"
-      {...attributes}
-      {...listeners}
-      onClick={onOpen}
-      // Thẻ project là <div> nên bàn phím không mở được project nào — với người
-      // chỉ dùng bàn phím thì app coi như không dùng được. role/tabIndex/onKeyDown
-      // biến nó thành điểm dừng Tab hợp lệ và nhận Enter/Space như một nút.
-      role="button"
-      tabIndex={0}
-      aria-label={t('dashboard.openProjectAria', { name: project.name })}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(e) }
-      }}
-    >
+    <div {...rootProps} className="project-row">
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem', paddingLeft: '1.25rem' }}>
         <div style={{

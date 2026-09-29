@@ -34,12 +34,14 @@ def _github_ssl_context() -> ssl.SSLContext:
 # "Đang cập nhật và khởi động lại...". Khi thành công thì app tự thoát nên không
 # cần báo gì; khi THẤT BẠI (chữ ký sai, mạng đứt) mà không lưu lại thì người dùng
 # ngồi nhìn spinner vĩnh viễn, không biết chuyện gì. FE poll /update-status để lấy.
-_update_error: str | None = None
+# Lưu dạng {"code", "detail"} thay vì chuỗi tiếng Việt cứng — FE dịch hiển thị
+# theo "code" qua i18n (xem AboutModal.jsx).
+_update_error: dict | None = None
 
 
-def _set_update_error(msg: str) -> None:
+def _set_update_error(code: str | None, detail: str = "") -> None:
     global _update_error
-    _update_error = msg
+    _update_error = {"code": code, "detail": detail} if code else None
 
 
 # ── Hardware & Resource Monitoring ─────────────────────────────
@@ -259,24 +261,26 @@ def check_update():
                 current_version = json.load(f).get("version", "0.0.0")
                 
             if latest_version and latest_version != current_version:
-                return {"hasUpdate": True, "message": f"Có bản cập nhật mới (v{latest_version})", "download_url": download_url}
-            
-            return {"hasUpdate": False, "message": "Bạn đang dùng phiên bản mới nhất"}
+                # "message" giữ lại để log/debug — FE dịch hiển thị theo "code" +
+                # "version" qua i18n, không đọc "message" (luôn tiếng Việt cứng).
+                return {"hasUpdate": True, "code": "update_available", "version": latest_version, "message": f"Có bản cập nhật mới (v{latest_version})", "download_url": download_url}
+
+            return {"hasUpdate": False, "code": "up_to_date", "message": "Bạn đang dùng phiên bản mới nhất"}
         except Exception as e:
             logger.exception("Kiểm tra cập nhật GitHub thất bại")
-            return {"hasUpdate": False, "error": str(e), "message": "Không thể kiểm tra cập nhật từ GitHub."}
+            return {"hasUpdate": False, "code": "check_failed", "error": str(e), "message": "Không thể kiểm tra cập nhật từ GitHub."}
 
     try:
         # Fetch remote updates
         subprocess.run(["git", "fetch", "origin", "main"], check=True, timeout=10)
         status_out = subprocess.check_output(["git", "status", "-uno"], text=True)
         if "Your branch is behind" in status_out:
-            return {"hasUpdate": True, "message": "Có bản cập nhật mới"}
-        return {"hasUpdate": False, "message": "Bạn đang dùng phiên bản mới nhất"}
+            return {"hasUpdate": True, "code": "update_available", "message": "Có bản cập nhật mới"}
+        return {"hasUpdate": False, "code": "up_to_date", "message": "Bạn đang dùng phiên bản mới nhất"}
     except FileNotFoundError:
-        return {"hasUpdate": False, "error": "GIT_NOT_FOUND", "message": "Hệ thống không tìm thấy Git. Vui lòng cài đặt Git để sử dụng tính năng cập nhật."}
+        return {"hasUpdate": False, "code": "git_not_found", "error": "GIT_NOT_FOUND", "message": "Hệ thống không tìm thấy Git. Vui lòng cài đặt Git để sử dụng tính năng cập nhật."}
     except Exception as e:
-        return {"hasUpdate": False, "error": str(e)}
+        return {"hasUpdate": False, "code": "check_failed", "error": str(e)}
 
 @router.post("/update")
 def execute_update():
@@ -341,7 +345,7 @@ def execute_update():
                     except Exception:
                         pass
                     logger.error(f"Từ chối bản cập nhật — xác minh chữ ký thất bại: {e}")
-                    _set_update_error(f"Bản cập nhật không hợp lệ: {e}")
+                    _set_update_error("invalid_update", str(e))
                     return
 
                 logger.info("✅ Chữ ký bản cập nhật hợp lệ, tiến hành cài đặt.")

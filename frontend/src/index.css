@@ -445,14 +445,24 @@ body {
    gần đục (alpha .5) nên bỏ blur gần như không đổi diện mạo.
    `transition: all` cũng đã bỏ — nó transition cả thuộc tính layout, chỉ cần
    border-color và box-shadow là đủ cho hiệu ứng focus. */
-.ant-input, .ant-select-selector {
+.ant-input, .ant-select-selector, .ant-input-affix-wrapper {
   background: rgba(24, 24, 27, 0.5) !important;
   border: 1px solid var(--border-default) !important;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast) !important;
 }
-:root[data-theme="light"] .ant-input, :root[data-theme="light"] .ant-select-selector { background: rgba(255,255,255,0.5) !important; }
+:root[data-theme="light"] .ant-input, :root[data-theme="light"] .ant-select-selector, :root[data-theme="light"] .ant-input-affix-wrapper { background: rgba(255,255,255,0.5) !important; }
 
-.ant-input:focus, .ant-input-focused {
+/* Input có prefix/suffix (ô tìm kiếm, allowClear...) antd bọc trong
+   .ant-input-affix-wrapper — <input> bên trong PHẢI bỏ border/background riêng,
+   nếu không bị lồng 2 viền: viền bo góc của wrapper (ngoài) + viền vuông của
+   chính input do rule .ant-input ở trên áp !important đè lên (trong). */
+.ant-input-affix-wrapper .ant-input {
+  border: none !important;
+  background: transparent !important;
+}
+
+.ant-input:focus, .ant-input-focused,
+.ant-input-affix-wrapper:focus, .ant-input-affix-wrapper-focused {
   border-color: var(--accent-primary) !important;
   box-shadow: 0 0 0 3px var(--accent-primary-glow) !important;
 }
@@ -477,12 +487,13 @@ body {
 :root[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); }
 :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.2); }
 
-/* --- Grid Projects Layout --- */
+/* --- Grid Projects Layout ---
+   Không tự padding — nằm trong card nội dung đã có padding '1rem 1.75rem'
+   (Dashboard.jsx), đồng bộ với .grid-workflows/.list-workflows của ProjectDetail. */
 .grid-projects {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1rem;
-  padding: 1rem;
 }
 
 /* --- Grid Workflows Layout --- */
@@ -493,6 +504,12 @@ body {
 }
 
 .list-workflows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.list-projects {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
@@ -589,6 +606,16 @@ body {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
   border-color: var(--proj-color, var(--accent-primary));
+}
+
+/* Chế độ xem danh sách — hàng mỏng hơn thẻ lưới, không cần nhấc lên khi hover */
+.project-row--list {
+  padding: 0.625rem 1.25rem;
+}
+
+.project-row--list:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
 }
 
 /* Dropdown Menu Small Size */

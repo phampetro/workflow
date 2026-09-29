@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { PanelRightClose } from 'lucide-react'
 import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import ProjectDetail from './pages/ProjectDetail'
@@ -7,8 +8,10 @@ import UserPickerModal from './components/UserPickerModal'
 import AiSettingsModal from './components/AiSettingsModal'
 import AboutModal from './components/AboutModal'
 import LicenseGate from './components/LicenseGate'
+import SidePanel from './components/SidePanel'
+import useIsSmallScreen from './hooks/useIsSmallScreen'
 import { Toaster } from 'react-hot-toast'
-import { ConfigProvider, theme as antdTheme, Spin, App as AntApp } from 'antd'
+import { ConfigProvider, theme as antdTheme, Spin, App as AntApp, Drawer } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import enUS from 'antd/locale/en_US'
 import 'dayjs/locale/vi'
@@ -41,6 +44,23 @@ export default function App() {
   const [view, setView] = useState(VIEWS.DASHBOARD)
   const [selectedProject, setSelectedProject] = useState(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState(null)
+
+  // Panel 1/3 bên phải — dùng chung cho Dashboard lẫn ProjectDetail (không còn
+  // riêng màn hình workflow nữa), KHÔNG hiện ở Editor (đã có Logs/History/Scheduler
+  // riêng). Đóng/mở lưu theo user trong DB; màn hình nhỏ (<1200px) dùng Drawer
+  // trượt thay vì chia cột (không đủ chỗ).
+  const sidePanelOpen = useStore((state) => state.sidePanelOpen)
+  const setSidePanelOpen = useStore((state) => state.setSidePanelOpen)
+  const isSmallScreen = useIsSmallScreen(1200)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  useEffect(() => {
+    if (!isSmallScreen) setDrawerOpen(false)
+  }, [isSmallScreen])
+  const handleToggleSidePanel = () => {
+    if (isSmallScreen) setDrawerOpen((prev) => !prev)
+    else setSidePanelOpen(!sidePanelOpen)
+  }
+  const panelVisible = !isSmallScreen && sidePanelOpen
 
   // Bootstrap state
   const [bootstrapDone, setBootstrapDone] = useState(false)
@@ -371,38 +391,68 @@ export default function App() {
                   onSwitchUser={() => setShowUserPicker(true)}
                   onOpenAiSettings={() => setOpenAiSettings(true)}
                   onOpenAbout={() => setOpenAbout(true)}
+                  sidePanelOpen={isSmallScreen ? drawerOpen : sidePanelOpen}
+                  onToggleSidePanel={handleToggleSidePanel}
                 />
               </>
             )}
 
             {/* Main Content */}
             <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              {view === VIEWS.DASHBOARD && (
-                <Dashboard
-                  onOpenProject={openProject}
-                  refreshTick={refreshTick}
-                  openCreateModal={openCreateModal}
-                  onCloseCreateModal={() => setOpenCreateModal(false)}
-                  onStatsChange={setStats}
-                  currentUser={currentUser}
-                />
-              )}
-              {view === VIEWS.PROJECT && (
-                <ProjectDetail
-                  project={selectedProject}
-                  onBack={goBack}
-                  onOpenWorkflow={openWorkflow}
-                  onProjectUpdate={(updated) => {
-                    setSelectedProject(updated)
-                  }}
-                />
-              )}
-              {view === VIEWS.EDITOR && (
+              {view === VIEWS.EDITOR ? (
                 <WorkflowEditor
                   workflow={selectedWorkflow}
                   project={selectedProject}
                   onBack={goBack}
                 />
+              ) : (
+                <>
+                  {/* Header/toolbar của Dashboard, ProjectDetail tự chiếm toàn bộ chiều
+                      ngang — panel 1/3 chỉ chia cột từ phần Content trở xuống (mỗi trang
+                      tự render, xem panelVisible/isSmallScreen truyền xuống). */}
+                  {view === VIEWS.DASHBOARD && (
+                    <Dashboard
+                      onOpenProject={openProject}
+                      refreshTick={refreshTick}
+                      openCreateModal={openCreateModal}
+                      onCloseCreateModal={() => setOpenCreateModal(false)}
+                      onStatsChange={setStats}
+                      currentUser={currentUser}
+                      panelVisible={panelVisible}
+                      isSmallScreen={isSmallScreen}
+                    />
+                  )}
+                  {view === VIEWS.PROJECT && (
+                    <ProjectDetail
+                      project={selectedProject}
+                      onBack={goBack}
+                      onOpenWorkflow={openWorkflow}
+                      onProjectUpdate={(updated) => {
+                        setSelectedProject(updated)
+                      }}
+                      panelVisible={panelVisible}
+                      isSmallScreen={isSmallScreen}
+                    />
+                  )}
+
+                  {/* Panel dạng Drawer trượt — màn hình nhỏ (<1200px), đè lên trên bất kể trang nào */}
+                  {isSmallScreen && (
+                    <Drawer
+                      placement="right"
+                      open={drawerOpen}
+                      onClose={() => setDrawerOpen(false)}
+                      size={Math.min(420, typeof window !== 'undefined' ? window.innerWidth * 0.88 : 400)}
+                      styles={{
+                        body: { padding: 0, height: '100%', background: 'var(--bg-surface)' },
+                        header: { padding: '8px 14px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }
+                      }}
+                      closeIcon={<PanelRightClose size="1rem" style={{ color: 'var(--text-secondary)' }} />}
+                      destroyOnHidden
+                    >
+                      <SidePanel active={drawerOpen} />
+                    </Drawer>
+                  )}
+                </>
               )}
             </main>
           </>

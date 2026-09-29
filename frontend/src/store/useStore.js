@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
-import { updateUserLanguage, updateUserWorkflowViewMode, updateUserWorkflowPanelOpen } from '../api/client'
+import { updateUserLanguage, updateUserWorkflowViewMode, updateUserProjectViewMode, updateUserSidePanelOpen } from '../api/client'
 
 // Khôi phục user từ localStorage nếu có
 const _savedUser = (() => {
@@ -34,7 +34,8 @@ const useStore = create((set, get) => ({
       currentUser: user,
       language: user?.language || 'vi',
       workflowViewMode: user?.workflow_view_mode || 'grid',
-      workflowPanelOpen: user?.workflow_panel_open !== false,
+      projectViewMode: user?.project_view_mode || 'grid',
+      sidePanelOpen: user?.side_panel_open !== false,
     })
   },
 
@@ -68,17 +69,31 @@ const useStore = create((set, get) => ({
     })
   },
 
-  // --- Đóng/mở panel 1/3 bên phải màn hình workflow — cùng cách với
-  // workflowViewMode: lưu theo user trong DB, không phải localStorage. ---
-  workflowPanelOpen: _savedUser?.workflow_panel_open !== false,
-  setWorkflowPanelOpen: (workflowPanelOpen) => {
+  // --- Chế độ xem danh sách project (thẻ/danh sách) ở Dashboard — độc lập với
+  // workflowViewMode vì là 2 danh sách khác nhau, cùng cách lưu (theo user trong DB). ---
+  projectViewMode: _savedUser?.project_view_mode || 'grid',
+  setProjectViewMode: (projectViewMode) => {
     set((state) => {
       const user = state.currentUser
-      if (!user) return { workflowPanelOpen }
-      const updatedUser = { ...user, workflow_panel_open: workflowPanelOpen }
+      if (!user) return { projectViewMode }
+      const updatedUser = { ...user, project_view_mode: projectViewMode }
       localStorage.setItem('pyflow_current_user', JSON.stringify(updatedUser))
-      updateUserWorkflowPanelOpen(user.id, workflowPanelOpen).catch(() => {})
-      return { workflowPanelOpen, currentUser: updatedUser }
+      updateUserProjectViewMode(user.id, projectViewMode).catch(() => {})
+      return { projectViewMode, currentUser: updatedUser }
+    })
+  },
+
+  // --- Đóng/mở panel 1/3 bên phải — DÙNG CHUNG cho Dashboard lẫn ProjectDetail
+  // (không còn riêng màn hình workflow nữa), theo user trong DB. ---
+  sidePanelOpen: _savedUser?.side_panel_open !== false,
+  setSidePanelOpen: (sidePanelOpen) => {
+    set((state) => {
+      const user = state.currentUser
+      if (!user) return { sidePanelOpen }
+      const updatedUser = { ...user, side_panel_open: sidePanelOpen }
+      localStorage.setItem('pyflow_current_user', JSON.stringify(updatedUser))
+      updateUserSidePanelOpen(user.id, sidePanelOpen).catch(() => {})
+      return { sidePanelOpen, currentUser: updatedUser }
     })
   },
 
