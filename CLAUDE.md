@@ -108,6 +108,14 @@ Khi thêm khối mới có trả dữ liệu ra, hoặc thêm giá trị trả v
 
 Chi tiết đầy đủ + bảng field theo từng khối: README §"Biến toàn cục (`{{var}}` & `workflow_env`)" mục 3.
 
+## Quy ước khi thêm khối mới cần thư viện ngoài (pip)
+
+Nếu khối mới **chạy trong venv riêng của project** (không phải venv backend chung — xem phân biệt ở đầu file `pkg_scanner.py`) và cần cài thêm package pip:
+
+1. Khai package cố định của khối vào **`_BLOCK_BASE`** trong [`services/pkg_scanner.py`](backend/services/pkg_scanner.py), khớp đúng với danh sách `packages_to_install` mà khối đó truyền cho `ensure_packages()` ở [`services/executor_blocks.py`](backend/services/executor_blocks.py). Hai chỗ này **phải luôn đồng bộ** — `ensure_packages()` tự cài khi chạy thật (không khai vẫn chạy được), nhưng **không khai vào `_BLOCK_BASE`** thì tính năng "Tự động cài thư viện" (quét trước khi chạy) sẽ **không thấy** khối này cần gì, người dùng bấm quét xong tưởng đã đủ nhưng thiếu — chỉ lộ ra khi chạy thật và văng lỗi `ImportError` giữa chừng.
+2. Nếu khối cần driver khác nhau theo loại kết nối DB (giống các khối SQL hiện có), khai thêm vào **`_DRIVER_BLOCKS`** + **`_DB_DRIVERS`** cùng file.
+3. Nếu khối là loại tự do (kiểu Python Block, người dùng viết code tay) thì **không cần** khai vào `_BLOCK_BASE` — cơ chế quét `ast.parse()` import tự động lo phần này. Chỉ cần bổ sung vào **`_MODULE_ALIAS`** nếu tên module import khác tên gói pip thật (VD `cv2`→`opencv-python`) mà bảng chưa có.
+
 ## Bảo mật (sản phẩm CÓ giao cho khách — không còn là "app local")
 
 Có hệ thống license + `Releases/` + tự cập nhật, tức app chạy trên máy người khác. Các hàng rào dưới đây đã trả giá bằng lỗ hổng thật, **đừng gỡ**:
