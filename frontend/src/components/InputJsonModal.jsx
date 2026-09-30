@@ -1,12 +1,30 @@
 import React, { useState, useEffect } from 'react'
 import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Modal, Form, Input, Select, Alert, App } from 'antd'
 import Editor from '@monaco-editor/react'
-import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, API_BASE } from '../api/client'
+import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, openWorkflowFilesFolder, openWorkflowOutputFolder, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, API_BASE } from '../api/client'
 import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen, Database, Plug, Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
 const { Dragger } = Upload
+
+// Bảng ảo hoá (virtual) bắt buộc scroll.y là số px cụ thể, không nhận được chuỗi
+// CSS như 'calc(100vh - Npx)' — nếu không thì antd không tính được đang cuộn tới
+// đâu để biết render đúng dòng nào.
+// Từng thử đo chiều cao thật bằng ref + ResizeObserver (đo vùng chứa bảng còn lại
+// sau toolbar/Dragger) nhưng antd Tabs giữ DOM của mọi tab dù ẩn/hiện khiến việc
+// đo bị kẹt sai giá trị ban đầu không tự sửa lại được dù đã thử requestAnimationFrame
+// + theo dõi resize. Đổi sang tính toán trực tiếp từ window.innerHeight — không
+// chính xác tuyệt đối từng px nhưng ổn định và vẫn tự co giãn theo cửa sổ.
+function useViewportHeight() {
+  const [height, setHeight] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 800))
+  useEffect(() => {
+    const onResize = () => setHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return height
+}
 
 // Cho phép người dùng viết comment // và /* */ để chú thích biến khi soạn JSON,
 // vì JSON.parse chuẩn không hỗ trợ nên phải bóc comment (giữ nguyên nội dung trong chuỗi "...")
@@ -30,6 +48,13 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const jsonEditorRef = React.useRef(null)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('json')
+  // Cùng ngân sách chiều cao calc(100vh - 300px) mà tab "Biến môi trường" đã dùng
+  // cho khung Editor, trừ thêm phần cố định của từng tab (toolbar, và riêng tab
+  // Tệp đính kèm có thêm khung kéo-thả) để bảng luôn vừa khít phần còn lại.
+  const viewportHeight = useViewportHeight()
+  const tabHeightBudget = viewportHeight - 300
+  const outputTableHeight = Math.max(200, tabHeightBudget - 44)
+  const filesTableHeight = Math.max(200, tabHeightBudget - 44 - 132)
 
   const [files, setFiles] = useState([])
   const [loadingFiles, setLoadingFiles] = useState(false)
@@ -235,6 +260,18 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
     }
   }
 
+  const handleOpenFolder = async (isOutput) => {
+    try {
+      if (isOutput) {
+        await openWorkflowOutputFolder(workflowId)
+      } else {
+        await openWorkflowFilesFolder(workflowId)
+      }
+    } catch (e) {
+      message.error(t('inputJsonModal.openFolderError', { message: e.message }))
+    }
+  }
+
   const handleDownload = (filename, isOutput) => {
     const a = document.createElement('a')
     a.href = `${API_BASE}/api/workflows/${workflowId}/${isOutput ? 'output-files' : 'files'}/${encodeURIComponent(filename)}/download?download=1`
@@ -415,13 +452,18 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       ),
       children: (
         <div>
-          {selectedInputRowKeys.length > 0 && (
-            <Space style={{ marginBottom: 12 }}>
-              <Tag>{t('inputJsonModal.filesSelectedTag', { count: selectedInputRowKeys.length })}</Tag>
-              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(false)}>{t('inputJsonModal.downloadBtn')}</Button>
-              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(false)}>{t('common.delete')}</Button>
-            </Space>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            {selectedInputRowKeys.length > 0 ? (
+              <Space>
+                <Tag>{t('inputJsonModal.filesSelectedTag', { count: selectedInputRowKeys.length })}</Tag>
+                <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(false)}>{t('inputJsonModal.downloadBtn')}</Button>
+                <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(false)}>{t('common.delete')}</Button>
+              </Space>
+            ) : <div />}
+            <Button size="small" icon={<FolderOpen size={14} />} onClick={() => handleOpenFolder(false)}>
+              {t('inputJsonModal.openFolderBtn')}
+            </Button>
+          </div>
           <Dragger {...uploadProps} style={{ marginBottom: 12 }}>
             <p style={{ margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <UploadCloud size={24} color="var(--accent-primary)" />
@@ -429,7 +471,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             </p>
           </Dragger>
           <Table
-            rowSelection={{ selectedRowKeys: selectedInputRowKeys, onChange: setSelectedInputRowKeys }}
+            rowSelection={{ selectedRowKeys: selectedInputRowKeys, onChange: setSelectedInputRowKeys, columnWidth: 48 }}
             dataSource={files}
             columns={getColumns(false)}
             rowKey="name"
@@ -437,6 +479,13 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             pagination={false}
             loading={loadingFiles}
             locale={{ emptyText: t('inputJsonModal.noFilesYet') }}
+            // Ảo hoá hàng — workflow nào trả về hàng trăm tệp kết quả thì render hết
+            // 1 lần làm treo UI vài giây (đã gặp thật với wf 310 tệp). virtual + scroll.y
+            // bắt buộc đi cùng nhau để antd chỉ render đúng số hàng đang lọt khung nhìn.
+            // scroll.y tính từ window.innerHeight (useViewportHeight) — tự co giãn
+            // theo cửa sổ thay vì 1 số cố định.
+            virtual
+            scroll={{ y: filesTableHeight }}
           />
         </div>
       )
@@ -451,15 +500,20 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       ),
       children: (
         <div>
-          {selectedOutputRowKeys.length > 0 && (
-            <Space style={{ marginBottom: 12 }}>
-              <Tag>{t('inputJsonModal.filesSelectedTag', { count: selectedOutputRowKeys.length })}</Tag>
-              <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(true)}>{t('inputJsonModal.downloadBtn')}</Button>
-              <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(true)}>{t('common.delete')}</Button>
-            </Space>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            {selectedOutputRowKeys.length > 0 ? (
+              <Space>
+                <Tag>{t('inputJsonModal.filesSelectedTag', { count: selectedOutputRowKeys.length })}</Tag>
+                <Button size="small" icon={<Download size={14} />} onClick={() => handleBatchDownload(true)}>{t('inputJsonModal.downloadBtn')}</Button>
+                <Button size="small" danger icon={<Trash2 size={14} />} onClick={() => handleBatchDelete(true)}>{t('common.delete')}</Button>
+              </Space>
+            ) : <div />}
+            <Button size="small" icon={<FolderOpen size={14} />} onClick={() => handleOpenFolder(true)}>
+              {t('inputJsonModal.openFolderBtn')}
+            </Button>
+          </div>
           <Table
-            rowSelection={{ selectedRowKeys: selectedOutputRowKeys, onChange: setSelectedOutputRowKeys }}
+            rowSelection={{ selectedRowKeys: selectedOutputRowKeys, onChange: setSelectedOutputRowKeys, columnWidth: 48 }}
             dataSource={outFiles}
             columns={getColumns(true)}
             rowKey="name"
@@ -467,6 +521,8 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
             pagination={false}
             loading={loadingOutFiles}
             locale={{ emptyText: t('inputJsonModal.noOutputFilesYet') }}
+            virtual
+            scroll={{ y: outputTableHeight }}
           />
         </div>
       )

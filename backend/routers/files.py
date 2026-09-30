@@ -109,12 +109,12 @@ async def download_input_file(workflow_id: str, filename: str, session: AsyncSes
     return FileResponse(file_path, filename=file_path.name)
 
 
-@router.get("/{workflow_id}/files/{filename}/open")
+@router.post("/{workflow_id}/files/{filename}/open")
 async def open_input_file_os(workflow_id: str, filename: str, session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise HTTPException(404, "Workflow không tồn tại")
-        
+
     wf_dir = _get_wf_dir(wf)
     file_path = _safe_path(wf_dir / "input", filename)
 
@@ -124,6 +124,27 @@ async def open_input_file_os(workflow_id: str, filename: str, session: AsyncSess
     # Windows-only: mở file bằng ứng dụng mặc định của hệ điều hành.
     try:
         os.startfile(str(file_path))
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# POST chứ không GET: đây là hành động có side-effect (mở File Explorer), không
+# phải đọc dữ liệu. Từng để GET → trình duyệt tự cache response (không có header
+# chống cache), bấm lại lần 2 trở đi trả "200 (from disk cache)" mà KHÔNG gọi lại
+# backend — os.startfile() không chạy nữa, người dùng tưởng nút bị hỏng.
+@router.post("/{workflow_id}/files/open-folder")
+async def open_input_folder_os(workflow_id: str, session: AsyncSession = Depends(get_session)):
+    wf = await session.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow không tồn tại")
+
+    input_dir = _get_wf_dir(wf) / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    # Windows-only: os.startfile() trên 1 thư mục mở thẳng File Explorer tại đó.
+    try:
+        os.startfile(str(input_dir))
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -182,7 +203,7 @@ async def download_output_file(workflow_id: str, filename: str, session: AsyncSe
     return FileResponse(file_path, filename=file_path.name)
 
 
-@router.get("/{workflow_id}/output-files/{filename}/open")
+@router.post("/{workflow_id}/output-files/{filename}/open")
 async def open_output_file_os(workflow_id: str, filename: str, session: AsyncSession = Depends(get_session)):
     wf = await session.get(Workflow, workflow_id)
     if not wf:
@@ -197,6 +218,23 @@ async def open_output_file_os(workflow_id: str, filename: str, session: AsyncSes
     # Windows-only: mở file bằng ứng dụng mặc định của hệ điều hành.
     try:
         os.startfile(str(file_path))
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.post("/{workflow_id}/output-files/open-folder")
+async def open_output_folder_os(workflow_id: str, session: AsyncSession = Depends(get_session)):
+    wf = await session.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow không tồn tại")
+
+    output_dir = _get_wf_dir(wf) / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Windows-only: os.startfile() trên 1 thư mục mở thẳng File Explorer tại đó.
+    try:
+        os.startfile(str(output_dir))
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(500, str(e))

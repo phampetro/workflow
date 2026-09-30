@@ -979,6 +979,8 @@
     "batchDeleteError": "Error deleting: {{message}}",
     "viewFileSuccess": "File opened!",
     "viewFileError": "Error opening file: {{message}}",
+    "openFolderBtn": "Open folder",
+    "openFolderError": "Error opening folder: {{message}}",
     "saveJsonSuccess": "Configuration saved!",
     "saveJsonError": "JSON error: {{message}}",
     "unsavedChangesTitle": "Unsaved changes",

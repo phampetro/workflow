@@ -10,6 +10,14 @@ File này Claude Code tự đọc mỗi session. Đọc [README.md](README.md) t
 - Bám sát các **gotchas** trong README §"Điểm cần lưu ý" — đó là những chỗ đã trả giá bằng bug thật, đừng revert.
 - Fix root cause thay vì workaround. Nếu phải workaround, ghi rõ lý do trong comment.
 
+## Quy ước khi phát triển tính năng mới
+
+- **Song ngữ Việt/Anh bắt buộc** cho mọi giao diện tĩnh mới (nút, label, modal, tooltip, toast, validate message): thêm key vào **cả hai** `frontend/src/i18n/locales/vi.json` và `en.json`, dùng `t('...')` — không hardcode chuỗi ngôn ngữ trực tiếp trong JSX.
+  - Nếu backend trả message **hiển thị cho người dùng** (không phải log runtime khi chạy workflow — mục đó cố tình chỉ tiếng Việt, xem README), trả về thêm field **`code`** (+ tham số cần thiết, VD `version`) để FE tự dịch qua `t()`; không trả thẳng chuỗi ngôn ngữ cứng rồi FE hiển thị nguyên văn. Xem ví dụ mẫu: `check_update()`/`execute_update()` trong `backend/routers/system.py` + cách xử lý `code` trong `frontend/src/components/AboutModal.jsx`.
+  - Sau khi sửa file `.json` locale, **luôn** validate bằng `node -e "JSON.parse(require('fs').readFileSync('src/i18n/locales/vi.json','utf8'))"` (đổi tên file tương ứng) — dấu ngoặc kép cong (" ") gõ nhầm vào vị trí key sẽ âm thầm làm hỏng cả file JSON, kéo theo lỗi Vite HMR ở những file khác không liên quan, rất khó truy ngược nguyên nhân.
+- **Bám sát cấu trúc và pattern đã có trong dự án**, không tự sáng tạo cấu trúc song song mới khi đã có pattern tương đương. Trước khi thêm field/route/component mới, tìm xem có pattern gần giống chưa và tái dùng nguyên xi cách làm đó (VD: lưu 1 setting theo user trong DB thì đi theo đúng bộ 4 bước `models.py` cột mới → `database.py` migration nhẹ → `routers/users.py` endpoint `PATCH` riêng → `api/client.js` + `useStore.js` cùng cách với `language`/`workflow_view_mode` đã có, không bịa cách lưu khác).
+- **Không tự ý phá vỡ cấu trúc/kiến trúc hiện có.** Nếu một yêu cầu buộc phải đổi cấu trúc đã tồn tại (đổi tên field đang dùng thật, đổi kiến trúc component, đổi route, đổi bảng DB...) hoặc yêu cầu của người dùng còn mơ hồ/có nhiều cách hiểu — **dừng lại hỏi trước khi làm**: nêu rõ đang định đổi gì, ảnh hưởng gì, hoặc đưa ra 2-3 phương án cụ thể để người dùng chọn (dùng `AskUserQuestion`). Không tự quyết định rồi âm thầm làm khác ý.
+
 ## Khi làm việc trên Frontend (React/JSX/CSS)
 
 **BẮT BUỘC đọc và áp dụng skill `ui-ux-pro-max`** tại [`.agents/skills/ui-ux-pro-max/SKILL.md`](.agents/skills/ui-ux-pro-max/SKILL.md).

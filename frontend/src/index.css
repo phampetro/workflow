@@ -467,6 +467,16 @@ body {
   box-shadow: 0 0 0 3px var(--accent-primary-glow) !important;
 }
 
+/* Table bật virtual (InputJsonModal — danh sách tệp): rc-table render hàng bằng
+   div display:flex thay vì <tr>/<td> thật, nên mất luôn vertical-align:middle mặc
+   định của <td>. Cột nào nội dung ngắn (checkbox, tên tệp, kích thước) bị dính
+   lên đầu ô — cột action nhìn tạm ổn chỉ vì nút Button tự có padding gần lấp đầy.
+   Ép .ant-table-cell tự thành flex column để căn giữa mọi nội dung bên trong. */
+.ant-table-tbody-virtual .ant-table-cell {
+  display: flex;
+  align-items: center;
+}
+
 /* React Flow Nodes */
 /* Hover/selected do BlockNode tự vẽ theo MÀU RIÊNG của từng khối. Không áp
    box-shadow teal lên wrapper ở đây nữa — trước đây gây viền teal nhân đôi đè
