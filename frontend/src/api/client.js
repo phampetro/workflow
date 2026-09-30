@@ -107,10 +107,15 @@ export const getFileColumnValues = (id, filename, colName, headerRow) => api.get
 export const getGoogleSheetsColumns = (data) => api.post(`/api/workflows/google-sheets/columns`, data)
 export const uploadWorkflowFile  = (id, formData) => api.post(`/api/workflows/${id}/files`, formData, { headers: { 'Content-Type': 'multipart/form-data' }})
 export const deleteWorkflowFile  = (id, filename) => api.delete(`/api/workflows/${id}/files/${filename}`)
-export const openWorkflowFile    = (id, filename) => api.get(`/api/workflows/${id}/files/${filename}/open`)
+// POST chứ không GET: mở file/thư mục là hành động có side-effect. GET bị trình
+// duyệt tự cache (không header chống cache) → bấm lại lần 2 trả "from disk cache",
+// không gọi lại backend, os.startfile() không chạy nữa (xem backend/routers/files.py).
+export const openWorkflowFile    = (id, filename) => api.post(`/api/workflows/${id}/files/${filename}/open`)
+export const openWorkflowFilesFolder = (id) => api.post(`/api/workflows/${id}/files/open-folder`)
 export const getWorkflowOutputFiles = (id) => api.get(`/api/workflows/${id}/output-files`)
 export const deleteWorkflowOutputFile = (id, filename) => api.delete(`/api/workflows/${id}/output-files/${filename}`)
-export const openWorkflowOutputFile = (id, filename) => api.get(`/api/workflows/${id}/output-files/${filename}/open`)
+export const openWorkflowOutputFile = (id, filename) => api.post(`/api/workflows/${id}/output-files/${filename}/open`)
+export const openWorkflowOutputFolder = (id) => api.post(`/api/workflows/${id}/output-files/open-folder`)
 export const deleteWorkflow    = (id)         => api.delete(`/api/workflows/${id}`)
 export const runWorkflow       = (id)         => api.post(`/api/workflows/${id}/run`)
 export const stopWorkflow      = (id)         => api.post(`/api/workflows/${id}/stop`)

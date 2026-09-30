@@ -979,6 +979,8 @@
     "batchDeleteError": "Lỗi khi xóa: {{message}}",
     "viewFileSuccess": "Đã mở tệp!",
     "viewFileError": "Lỗi mở tệp: {{message}}",
+    "openFolderBtn": "Mở thư mục",
+    "openFolderError": "Lỗi mở thư mục: {{message}}",
     "saveJsonSuccess": "Đã lưu cấu hình!",
     "saveJsonError": "Lỗi JSON: {{message}}",
     "unsavedChangesTitle": "Có thay đổi chưa lưu",
