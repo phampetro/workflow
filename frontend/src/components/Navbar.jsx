@@ -2,41 +2,35 @@ import React, { useState, useEffect } from 'react'
 import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, Languages, UserCog, Upload, Sparkles, Info, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc'
-import timezone from 'dayjs/plugin/timezone'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
-dayjs.extend(utc)
-dayjs.extend(timezone)
 dayjs.extend(isoWeek)
 
-const VN_TZ = 'Asia/Ho_Chi_Minh'
 const WEEKDAY_VI = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
 const WEEKDAY_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-// Thứ/tuần LUÔN tính theo giờ Việt Nam bất kể múi giờ hệ điều hành client
-// (business rule của lịch chạy) — chỉ NHÃN hiển thị đổi theo ngôn ngữ.
-function getVnTodayInfo(isEn) {
-  const now = dayjs().tz(VN_TZ)
+// Thứ/tuần tính theo giờ máy client (cùng cách tính với MonthCalendar trong
+// SidePanel — cả 2 nơi luôn khớp số tuần vì cùng dùng dayjs + isoWeek).
+function getTodayInfo(isEn) {
+  const now = dayjs()
   const weekday = (isEn ? WEEKDAY_EN : WEEKDAY_VI)[now.day()]
   return {
     label: `${weekday} ${now.format('DD/MM/YYYY')} - ${isEn ? 'Week' : 'Tuần'} ${now.isoWeek()}`,
     full: isEn
-      ? `${weekday}, ${now.format('DD/MM/YYYY')} · Week ${now.isoWeek()} of ${now.isoWeekYear()} (Vietnam time)`
-      : `${weekday}, ngày ${now.format('DD/MM/YYYY')} · Tuần thứ ${now.isoWeek()} năm ${now.isoWeekYear()} (giờ Việt Nam)`,
+      ? `${weekday}, ${now.format('DD/MM/YYYY')} · Week ${now.isoWeek()} of ${now.isoWeekYear()}`
+      : `${weekday}, ngày ${now.format('DD/MM/YYYY')} · Tuần thứ ${now.isoWeek()} năm ${now.isoWeekYear()}`,
   }
 }
 
-/** Pill hiển thị thứ/ngày/tuần lịch hiện tại, luôn tính theo giờ Việt Nam
- *  (Asia/Ho_Chi_Minh) bất kể múi giờ hệ điều hành client. */
+/** Pill hiển thị thứ/ngày/tuần lịch hiện tại theo giờ máy client. */
 function NavbarDate({ isEn }) {
-  const [info, setInfo] = useState(() => getVnTodayInfo(isEn))
+  const [info, setInfo] = useState(() => getTodayInfo(isEn))
 
   useEffect(() => {
-    setInfo(getVnTodayInfo(isEn))
-    const timer = setInterval(() => setInfo(getVnTodayInfo(isEn)), 60000)
+    setInfo(getTodayInfo(isEn))
+    const timer = setInterval(() => setInfo(getTodayInfo(isEn)), 60000)
     return () => clearInterval(timer)
   }, [isEn])
 
