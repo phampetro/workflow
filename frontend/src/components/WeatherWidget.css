@@ -1,0 +1,139 @@
+/* Hiệu ứng hoạt hình cho icon thời tiết trong WeatherWidget (SidePanel).
+   Chỉ animate transform/opacity, KHÔNG animate width/height/top/left.
+   Toàn bộ animation bọc trong prefers-reduced-motion: no-preference để tôn
+   trọng tuỳ chọn "giảm chuyển động" của hệ điều hành — giống @keyframes spin
+   dùng chung trong index.css. */
+
+.weather-fx-stage {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.weather-fx-icon {
+  position: relative;
+  z-index: 2;
+}
+
+/* ---- Nắng: quầng sáng lan toả phía sau icon ---- */
+.weather-fx-sunglow {
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-primary) 0%, transparent 70%);
+  opacity: 0.22;
+  z-index: 1;
+}
+.weather-fx-partly .weather-fx-sunglow {
+  opacity: 0.14;
+}
+
+/* ---- Mây / sương mù: 2 dải trôi ngang ---- */
+.weather-fx-cloud-layer {
+  position: absolute;
+  left: -30%;
+  width: 160%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.2;
+  z-index: 1;
+}
+.weather-fx-cloud-layer.is-back { top: 30%; }
+.weather-fx-cloud-layer.is-front { top: 58%; opacity: 0.14; }
+
+/* ---- Mưa: giọt rơi ---- */
+.weather-fx-drop {
+  position: absolute;
+  top: -14%;
+  width: 2px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--accent-primary);
+  opacity: 0;
+  z-index: 1;
+}
+
+/* ---- Tuyết: bông tuyết rơi ---- */
+.weather-fx-flake {
+  position: absolute;
+  top: -14%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  opacity: 0;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .weather-fx-icon--spin { animation: weatherSpin 16s linear infinite; }
+  .weather-fx-icon--flash { animation: weatherFlash 2.6s ease-in-out infinite; }
+
+  .weather-fx-sunglow { animation: weatherPulse 2.4s ease-in-out infinite; }
+
+  .weather-fx-cloud-layer.is-back { animation: weatherDriftRight 6s ease-in-out infinite; }
+  .weather-fx-cloud-layer.is-front { animation: weatherDriftLeft 7.5s ease-in-out infinite; }
+
+  .weather-fx-drop { animation: weatherFall 1s linear infinite; }
+  .weather-fx-drop:nth-child(1) { left: 16%; animation-delay: 0s; }
+  .weather-fx-drop:nth-child(2) { left: 40%; animation-delay: 0.22s; }
+  .weather-fx-drop:nth-child(3) { left: 64%; animation-delay: 0.44s; }
+  .weather-fx-drop:nth-child(4) { left: 84%; animation-delay: 0.66s; }
+
+  .weather-fx-flake { animation: weatherFlake 2.6s ease-in-out infinite; }
+  .weather-fx-flake:nth-child(1) { left: 20%; animation-delay: 0s; }
+  .weather-fx-flake:nth-child(2) { left: 48%; animation-delay: 0.7s; }
+  .weather-fx-flake:nth-child(3) { left: 74%; animation-delay: 1.4s; }
+}
+
+/* Không có prefers-reduced-motion: no-preference (tức user bật "giảm chuyển
+   động") -> giữ nguyên vị trí tĩnh dễ nhìn thay vì rơi/trôi liên tục */
+.weather-fx-drop { left: 40%; top: 40%; opacity: 0.5; }
+.weather-fx-flake { left: 40%; top: 40%; opacity: 0.5; }
+
+@keyframes weatherPulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.16; }
+  50% { transform: scale(1.15); opacity: 0.34; }
+}
+
+@keyframes weatherSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes weatherDriftRight {
+  0%, 100% { transform: translateX(-8%); }
+  50% { transform: translateX(8%); }
+}
+
+@keyframes weatherDriftLeft {
+  0%, 100% { transform: translateX(8%); }
+  50% { transform: translateX(-8%); }
+}
+
+@keyframes weatherFall {
+  0% { transform: translateY(-4px); opacity: 0; }
+  15% { opacity: 0.85; }
+  90% { opacity: 0.45; }
+  100% { transform: translateY(46px); opacity: 0; }
+}
+
+@keyframes weatherFlake {
+  0% { transform: translate(0, -4px); opacity: 0; }
+  15% { opacity: 0.9; }
+  50% { transform: translate(6px, 22px); opacity: 0.75; }
+  85% { opacity: 0.55; }
+  100% { transform: translate(-4px, 46px); opacity: 0; }
+}
+
+@keyframes weatherFlash {
+  0%, 88%, 100% { opacity: 1; }
+  90% { opacity: 0.35; }
+  92% { opacity: 1; }
+  94% { opacity: 0.55; }
+}

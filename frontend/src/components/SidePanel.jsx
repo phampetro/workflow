@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Empty, Tag, Tooltip, Button, Spin } from 'antd'
+import { Tag, Tooltip, Button, Spin } from 'antd'
 import { RefreshCw, Cpu, Activity } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { getSystemHardware } from '../api/client'
+import WeatherWidget from './WeatherWidget'
+import MonthCalendar from './MonthCalendar'
 
 // Panel 1/3 bên phải, dùng chung cho Dashboard lẫn ProjectDetail (App.jsx render
-// 1 lần duy nhất bên ngoài 2 trang đó) — nội dung để trống cho chức năng bổ sung
-// sau, đáy panel là widget CPU/RAM. Tự polling khi `active` (đang hiện, dù dạng
-// inline hay Drawer) để không gọi API khi panel đang ẩn.
+// 1 lần duy nhất bên ngoài 2 trang đó) — vùng trên là lịch tháng, đáy panel xếp
+// dọc: widget thời tiết (tự chia 2 cột bên trong) rồi tới thẻ CPU/RAM. Tự polling
+// khi `active` (đang hiện, dù dạng inline hay Drawer) để không gọi API khi panel đang ẩn.
 export default function SidePanel({ active }) {
   const { t } = useTranslation()
   const [hardware, setHardware] = useState(null)
@@ -48,16 +50,12 @@ export default function SidePanel({ active }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Vùng nội dung chính của panel (để trống cho chức năng bổ sung sau) */}
-      <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={<span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{t('projectDetail.sidePanelEmpty')}</span>}
-          style={{ margin: 0 }}
-        />
+      {/* Vùng trên: lịch tháng (tuần bắt đầu Thứ 2, cột đầu là số tuần ISO) */}
+      <div style={{ flex: 1, padding: '1rem', overflowY: 'auto' }}>
+        <MonthCalendar />
       </div>
 
-      {/* Thẻ phần cứng CPU & RAM hiển thị ở đáy panel */}
+      {/* Đáy panel: widget thời tiết rồi tới thẻ phần cứng CPU & RAM */}
       <div style={{
         padding: '0.75rem 0.875rem',
         borderTop: '1px solid var(--border-default)',
@@ -65,6 +63,10 @@ export default function SidePanel({ active }) {
         flexShrink: 0,
         borderRadius: '0 0 var(--radius-lg, 16px) var(--radius-lg, 16px)'
       }}>
+        <div style={{ marginBottom: '0.75rem' }}>
+          <WeatherWidget active={active} />
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', padding: '0 0.125rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
             <Activity size="0.8125rem" style={{ color: 'var(--accent-primary)' }} />

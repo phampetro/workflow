@@ -1,6 +1,8 @@
 import os
 import io
 import mimetypes
+import threading
+import time
 from pathlib import Path
 import asyncio
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
@@ -12,6 +14,44 @@ from models import Workflow
 from services.executor_blocks import get_project_dir
 
 router = APIRouter(prefix="/api/workflows", tags=["files"])
+
+
+def _bring_folder_to_front(folder_path: str) -> None:
+    """os.startfile() mở từ tiến trình nền có thể bị Windows chặn xuống dưới các
+    app khác. Dò cửa sổ Explorer theo tên thư mục rồi ép z-order lên top bằng
+    SetWindowPos — chạy trong thread riêng để không chặn event loop."""
+    def _run():
+        try:
+            import ctypes
+            u32 = ctypes.windll.user32
+            name = os.path.basename(os.path.normpath(folder_path))
+            proc_t = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+            hwnd = None
+
+            def cb(h, _):
+                nonlocal hwnd
+                buf = ctypes.create_unicode_buffer(256)
+                u32.GetClassNameW(h, buf, 256)
+                if buf.value == "CabinetWClass":
+                    u32.GetWindowTextW(h, buf, 256)
+                    if buf.value == name:
+                        hwnd = h
+                        return False
+                return True
+
+            for _ in range(10):
+                time.sleep(0.1)
+                u32.EnumWindows(proc_t(cb), 0)
+                if hwnd:
+                    u32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0043)  # HWND_TOPMOST
+                    u32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0043)  # HWND_NOTOPMOST
+                    u32.SetForegroundWindow(hwnd)
+                    break
+        except Exception:
+            pass  # os.startfile() đã mở được thư mục rồi, lỗi ở đây bỏ qua là an toàn
+
+    threading.Thread(target=_run, daemon=True).start()
+
 
 def _get_wf_dir(wf: Workflow) -> Path:
     import re
@@ -145,6 +185,7 @@ async def open_input_folder_os(workflow_id: str, session: AsyncSession = Depends
     # Windows-only: os.startfile() trên 1 thư mục mở thẳng File Explorer tại đó.
     try:
         os.startfile(str(input_dir))
+        _bring_folder_to_front(str(input_dir))
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -235,6 +276,7 @@ async def open_output_folder_os(workflow_id: str, session: AsyncSession = Depend
     # Windows-only: os.startfile() trên 1 thư mục mở thẳng File Explorer tại đó.
     try:
         os.startfile(str(output_dir))
+        _bring_folder_to_front(str(output_dir))
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(500, str(e))
