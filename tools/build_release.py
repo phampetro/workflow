@@ -51,11 +51,19 @@ def main():
         
     subprocess.run([python_exe, "-m", "pip", "install", "pyinstaller"], cwd=backend_src, check=True)
     
+    # Icon .exe hiện trong Task Manager/taskbar — generate qua
+    # tools/generate_icon.py (render frontend/public/favicon.svg bằng Chromium
+    # của Playwright rồi đóng gói .ico đa kích thước, không cần cài thêm thư viện).
+    icon_path = os.path.join(root_dir, "assets", "pyflow.ico")
+    if not os.path.exists(icon_path):
+        print(f"!! Không tìm thấy {icon_path} — chạy `python tools/generate_icon.py` trước, hoặc bỏ qua (exe dùng icon PyInstaller mặc định).")
+
     pyinstaller_cmd = [
         python_exe, "-m", "PyInstaller",
         "--noconfirm",
         "--onedir",
         "--name", "pyflow-backend",
+    ] + (["--icon", icon_path] if os.path.exists(icon_path) else []) + [
         "--add-data", "release_version.json;.",
         "--hidden-import=uvicorn.logging",
         "--hidden-import=uvicorn.loops",
@@ -83,7 +91,12 @@ def main():
     frontend_dest = os.path.join(release_dir, "frontend")
     os.makedirs(frontend_dest)
     shutil.copytree(os.path.join(frontend_dir, "dist"), os.path.join(frontend_dest, "dist"))
-    
+
+    # Copy icon canh start.vbs — de shortcut "Mo PyFlow Studio.lnk" (tao trong
+    # start.vbs luc chay) tro toi dung file, du giai nen vao may khach o dau.
+    if os.path.exists(icon_path):
+        shutil.copy2(icon_path, os.path.join(release_dir, "pyflow.ico"))
+
     print("Tao start.vbs (Windows)...")
     start_vbs_path = os.path.join(release_dir, "start.vbs")
     with open(start_vbs_path, "w", encoding="utf-8") as f:
@@ -92,6 +105,23 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 
 Set ws = CreateObject("WScript.Shell")
+
+\' ── Tao shortcut icon PyFlow canh start.vbs (chi 1 lan) ─────────────────────
+\' File .vbs KHONG THE tu doi icon rieng (Windows luon hien icon VBScript chung
+\' cho moi file .vbs, khong phan biet duoc file nao) — day la gioi han cua he
+\' dieu hanh, khong phai bug. Giai phap: tao san 1 shortcut .lnk canh no, gan
+\' icon rieng, de nguoi dung dung shortcut nay thay vi bam thang vao start.vbs.
+\' Dung scriptDir (tu suy ra luc chay, khong hardcode) nen dung o may khach du
+\' giai nen vao bat ky thu muc nao.
+shortcutPath = scriptDir & "\\Mo PyFlow Studio.lnk"
+iconPath = scriptDir & "\\pyflow.ico"
+If Not fso.FileExists(shortcutPath) And fso.FileExists(iconPath) Then
+    Set shortcut = ws.CreateShortcut(shortcutPath)
+    shortcut.TargetPath = scriptDir & "\\start.vbs"
+    shortcut.IconLocation = iconPath & ",0"
+    shortcut.WorkingDirectory = scriptDir
+    shortcut.Save
+End If
 
 \' BAT CHE DO BAN QUYEN (License Enforce = 1)
 Set env = ws.Environment("Process")
