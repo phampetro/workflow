@@ -365,7 +365,7 @@ powershell -command "Expand-Archive -Force -Path update.zip -DestinationPath ."
 echo Hoan tat giai nen. Xoa file tam...
 del update.zip
 echo Khoi dong lai phan mem...
-start start.vbs
+start backend\start.vbs
 del "%~f0"
 ''')
                 subprocess.Popen(["cmd.exe", "/c", bat_path], cwd=parent_dir, creationflags=0x00000010)

@@ -40,7 +40,7 @@ python tools/build_release.py
 | `Releases/update.zip` | Gói dùng cho tính năng tự cập nhật |
 | `Releases/update.zip.sig` | **Chữ ký số của gói trên — bắt buộc phải đi kèm** |
 
-- Trong `Releases/pyflow-studio/` đã có sẵn `start.vbs`. Mã nguồn Python đã đóng gói thành EXE, Frontend đã build và gộp thẳng vào Backend.
+- Trong `Releases/pyflow-studio/backend/` đã có sẵn `start.vbs` (file .vbs không tự đổi được icon nên giấu trong đó — xem ghi chú icon bên dưới). Mã nguồn Python đã đóng gói thành EXE, Frontend đã build và gộp thẳng vào Backend.
 - Muốn giao cho **khách hàng mới**: nén thư mục `pyflow-studio` thành `.zip` rồi gửi. Chạy ngay, không cần cài đặt (Portable).
 - Nếu file `secrets/license_private.txt` không tồn tại, công cụ sẽ **dừng hẳn** và báo lỗi — vì không ký được thì mọi máy khách sẽ từ chối bản cập nhật đó.
 
@@ -51,7 +51,7 @@ python tools/build_release.py
 Mỗi khi có một khách hàng mới, hãy làm theo quy trình sau:
 
 **Bước 1: Khách hàng tải và lấy Mã Máy**
-- Khách hàng tải bản zip về, giải nén và nhấp đúp vào file `start.vbs` để chạy phần mềm ngay lập tức (không cần cài đặt `setup.bat` như trước đây).
+- Khách hàng tải bản zip về, giải nén và nhấp đúp vào **`backend\start.vbs`** để chạy phần mềm lần đầu tiên (không cần cài đặt `setup.bat` như trước đây). File .vbs không tự đổi icon được (giới hạn Windows) nên lần đầu icon còn chung chung — ngay từ lần chạy thứ 2 trở đi, file **`PyFlow Studio.lnk`** (icon logo riêng) đã tự xuất hiện ở thư mục gốc `pyflow-studio/`, khách hàng dùng file đó cho các lần mở sau.
 - Lần đầu mở phần mềm, màn hình "Kích hoạt bản quyền" sẽ hiện ra cùng một **Mã Máy** (Ví dụ: `e8f4a2b1...`).
 - Khách hàng copy Mã Máy này và gửi cho bạn.
 
