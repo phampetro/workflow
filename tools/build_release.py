@@ -92,28 +92,36 @@ def main():
     os.makedirs(frontend_dest)
     shutil.copytree(os.path.join(frontend_dir, "dist"), os.path.join(frontend_dest, "dist"))
 
-    # Copy icon canh start.vbs — de shortcut "Mo PyFlow Studio.lnk" (tao trong
-    # start.vbs luc chay) tro toi dung file, du giai nen vao may khach o dau.
+    # Icon nam TRONG backend/ (an voi nguoi dung) — start.vbs cung chuyen vao day
+    # (xem bên dưới), chỉ để lộ 1 shortcut .lnk có icon riêng ở thư mục gốc release
+    # cho gọn/chuyên nghiệp, thay vì bày cả start.vbs + pyflow.ico ra ngoài.
     if os.path.exists(icon_path):
-        shutil.copy2(icon_path, os.path.join(release_dir, "pyflow.ico"))
+        shutil.copy2(icon_path, os.path.join(backend_dest, "pyflow.ico"))
 
     print("Tao start.vbs (Windows)...")
-    start_vbs_path = os.path.join(release_dir, "start.vbs")
+    start_vbs_path = os.path.join(backend_dest, "start.vbs")
     with open(start_vbs_path, "w", encoding="utf-8") as f:
         f.write('''\' PyFlow Studio - Khoi dong (Release)
+\' File nay nam TRONG thu muc backend (an voi nguoi dung, xem shortcut duoi day) —
+\' scriptDir la chinh thu muc backend, parentDir moi la goc thu muc release.
 Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
+parentDir = fso.GetParentFolderName(scriptDir)
 
 Set ws = CreateObject("WScript.Shell")
 
-\' ── Tao shortcut icon PyFlow canh start.vbs (chi 1 lan) ─────────────────────
+\' ── Tao shortcut icon PyFlow o thu muc goc release (chi lan chay dau) ───────
 \' File .vbs KHONG THE tu doi icon rieng (Windows luon hien icon VBScript chung
-\' cho moi file .vbs, khong phan biet duoc file nao) — day la gioi han cua he
-\' dieu hanh, khong phai bug. Giai phap: tao san 1 shortcut .lnk canh no, gan
-\' icon rieng, de nguoi dung dung shortcut nay thay vi bam thang vao start.vbs.
-\' Dung scriptDir (tu suy ra luc chay, khong hardcode) nen dung o may khach du
-\' giai nen vao bat ky thu muc nao.
-shortcutPath = scriptDir & "\\Mo PyFlow Studio.lnk"
+\' cho moi file .vbs) — gioi han cua he dieu hanh, khong phai bug.
+\' ĐÃ THU THAT: tao san shortcut nay luc BUILD (tren may dev) khong dung duoc —
+\' .lnk luu duong dan TUYET DOI cua may dev, sang may khach la sai hoan toan,
+\' Windows KHONG tu dong doi sang duong dan tuong doi (da test that bang
+\' PowerShell: di chuyen thu muc xong thi shortcut tro vao noi khong con ton
+\' tai). Vi vay phai tao luc CHAY THAT tren may khach — scriptDir luc do moi
+\' dung 100%. Ket qua: LAN DAU TIEN nguoi dung van phai tu vao backend\\start.vbs
+\' de bam (icon VBScript mac dinh, khong tranh duoc) — nhung tu LAN THU HAI tro
+\' di, "PyFlow Studio.lnk" (icon rieng) da nam san o thu muc goc de dung.
+shortcutPath = parentDir & "\\PyFlow Studio.lnk"
 iconPath = scriptDir & "\\pyflow.ico"
 If Not fso.FileExists(shortcutPath) And fso.FileExists(iconPath) Then
     Set shortcut = ws.CreateShortcut(shortcutPath)
@@ -131,7 +139,7 @@ env("PYFLOW_LICENSE_ENFORCE") = "1"
 ws.Run "powershell -Command ""Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 WScript.Sleep 1000
 
-backendExe = scriptDir & "\\backend\\pyflow-backend.exe"
+backendExe = scriptDir & "\\pyflow-backend.exe"
 
 If Not fso.FileExists(backendExe) Then
     MsgBox "Chưa tìm thấy file thực thi Backend.", 16, "Lỗi Khởi Động"
@@ -144,7 +152,7 @@ End If
 \' phien ban khac nhau => hay bi "khong dang nhap duoc" va hien thanh vang
 \' "unsupported command-line flag". Chromium rieng thi may nao cung giong nhau.
 localAppData = ws.ExpandEnvironmentStrings("%LOCALAPPDATA%")
-pwRoot = scriptDir & "\\backend\\ms-playwright"
+pwRoot = scriptDir & "\\ms-playwright"
 If Not fso.FolderExists(pwRoot) Then
     pwRoot = localAppData & "\\ms-playwright"
 End If
@@ -152,7 +160,7 @@ End If
 If Not ChromiumReady(pwRoot) Then
     q = Chr(34)
     \' Mo console cai dat (hien tien trinh tai), doi cai xong roi moi chay tiep
-    ws.CurrentDirectory = scriptDir & "\\backend"
+    ws.CurrentDirectory = scriptDir
     ws.Run "cmd /c " & q & q & backendExe & q & " install-browser" & q, 1, True
     If Not ChromiumReady(pwRoot) Then
         \' Popup tu tat sau 20s de khong treo may khi may khong co mang
@@ -161,12 +169,12 @@ If Not ChromiumReady(pwRoot) Then
                  "Cach xu ly: mo thu muc backend, chay lenh" & vbCrLf & _
                  "    pyflow-backend.exe install-browser" & vbCrLf & _
                  "hoac copy thu muc ms-playwright tu may da chay duoc vao:" & vbCrLf & _
-                 "    " & scriptDir & "\\backend\\ms-playwright", 20, "PyFlow Studio - Thieu Chromium", 48
+                 "    " & scriptDir & "\\ms-playwright", 20, "PyFlow Studio - Thieu Chromium", 48
     End If
 End If
 
 \' Khoi dong Backend
-ws.CurrentDirectory = scriptDir & "\\backend"
+ws.CurrentDirectory = scriptDir
 ws.Run """" & backendExe & """", 0, False
 
 WScript.Sleep 3000
@@ -187,6 +195,13 @@ Function ChromiumReady(pwRoot)
 End Function
 ''')
 
+    # KHONG tao "PyFlow Studio.lnk" o day (luc build, tren may dev) — da THU THAT
+    # bang PowerShell: shortcut .lnk luu duong dan TUYET DOI luc tao, sang may
+    # khach (thu muc goc khac) la sai hoan toan, Windows KHONG tu doi sang tuong
+    # doi (di chuyen thu muc test xong la shortcut tro vao cho khong con ton
+    # tai). Vi vay viec tao shortcut duoc doi sang cho CHINH start.vbs tu lam
+    # luc chay that tren may khach (xem khoi code o dau start.vbs ben tren) —
+    # scriptDir luc do moi chac chan dung 100%.
     print(f"Dong goi thanh cong tai thu muc: {release_dir}")
     
     # ---------------------------------------------------------

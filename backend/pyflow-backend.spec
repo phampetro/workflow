@@ -32,6 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['D:\\Local Google Drive\\workflow\\assets\\pyflow.ico'],
 )
 coll = COLLECT(
     exe,
