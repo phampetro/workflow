@@ -1,0 +1,36 @@
+--- EDGES ---
+browser-300 -> excel_read-301 sourceHandle= default
+excel_read-301 -> loop-302 sourceHandle= default
+loop-302 -> browser-303 sourceHandle= loop
+browser-303 -> python-304 sourceHandle= default
+python-304 -> loop-302 sourceHandle= default
+python-306 -> end-1 sourceHandle= default
+start-1 -> browser-300 sourceHandle= default
+loop-302 -> python-306 sourceHandle= endloop
+
+--- excel_read-301 data ---
+{
+  "type": "excel_read",
+  "label": "Đọc Excel",
+  "description": "Đọc file Excel/CSV thành mảng dữ liệu",
+  "inPosition": "left",
+  "outPosition": "right",
+  "excelReadFile": "Form tải ảnh trưng bày.xlsx",
+  "excelReadSheetName": "",
+  "excelReadHeaderRow": 1,
+  "outputVarName": "sheets_data",
+  "rowCountVarName": "sheets_rows",
+  "excelReadCols": [
+    "Mã khách hàng",
+    "Mã NPP"
+  ],
+  "columnMappings": {
+    "Mã Siêu Thị": "ma_st",
+    "Số nhà": "so_nha",
+    "Đường/Chợ": "duong",
+    "Phường": "phuong",
+    "Tỉnh": "tinh",
+    "Mã khách hàng": "ma_kh",
+    "Mã NPP": "ma_npp"
+  }
+}

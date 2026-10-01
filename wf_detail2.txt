@@ -1,0 +1,127 @@
+--- loop-302 data ---
+{
+  "type": "loop",
+  "label": "Vòng Lặp",
+  "description": "Lặp lại theo số lần/điều kiện",
+  "inPosition": "left",
+  "outPosition": "right",
+  "loopPosition": "top",
+  "donePosition": "bottom",
+  "loopMode": "array",
+  "loopDelay": 1,
+  "loopArrayVar": "sheets_data"
+}
+
+--- browser-303 data ---
+{
+  "type": "browser",
+  "label": "Trình Duyệt",
+  "description": "Tự động hóa trình duyệt web",
+  "steps": [
+    {
+      "action": "evaluate_js",
+      "selector": "",
+      "value": "(async () => {\n  const textToSearch = \"{{ma_npp}}\".trim();\n\n  // BƯỚC 1: XÓA SẠCH DỮ LIỆU ĐANG CHỌN CŨ\n  // Cách 1: Reset qua Kendo API nếu có\n  if (window.$ && $(\"#shop\").data(\"kendoMultiSelect\")) {\n    const ms = $(\"#shop\").data(\"kendoMultiSelect\");\n    ms.value([]); // Gán mảng rỗng để xóa hết các tag đang chọn\n    ms.trigger(\"change\");\n  } else {\n    // Cách 2: Click vào tất cả các icon k-delete đang tồn tại\n    const deleteButtons = document.querySelectorAll('#shop_taglist .k-delete');\n    deleteButtons.forEach(btn => btn.click());\n  }\n\n  // Chờ 0.3s để DOM cập nhật trạng thái xóa\n  await new Promise(resolve => setTimeout(resolve, 300));\n\n  if (!textToSearch) {\n    return \"Đã xóa trống. Biến ma_npp rỗng nên không chọn thêm.\";\n  }\n\n  // BƯỚC 2: TÌM KIẾM VÀ CHỌN THEO ma_npp MỚI\n  if (window.$ && $(\"#shop\").data(\"kendoMultiSelect\")) {\n    const ms = $(\"#shop\").data(\"kendoMultiSelect\");\n    \n    // Mở popup và gõ tìm kiếm mã NPP\n    ms.search(textToSearch);\n    \n    // Chờ 1 giây để danh sách tải và lọc xong\n    await new Promise(resolve => setTimeout(resolve, 1000));\n    \n    // Duyệt tìm đúng phần tử có chứa mã ma_npp\n    const items = ms.ul.children(\"li\").toArray();\n    const matchedItem = items.find(el => el.innerText.toUpperCase().includes(textToSearch.toUpperCase()));\n    \n    if (matchedItem) {\n      matchedItem.click();\n      return `Đã xóa cũ và chọn đúng NPP: ${matchedItem.innerText}`;\n    } else if (items.length > 0) {\n      items[0].click();\n      return `Đã xóa cũ và chọn mục đầu tiên lọc được: ${items[0].innerText}`;\n    }\n    \n    return `Đã xóa cũ nhưng không tìm thấy NPP khớp với: ${textToSearch}`;\n  }\n\n  // Fallback DOM thuần nếu không gọi được Kendo API\n  const input = document.querySelector('#shop-wrapper input.k-input');\n  if (!input) return \"Không tìm thấy ô input shop\";\n\n  input.focus();\n  input.value = textToSearch;\n  input.dispatchEvent(new Event('input', { bubbles: true }));\n  input.dispatchEvent(new Event('change', { bubbles: true }));\n\n  await new Promise(resolve => setTimeout(resolve, 1000));\n\n  const enterEvent = new KeyboardEvent('keydown', {\n    bubbles: true,\n    cancelable: true,\n    key: 'Enter',\n    code: 'Enter',\n    keyCode: 13,\n    which: 13\n  });\n  input.dispatchEvent(enterEvent);\n\n  return `Đã xóa cũ và gõ/chọn: ${textToSearch}`;\n})()",
+      "key_name": "result",
+      "note": "Chọn khu vực",
+      "continue_on_error": false
+    },
+    {
+      "action": "fill",
+      "selector": "//*[@id=\"customerCode\"]",
+      "value": "{{ma_kh}}",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": false
+    },
+    {
+      "action": "click",
+      "selector": "//*[@id=\"btnSearch\"]",
+      "value": "",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": false
+    },
+    {
+      "action": "wait_for_selector",
+      "selector": "//*[@id=\"imgOverlay\"]",
+      "value": "",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": true,
+      "timeout": ""
+    },
+    {
+      "action": "wait_for_selector",
+      "selector": "//*[@id=\"imgOverlay\"]",
+      "value": "",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": true,
+      "state": "hidden",
+      "timeout": ""
+    },
+    {
+      "action": "evaluate_js",
+      "selector": "",
+      "value": "(() => {\n  // 1. Tìm thẻ link chứa sự kiện show album\n  const link = document.querySelector('a.PhotoThumbGroup') || \n               document.querySelector('a[onclick*=\"Images.showAlbumDetail\"]');\n\n  if (link) {\n    link.click();\n    return \"Đã click vào ảnh album thành công\";\n  }\n\n  return \"Không tìm thấy phần tử ảnh PhotoThumbGroup\";\n})()",
+      "key_name": "result",
+      "note": "Chọn album tìm thấy",
+      "continue_on_error": false
+    },
+    {
+      "action": "wait_for_selector",
+      "selector": "//*[@id=\"imgOverlay\"]",
+      "value": "",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": true,
+      "timeout": ""
+    },
+    {
+      "action": "wait_for_selector",
+      "selector": "//*[@id=\"imgOverlay\"]",
+      "value": "",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": true,
+      "state": "hidden",
+      "timeout": ""
+    },
+    {
+      "action": "wait",
+      "selector": "",
+      "value": "3",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": false
+    },
+    {
+      "action": "click",
+      "selector": "//*[@id=\"albumContent\"]/div[1]/a[4]",
+      "value": "",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": true
+    },
+    {
+      "action": "wait",
+      "selector": "",
+      "value": "3",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": false
+    },
+    {
+      "action": "evaluate_js",
+      "selector": "",
+      "value": "(() => {\n  const imgElements = Array.from(document.querySelectorAll('#albumContentDetail li img'));\n  if (imgElements.length === 0) return [];\n\n  // Lấy tối đa 3 ảnh gần nhất\n  return imgElements.slice(0, 3).map(img => {\n    let rawUrl = img.getAttribute('data-original') || img.src;\n    // Đổi tiền tố thumb_248_ thành full_ để lấy ảnh gốc độ phân giải cao\n    return rawUrl.replace('thumb_248_', 'full_');\n  });\n})()",
+      "key_name": "result",
+      "note": "",
+      "continue_on_error": false
+    }
+  ],
+  "debugMode": false,
+  "inPosition": "right",
+  "outPosition": "left"
+}

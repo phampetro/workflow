@@ -2474,7 +2474,13 @@ output_data = {{"result": rows, "row_count": row_count}}
                     header_row = int(bdata.get("excelReadHeaderRow") or 1)
                     output_var = bdata.get("outputVarName") or "sheets_data"
                     row_count_var = bdata.get("rowCountVarName") or "sheets_rows"
-                    custom_mappings = bdata.get("columnMappings") or {}
+                    # .strip() khoảng trắng ở KEY — tên cột lúc chọn trên UI (preview chưa
+                    # strip) có thể lệch khoảng trắng so với tên cột thật ở dưới (đã strip()),
+                    # VD "Mã CTKM " # "Mã CTKM". Lệch là custom_mappings.get() luôn miss, âm
+                    # thầm rớt về tên cột gốc tiếng Việt có dấu, khiến {{tên_biến}} không bao
+                    # giờ có giá trị (người dùng thấy literal "{{ten_bien}}" bị gõ thẳng vào
+                    # trang web). Strip ở đây để tha thứ cho mapping cũ đã lỡ lưu lệch.
+                    custom_mappings = {str(k).strip(): v for k, v in (bdata.get("columnMappings") or {}).items()}
 
                     if not file_name:
                         raise Exception("Chưa chọn/nhập tên file Excel")

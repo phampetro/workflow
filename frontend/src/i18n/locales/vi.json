@@ -296,6 +296,8 @@
     "cardStatusStopped": "Đã dừng",
     "cardStatusReady": "Sẵn sàng",
     "cardMenuSettings": "Cài đặt",
+    "cardMenuHistory": "Lịch sử",
+    "cardMenuSchedule": "Lịch chạy",
     "cardMenuDuplicate": "Sao chép",
     "cardMenuExport": "Export ZIP",
     "cardMenuDelete": "Xóa Workflow",
