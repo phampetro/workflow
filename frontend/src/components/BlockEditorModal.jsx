@@ -273,7 +273,18 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
   }
 
   const updateStep = (i, field, val) => {
-    const newSteps = steps.map((s, idx) => idx === i ? { ...s, [field]: val } : s)
+    const newSteps = steps.map((s, idx) => {
+      if (idx !== i) return s
+      const next = { ...s, [field]: val }
+      // Sửa tay sang selector khác các selector dự phòng do recorder ghi (selectors[])
+      // thì chuỗi dự phòng cũ không còn hợp lệ nữa — xoá để backend dùng đúng giá trị
+      // vừa sửa (khớp với điều kiện ở browser_executor.py: chỉ dùng fallback nếu
+      // selector hiện tại vẫn nằm trong danh sách đã ghi).
+      if (field === 'selector' && Array.isArray(s.selectors) && !s.selectors.includes(val)) {
+        delete next.selectors
+      }
+      return next
+    })
     onChange(newSteps)
   }
 

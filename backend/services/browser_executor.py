@@ -152,11 +152,16 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
         timeout = 20000
 
     # Fallback selector chain (do recorder sinh ra): thử lần lượt để chống UI đổi DOM.
+    # CHỈ áp dụng khi `selector` hiện tại vẫn là 1 trong các selector đã ghi — nếu
+    # người dùng sửa tay `selector` (hoặc đổi action) sang giá trị khác, đó là họ cố
+    # ý trỏ sang phần tử khác, chuỗi dự phòng cũ (trỏ phần tử lúc ghi) không còn hợp
+    # lệ nữa và phải bỏ qua, nếu không nó âm thầm đè lại giá trị user vừa sửa — đây
+    # là lý do sửa 1 step cũ không ăn, phải xoá thêm step mới mới chạy đúng.
     raw_selectors = step.get("selectors")
-    if isinstance(raw_selectors, list):
-        candidates = [str(s) for s in raw_selectors if s]
-        if len(candidates) > 1 and action in _SELECTOR_FALLBACK_ACTIONS:
-            selector = resolve_selector(page, candidates, timeout)
+    if isinstance(raw_selectors, list) and action in _SELECTOR_FALLBACK_ACTIONS:
+        recorded = [str(s) for s in raw_selectors if s]
+        if len(recorded) > 1 and selector in recorded:
+            selector = resolve_selector(page, recorded, timeout)
 
     label = tr_action(action, language, ACTION_LABELS.get(action, f"[{action}]"))
 

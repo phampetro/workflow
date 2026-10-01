@@ -34,7 +34,10 @@ def _bring_folder_to_front(folder_path: str) -> None:
                 u32.GetClassNameW(h, buf, 256)
                 if buf.value == "CabinetWClass":
                     u32.GetWindowTextW(h, buf, 256)
-                    if buf.value == name:
+                    # Tiêu đề thật là "<tên thư mục> - File Explorer" (có hậu tố) nên
+                    # so == tên thư mục trần luôn FALSE — đây là lỗi khiến hàm này
+                    # không bao giờ khớp được cửa sổ nào trước đây. Dùng startswith.
+                    if buf.value.startswith(name):
                         hwnd = h
                         return False
                 return True
