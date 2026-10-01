@@ -196,21 +196,21 @@ export default function Navbar({
           <div className="navbar-stats">
             <Tooltip title={t('navbar.statProjects')}>
               <div className="stat-chip">
-                <FolderOpen size="0.875rem" style={{ color: '#f97316' }} />
+                <FolderOpen size="1rem" style={{ color: '#f97316' }} />
                 <span className="stat-val" style={{ color: '#f97316' }}>{stats.total_projects ?? 0}</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title={t('navbar.statWorkflows')}>
               <div className="stat-chip">
-                <Workflow size="0.875rem" style={{ color: 'var(--accent-secondary)' }} />
+                <Workflow size="1rem" style={{ color: 'var(--accent-secondary)' }} />
                 <span className="stat-val" style={{ color: 'var(--accent-secondary)' }}>{stats.total_workflows ?? 0}</span>
               </div>
             </Tooltip>
             <div className="stat-divider" />
             <Tooltip title={t('navbar.statRunning')}>
               <div className={`stat-chip ${stats.running > 0 ? 'stat-running' : ''}`}>
-                <Clock size="0.875rem" className={stats.running > 0 ? 'spinning' : ''} style={{ color: '#52c41a' }} />
+                <Clock size="1rem" className={stats.running > 0 ? 'spinning' : ''} style={{ color: '#52c41a' }} />
                 <span className="stat-val" style={{ color: '#52c41a' }}>
                   {stats.running ?? 0}
                 </span>
@@ -219,7 +219,7 @@ export default function Navbar({
             <div className="stat-divider" />
             <Tooltip title={t('navbar.statToday')}>
               <div className="stat-chip">
-                <CalendarCheck size="0.875rem" style={{ color: '#eab308' }} />
+                <CalendarCheck size="1rem" style={{ color: '#eab308' }} />
                 <span className="stat-val" style={{ color: '#ff4d4f' }}>{(stats.failed_today || 0) + (stats.stopped_today || 0)}</span>
                 <span style={{ color: 'var(--text-muted)' }}>/</span>
                 <span className="stat-val" style={{ color: '#52c41a' }}>{stats.success_today ?? 0}</span>
@@ -391,16 +391,16 @@ export default function Navbar({
           background: var(--bg-surface);
           border: 1px solid var(--border-default);
           border-radius: var(--radius-full);
-          padding: 4px 12px;
+          padding: 6px 14px;
           box-shadow: var(--shadow-sm);
         }
 
         .stat-chip {
           display: flex;
           align-items: center;
-          gap: 6px;
-          padding: 4px 8px;
-          font-size: 0.85rem;
+          gap: 7px;
+          padding: 6px 10px;
+          font-size: 0.975rem;
           font-weight: 600;
           color: var(--text-primary);
           transition: all var(--transition-fast);
@@ -422,7 +422,7 @@ export default function Navbar({
 
         .stat-divider {
           width: 1px;
-          height: 14px;
+          height: 18px;
           background: var(--border-default);
           margin: 0 4px;
         }

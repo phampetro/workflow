@@ -1,0 +1,15 @@
+--- NODES ---
+start-1 start Bắt đầu
+end-1 end Hoàn thành
+browser-313 browser Trình Duyệt
+loop-315 loop Vòng Lặp
+browser-316 browser Trình Duyệt
+python-319 python Python Block
+excel_read-321 excel_read Đọc Excel
+
+--- EDGES ---
+loop-315 -> browser-316 sourceHandle= loop
+browser-316 -> loop-315 sourceHandle= default
+browser-313 -> loop-315 sourceHandle= default
+start-1 -> excel_read-321 sourceHandle= default
+excel_read-321 -> browser-313 sourceHandle= default

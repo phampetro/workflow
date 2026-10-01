@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History, Search, LayoutGrid, List } from 'lucide-react'
-import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject, API_BASE } from '../api/client'
+import { ArrowLeft, Play, Clock, Workflow, Package, Trash2, Terminal, CheckCircle, XCircle, Loader, Download, RefreshCw, AlertCircle, Plus, MoreVertical, Settings, Copy, Upload, History, Calendar, Search, LayoutGrid, List } from 'lucide-react'
+import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, runWorkflow, stopWorkflow, getPackages, installPackage, uninstallPackage, getRunHistory, deleteRunHistory, initVenv, reorderWorkflows, duplicateWorkflow, importWorkflow, getProject, API_BASE } from '../api/client'
 import AutoInstallModal from '../components/AutoInstallModal'
+import WorkflowHistoryPanel from '../components/WorkflowHistoryPanel'
+import SchedulerPanel from '../components/SchedulerPanel'
+import LogViewer from '../components/LogViewer'
+import { isFeatureDisabled } from '../config/blockRules'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App, Switch } from 'antd'
+import { Modal, Form, Input, Button, Table, Tag, Popconfirm, Typography, Space, Tooltip, Spin, Empty, Dropdown, Statistic, Row, Col, App, Switch, Drawer } from 'antd'
 const { Text, Title } = Typography
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -55,6 +59,13 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   const [editingWf, setEditingWf] = useState(null)
   
   const [deletingWf, setDeletingWf] = useState(null)
+  // Lịch sử/Lịch chạy mở trực tiếp từ menu "..." ngoài danh sách workflow — cùng
+  // component với bên trong canvas (WorkflowHistoryPanel/SchedulerPanel/LogViewer),
+  // để người dùng không cần mở hẳn editor chỉ để xem lại lịch sử hay đặt lịch.
+  const [historyWf, setHistoryWf] = useState(null)
+  const [schedulerWf, setSchedulerWf] = useState(null)
+  const [viewingLogRunId, setViewingLogRunId] = useState(null)
+  const historyPanelRef = useRef(null)
   const [initingVenv, setInitingVenv] = useState(false)
   // Venv đang được tạo NGẦM ở backend (từ lúc create/import project) — để nút hiện
   // "đang tạo" thay vì trông idle khiến user bấm nhiều lần.
@@ -165,6 +176,17 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     wfForm.setFieldsValue({ name: wf.name, description: wf.description })
     setSelectedWfColor(wf.color || '#6c63ff')
     setIsWfModalOpen(true)
+  }
+
+  const handleDeleteWfHistory = async () => {
+    if (!historyWf?.id) return
+    try {
+      await deleteRunHistory(historyWf.id)
+      toast.success(t('workflowEditor.historyDeleted'))
+      historyPanelRef.current?.loadHistory()
+    } catch (e) {
+      toast.error(t('workflowEditor.historyDeleteError', { message: e.message }))
+    }
   }
 
   const handleSubmitWf = async (values) => {
@@ -635,6 +657,8 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
                             dragDisabled={isSearching}
                             onOpen={() => onOpenWorkflow(wf)}
                             onEdit={() => handleEditWf(wf)}
+                            onHistory={() => setHistoryWf(wf)}
+                            onSchedule={() => setSchedulerWf(wf)}
                             onDuplicate={() => handleDuplicateWorkflow(wf.id)}
                             onExport={() => handleExportWorkflow(wf)}
                             onDelete={() => handleDeleteWorkflow(wf.id)}
@@ -966,12 +990,64 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
         onClose={() => setShowAutoInstall(false)}
         onDone={() => { if (onProjectUpdate) onProjectUpdate({ ...proj, venv_ready: true }); loadPackages(); }}
       />
+
+      {/* Lịch sử chạy của 1 workflow cụ thể — cùng component với bên trong canvas,
+          mở trực tiếp từ menu "..." để không phải vào hẳn editor. */}
+      <Drawer
+        title={
+          <Space>
+            <History size={16} color="var(--accent-warning)" />
+            <span style={{ fontWeight: 600 }}>{t('workflowEditor.historyDrawerTitle')}</span>
+            <Tag variant="filled" style={{ margin: 0 }}>{historyWf?.name}</Tag>
+          </Space>
+        }
+        placement="right"
+        size="large"
+        onClose={() => setHistoryWf(null)}
+        open={!!historyWf}
+        styles={{ body: { padding: 16 } }}
+        extra={
+          <Space>
+            <Button type="default" icon={<RefreshCw size={14} />} size="small" onClick={() => historyPanelRef.current?.loadHistory()}>
+              {t('workflowEditor.refresh')}
+            </Button>
+            <Popconfirm title={t('workflowEditor.deleteAllHistoryConfirm')} onConfirm={handleDeleteWfHistory} okText={t('common.delete')} cancelText={t('common.cancel')} placement="bottomRight">
+              <Button type="primary" danger icon={<Trash2 size={14} />} size="small">
+                {t('workflowEditor.deleteHistoryBtn')}
+              </Button>
+            </Popconfirm>
+          </Space>
+        }
+      >
+        <WorkflowHistoryPanel
+          ref={historyPanelRef}
+          workflowId={historyWf?.id}
+          onViewLog={(runId) => {
+            setViewingLogRunId(runId)
+            setHistoryWf(null)
+          }}
+        />
+      </Drawer>
+
+      {schedulerWf && (
+        <SchedulerPanel workflow={schedulerWf} onClose={() => setSchedulerWf(null)} />
+      )}
+
+      {viewingLogRunId && (
+        <LogViewer
+          runId={viewingLogRunId}
+          isRunning={false}
+          streamedRunId={null}
+          onClose={() => setViewingLogRunId(null)}
+          onFinished={() => {}}
+        />
+      )}
     </div>
   )
 }
 
 // WorkflowCard component với drag-drop tích hợp
-function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit, onDuplicate, onExport, onDelete, isRunning, onRun, onStop }) {
+function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit, onHistory, onSchedule, onDuplicate, onExport, onDelete, isRunning, onRun, onStop }) {
   const { t, i18n } = useTranslation()
   const {
     attributes,
@@ -988,6 +1064,18 @@ function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit,
     opacity: isDragging ? 0.45 : 1,
     zIndex: isDragging ? 10 : 'auto',
   }
+
+  // Luật: workflow có khối interactive (chờ người nhập) không được đặt lịch —
+  // cùng rule với nút "Lịch chạy" trong canvas (WorkflowEditor.jsx), tính lại ở
+  // đây vì menu này mở trực tiếp từ danh sách, không đi qua canvas.
+  const schedulerDisabled = useMemo(() => {
+    try {
+      const graph = JSON.parse(workflow.graph_json || '{}')
+      return isFeatureDisabled(graph.nodes || [], 'scheduler')
+    } catch {
+      return false
+    }
+  }, [workflow.graph_json])
 
   const formatDate = (iso) => {
     if (!iso) return '-'
@@ -1015,6 +1103,21 @@ function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit,
 
   const items = [
     { key: 'edit', label: t('projectDetail.cardMenuSettings'), icon: <Settings size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onEdit(); } },
+    { key: 'history', label: t('projectDetail.cardMenuHistory'), icon: <History size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onHistory(); } },
+    {
+      key: 'schedule',
+      label: t('projectDetail.cardMenuSchedule'),
+      icon: <Calendar size="0.938rem"/>,
+      onClick: (e) => {
+        e.domEvent.stopPropagation()
+        if (schedulerDisabled) {
+          toast.error(t('workflowEditor.schedulerDisabledTooltip'))
+          return
+        }
+        onSchedule()
+      },
+    },
+    { type: 'divider' },
     { key: 'duplicate', label: t('projectDetail.cardMenuDuplicate'), icon: <Copy size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onDuplicate(); } },
     { key: 'export', label: t('projectDetail.cardMenuExport'), icon: <Download size="0.938rem"/>, onClick: (e) => { e.domEvent.stopPropagation(); onExport(); } },
     { type: 'divider' },

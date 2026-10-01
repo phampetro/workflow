@@ -332,7 +332,13 @@ async def get_excel_columns(workflow_id: str, filename: str, header_row: str = "
                 clean_levels = [str(c).strip() for c in col if not str(c).startswith('Unnamed:')]
                 flat_cols.append('_'.join(clean_levels) if clean_levels else 'Unnamed')
             df.columns = flat_cols
-            
+        else:
+            # Chuẩn hoá y hệt lúc chạy thật (excel_read trong executor_blocks.py cũng
+            # .strip() tên cột) — khác nhau là FE lưu columnMappings với key chưa strip
+            # (VD "Mã CTKM " có khoảng trắng cuối), executor tra cứu bằng key đã strip,
+            # lệch nhau khiến mapping không bao giờ khớp (xem executor_blocks.py).
+            df.columns = [str(c).strip() for c in df.columns]
+
         return {"columns": list(df.columns)}
     except Exception as e:
         raise HTTPException(500, str(e))

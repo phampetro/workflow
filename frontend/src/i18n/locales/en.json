@@ -296,6 +296,8 @@
     "cardStatusStopped": "Stopped",
     "cardStatusReady": "Ready",
     "cardMenuSettings": "Settings",
+    "cardMenuHistory": "History",
+    "cardMenuSchedule": "Schedule",
     "cardMenuDuplicate": "Duplicate",
     "cardMenuExport": "Export ZIP",
     "cardMenuDelete": "Delete Workflow",

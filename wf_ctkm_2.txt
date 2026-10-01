@@ -1,0 +1,34 @@
+--- excel_read-321 ---
+{
+  "type": "excel_read",
+  "label": "Đọc Excel",
+  "description": "Đọc file Excel/CSV thành mảng dữ liệu",
+  "inPosition": "left",
+  "outPosition": "right",
+  "excelReadFile": "Form.xlsx",
+  "excelReadSheetName": "1",
+  "excelReadHeaderRow": 1,
+  "outputVarName": "sheets_data",
+  "rowCountVarName": "sheets_rows",
+  "excelReadCols": [
+    "Mã CTKM "
+  ],
+  "columnMappings": {
+    "Mã CTKM ": "ma_ctkm"
+  }
+}
+
+--- loop-315 ---
+{
+  "type": "loop",
+  "label": "Vòng Lặp",
+  "description": "Lặp lại theo số lần/điều kiện",
+  "inPosition": "left",
+  "outPosition": "top",
+  "loopPosition": "right",
+  "donePosition": "bottom",
+  "loopMode": "array",
+  "loopDelay": 1,
+  "loopArrayVar": "sheets_data",
+  "loopCount": 5
+}

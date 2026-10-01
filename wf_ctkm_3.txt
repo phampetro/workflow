@@ -1,0 +1,8 @@
+{
+  "action": "type_slowly",
+  "selector": "//*[@id=\"promotionCode\"]",
+  "value": "{{ma_ctkm}}",
+  "key_name": "result",
+  "note": "",
+  "continue_on_error": false
+}
