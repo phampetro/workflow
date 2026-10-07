@@ -128,7 +128,7 @@ Có hệ thống license + `Releases/` + tự cập nhật, tức app chạy tr�
   - Tên file phải qua `safe_filename()` — kể cả file đính kèm Telegram/Email.
   - Nội suy phải là **một lượt `re.sub`** (`interpolate` ở executor, `_interpolate_once` ở [browser_executor.py](backend/services/browser_executor.py)). For-loop `replace` gây chain-replace làm rò mật khẩu từ `input.json`.
 - **`_csrf_guard`** trong main.py kiểm `Origin`/`Sec-Fetch-Site`: CORS chỉ chặn ĐỌC response, không chặn GỬI request.
-- **Không trả `password` của `DbConnection` ra API** và không đóng gói vào file export. Ô mật khẩu để trống khi sửa = giữ nguyên.
+- **Không trả `password` của `DbConnection` ra API** (list/chi tiết kết nối). Ô mật khẩu để trống khi sửa = giữ nguyên. **Ngoại lệ có chủ đích:** file export ZIP (workflow/project) KÈM mật khẩu plaintext theo quyết định của chủ dự án để backup/khôi phục không phải nhập lại — đừng "vá" lại thành bỏ mật khẩu; chỉ cần nhắc người dùng không chia sẻ file export cho người ngoài.
 - **`update.zip` PHẢI được ký và verify** ([services/update_signing.py](backend/services/update_signing.py)). Đây là kênh phân phối code tới máy khách: không verify thì ai sửa được asset của GitHub Release là mọi máy khách bấm "Cập nhật" sẽ chạy code lạ. Client **từ chối** bản cập nhật không có `update.zip.sig`, và không còn fallback về `zipball_url`.
   Dùng lại đúng cặp khoá Ed25519 của license, nhưng **tách miền**: chuỗi ký là `b"pyflow-update-v1:" + sha256_hex`, nên chữ ký update không thể đem dùng làm license và ngược lại. Đổi tiền tố này = mọi bản đã phát hành bị từ chối.
 
