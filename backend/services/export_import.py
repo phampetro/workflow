@@ -19,15 +19,12 @@ _SAVED_CONNECTION_FIELDS = (
 )
 
 
-async def _get_workflow_db_connections(workflow_id: str, session, include_secrets: bool = False) -> list:
+async def _get_workflow_db_connections(workflow_id: str, session) -> list:
     """Lấy toàn bộ kết nối Database thuộc về 1 workflow, để đóng gói kèm khi export.
 
-    MẶC ĐỊNH KHÔNG kèm mật khẩu. File export là thứ người dùng gửi cho đồng nghiệp
-    / đính kèm email / up lên chat để chuyển workflow sang máy khác — trước đây
-    workflow.json trong zip chứa "password" dạng plaintext, tức mỗi lần chia sẻ
-    workflow là một lần rò mật khẩu SQL Server nội bộ.
-
-    Người nhận vẫn có đủ host/port/user/dbname, chỉ cần nhập lại mật khẩu một lần.
+    KÈM mật khẩu dạng plaintext (theo yêu cầu chủ dự án, để backup/khôi phục không
+    phải nhập lại): file zip export chứa mật khẩu thật nên KHÔNG đem gửi/chia sẻ
+    cho người ngoài. Trước đây từng bỏ mật khẩu vì sợ rò khi chia sẻ workflow.
     """
     result = await session.execute(
         select(DbConnection).where(DbConnection.workflow_id == workflow_id)
@@ -40,8 +37,7 @@ async def _get_workflow_db_connections(workflow_id: str, session, include_secret
             "host": c.host,
             "port": c.port,
             "username": c.username,
-            "password": c.password if include_secrets else "",
-            "password_omitted": (not include_secrets) and bool(c.password),
+            "password": c.password,
             "dbname": c.dbname,
         }
         for c in result.scalars().all()
@@ -119,7 +115,8 @@ async def _unique_workflow_name(session, project_id: str, desired_name: str) -> 
 
 
 def _build_workflow_zip_bytes(wf_dict: dict, wf_dir: Path, db_connections: list = None) -> bytes:
-    """Đóng gói graph + toàn bộ file input/output của 1 workflow vào zip.
+    """Đóng gói graph + toàn bộ file input của 1 workflow vào zip (không kèm output —
+    đó là kết quả sinh ra khi chạy, có thể rất nhiều file và tạo lại được).
 
     Hàm đồng bộ (dùng zipfile/đọc đĩa) - luôn gọi qua asyncio.to_thread để
     không chặn event loop.
@@ -139,12 +136,11 @@ def _build_workflow_zip_bytes(wf_dict: dict, wf_dir: Path, db_connections: list 
         }
         zf.writestr("workflow.json", json.dumps(export_data, ensure_ascii=False, indent=2))
 
-        for sub in ("input", "output"):
-            d = wf_dir / sub
-            if d.exists():
-                for f in d.rglob("*"):
-                    if f.is_file():
-                        zf.write(f, arcname=f"{sub}/{f.relative_to(d)}")
+        input_dir = wf_dir / "input"
+        if input_dir.exists():
+            for f in input_dir.rglob("*"):
+                if f.is_file():
+                    zf.write(f, arcname=f"input/{f.relative_to(input_dir)}")
     return buffer.getvalue()
 
 
@@ -170,6 +166,7 @@ def _safe_extract_dest(target_dir: Path, rel: str) -> Path | None:
 
 
 def _extract_workflow_files(zip_data: bytes, wf_dir: Path):
+    # Vẫn giải nén "output": file zip xuất từ bản cũ còn chứa thư mục này.
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zf:
         for sub in ("input", "output"):
             prefix = f"{sub}/"
@@ -185,7 +182,7 @@ def _extract_workflow_files(zip_data: bytes, wf_dir: Path):
 
 
 async def export_workflow_to_zip(workflow_id: str, session) -> io.BytesIO:
-    """Xuất 1 workflow (graph + input + output + kết nối Database) thành zip trong bộ nhớ."""
+    """Xuất 1 workflow (graph + input + kết nối Database) thành zip trong bộ nhớ."""
     wf = await session.get(Workflow, workflow_id)
     if not wf:
         raise ValueError("Workflow không tồn tại")
@@ -197,7 +194,7 @@ async def export_workflow_to_zip(workflow_id: str, session) -> io.BytesIO:
 
 
 async def import_workflow_from_zip(zip_data: bytes, project_id: str, session) -> dict:
-    """Nhập 1 workflow từ zip vào project đích (tạo workflow mới, giữ nguyên input/output,
+    """Nhập 1 workflow từ zip vào project đích (tạo workflow mới, giữ nguyên input,
     tạo lại kết nối Database đã export và tự remap savedConnectionId trong graph_json)."""
     proj = await session.get(Project, project_id)
     if not proj:
@@ -233,7 +230,7 @@ async def import_workflow_from_zip(zip_data: bytes, project_id: str, session) ->
 
 
 async def duplicate_workflow_in_place(workflow_id: str, session) -> dict:
-    """Sao chép 1 workflow (graph + input + output) ngay trong project của nó.
+    """Sao chép 1 workflow (graph + input, không kèm output) ngay trong project của nó.
 
     Triển khai bằng chính export_workflow_to_zip + import_workflow_from_zip -
     "sao chép" về bản chất là export rồi import ngay vào cùng project.
@@ -265,7 +262,7 @@ async def _unique_project_name(session, user_id: str, desired_name: str) -> str:
 
 
 def _build_project_zip_bytes(proj_dict: dict, workflows: list, proj_dir: Path) -> bytes:
-    """Đóng gói project + toàn bộ workflow (graph + input/output) vào 1 zip.
+    """Đóng gói project + toàn bộ workflow (graph + input, không kèm output) vào 1 zip.
 
     Mỗi workflow được lưu theo chỉ số (workflows/{idx}/...) thay vì theo tên,
     để tránh nhầm lẫn khi có ký tự đặc biệt hoặc trùng slug.
@@ -292,13 +289,11 @@ def _build_project_zip_bytes(proj_dict: dict, workflows: list, proj_dir: Path) -
                 "graph_json": wf["graph_json"],
                 "db_connections": wf.get("db_connections", []),
             })
-            wf_dir = proj_dir / f"wf_{slugify(wf['name'])}"
-            for sub in ("input", "output"):
-                d = wf_dir / sub
-                if d.exists():
-                    for f in d.rglob("*"):
-                        if f.is_file():
-                            zf.write(f, arcname=f"workflows/{idx}/{sub}/{f.relative_to(d)}")
+            input_dir = proj_dir / f"wf_{slugify(wf['name'])}" / "input"
+            if input_dir.exists():
+                for f in input_dir.rglob("*"):
+                    if f.is_file():
+                        zf.write(f, arcname=f"workflows/{idx}/input/{f.relative_to(input_dir)}")
 
         zf.writestr("project.json", json.dumps(export_data, ensure_ascii=False, indent=2))
     return buffer.getvalue()
@@ -327,7 +322,7 @@ def _extract_project_workflow_files(zip_data: bytes, idx: int, wf_dir: Path):
 
 
 async def export_project_to_zip(project_id: str, session) -> io.BytesIO:
-    """Xuất 1 project (metadata + toàn bộ workflow bên trong, kể cả input/output) thành zip."""
+    """Xuất 1 project (metadata + toàn bộ workflow bên trong, kể cả input) thành zip."""
     proj = await session.get(Project, project_id)
     if not proj:
         raise ValueError("Project không tồn tại")
@@ -353,7 +348,7 @@ async def export_project_to_zip(project_id: str, session) -> io.BytesIO:
 
 
 async def import_project_from_zip(zip_data: bytes, user_id: str, session) -> dict:
-    """Nhập 1 project từ zip (tạo project mới + toàn bộ workflow, giữ nguyên input/output)."""
+    """Nhập 1 project từ zip (tạo project mới + toàn bộ workflow, giữ nguyên input)."""
     meta = await asyncio.to_thread(_read_project_meta, zip_data)
     proj_meta = meta.get("project", {})
     wf_metas = meta.get("workflows", [])
