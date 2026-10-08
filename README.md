@@ -148,7 +148,7 @@ workflow/
         │                                Chạy/Dừng, mở Logs/Scheduler/History
         │
         ├── components/
-        │   ├── BlockNode.jsx         ← Node hiển thị trên canvas (16 loại khối)
+        │   ├── BlockNode.jsx         ← Node hiển thị trên canvas (22 loại khối)
         │   ├── BlockEditorModal.jsx  ← 2000+ dòng: form cấu hình từng loại khối
         │   ├── LogViewer.jsx         ← Drawer SSE log (auto-scroll, download log)
         │   ├── SchedulerPanel.jsx    ← Drawer quản lý cron schedule + banner user-active
@@ -324,6 +324,24 @@ File luôn lưu vào Output. Mặc định biến `file_name`.
 { "file_name": "pivot.xlsx" }
 ```
 
+### 12b. `excel_edit` — Xử lý Excel (xóa dòng / lọc theo cột / xóa cột)
+```json
+{ "file_name": "edited.xlsx" }
+```
+Đọc file Excel/CSV (tìm trong `input/` rồi `output/`, hoặc gõ `{{ten_file}}`) thành **lưới thô** rồi chạy **danh sách bước theo thứ tự** (`excelEditSteps`, thêm/bớt/đổi thứ tự trên UI):
+
+| `op` | Field | Ví dụ |
+|---|---|---|
+| `delete_rows` | `rows` | `1,2` · `1-10` · `1,3,5-8` |
+| `filter` | `column` (1 chữ cái), `mode` (`keep`/`remove`), `text`, `caseSensitive` | giữ dòng có cột `A` chứa `CV` |
+| `delete_cols` | `cols` | `A B C` · `A,C` · `A-C` |
+
+- Dòng 1 = dòng đầu tiên của file (kể cả tiêu đề), cột A = cột đầu; **số dòng/cột ở bước sau tính theo kết quả của bước trước**. Dòng/cột vượt quá kích thước hiện có bị bỏ qua; riêng bước lọc báo lỗi nếu cột không tồn tại hoặc ô nội dung trống.
+- `excelEditKeepHeaderRows` (mặc định 1): số dòng đầu **không bao giờ bị bước lọc xóa** (giữ dòng tiêu đề). Đặt 0 nếu file không có tiêu đề.
+- Kết quả ghi ra **file `.xlsx` MỚI trong `output/`** (`excelFileName`), file gốc nguyên vẹn. Số/ngày giữ đúng kiểu; định dạng ô (màu, merge) không giữ — giống `pivot_excel`/`merge_excel`.
+- Chạy **inline trong backend** (pandas, như `excel_read`), không sinh script con; logic thuần ở [`services/excel_edit.py`](backend/services/excel_edit.py), nhánh chạy ở `executor_blocks.py`.
+- `excelEditSteps` **bỏ qua nội suy chung** (giống `steps` của Browser): `excel_edit.resolve_steps` tự thay `{{biến}}` 1 lượt `re.sub`, vì nhánh "gõ tên trần" của `interpolate()` sẽ biến cột `A` thành giá trị của biến tên `A`.
+
 ### 13. `excel_to_sql` — Import Excel → SQL
 ```json
 { "rows_inserted": 123, "table": "ten_bang_sql" }
@@ -407,6 +425,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 | `sql_to_excel` | Lưu tên file kết quả | `file_name` |
 | `merge_excel` | Lưu tên file kết quả | `file_name` |
 | `pivot_excel` | Lưu tên file kết quả | `file_name` |
+| `excel_edit` | Lưu tên file kết quả | `file_name` |
 | `excel_to_sql` | Lưu số dòng / Lưu tên bảng | `rows_inserted` / `table` |
 | `run_sql_exec` | Lưu kết quả / Lưu số dòng | `result` / `row_count` |
 | `telegram` | Lưu sent_message_id / chat_id | `sent_message_id` / `chat_id` |

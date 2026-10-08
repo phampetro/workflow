@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns, startBrowserRecording, stopBrowserRecording, createRecordingStream } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert } from 'lucide-react'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert, ArrowUp, ArrowDown } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col } from 'antd'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -720,7 +720,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isGoogleSheets = node.data.type === 'google_sheets_read'
   const isExcelRead = node.data.type === 'excel_read'
   const isInputVars = node.data.type === 'input_vars'
-  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel
+  const isExcelEdit = node.data.type === 'excel_edit'
+  const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel || isExcelEdit
 
   // Excel to SQL states
   const [dbTables, setDbTables] = useState([])
@@ -746,6 +747,29 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const [googleSheetsCols, setGoogleSheetsCols] = useState(node.data.googleSheetsCols || [])
   const [googleSheetsMappings, setGoogleSheetsMappings] = useState(node.data.columnMappings || {})
   const [loadingGoogleSheetsCols, setLoadingGoogleSheetsCols] = useState(false)
+
+  // Excel Edit state: danh sách bước có THỨ TỰ (xóa dòng / lọc theo cột / xóa cột)
+  const [excelEditSteps, setExcelEditSteps] = useState(node.data.excelEditSteps || [])
+  // Đổi loại bước thì tạo object mới sạch — không giữ field của loại cũ (tránh dữ liệu rác lẫn vào)
+  const newExcelEditStep = (op) => (
+    op === 'filter' ? { op, column: '', mode: 'keep', text: '', caseSensitive: false }
+    : op === 'delete_cols' ? { op, cols: '' }
+    : { op: 'delete_rows', rows: '' }
+  )
+  const updateExcelEditStep = (idx, patch) =>
+    setExcelEditSteps(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s))
+  const changeExcelEditOp = (idx, op) =>
+    setExcelEditSteps(prev => prev.map((s, i) => i === idx ? newExcelEditStep(op) : s))
+  const removeExcelEditStep = (idx) =>
+    setExcelEditSteps(prev => prev.filter((_, i) => i !== idx))
+  const moveExcelEditStep = (idx, dir) =>
+    setExcelEditSteps(prev => {
+      const j = idx + dir
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      ;[next[idx], next[j]] = [next[j], next[idx]]
+      return next
+    })
 
   // Excel Read state
   const [excelReadCols, setExcelReadCols] = useState(node.data.excelReadCols || [])
@@ -937,8 +961,13 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
   const autoCompleteOptions = inputKeys.map(k => ({ value: k }))
 
+  // Ô đã điền sẵn đúng tên 1 file thì hiện ĐỦ danh sách (input + output); mặc định antd lọc
+  // theo chính chữ đang điền nên chỉ còn lại đúng file đó, trông như không có file output.
+  const filterFileOption = (input, option) =>
+    availableFiles.some(f => f.name === input) || (option?.value || '').toLowerCase().includes(input.toLowerCase())
+
   useEffect(() => {
-    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql || isExcelRead) && open && workflowId) {
+    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql || isExcelRead || isExcelEdit) && open && workflowId) {
       const fetchFiles = async () => {
         setLoadingFiles(true)
         try {
@@ -947,7 +976,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             getWorkflowOutputFiles(workflowId).catch(() => ({ data: [] }))
           ])
           let files = [...(inRes.data || []), ...(outRes.data || [])]
-          if (isMergeExcel || isPivotExcel || isExcelToSql || isExcelRead) {
+          if (isMergeExcel || isPivotExcel || isExcelToSql || isExcelRead || isExcelEdit) {
             files = files.filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.csv'))
           }
           setAvailableFiles(files)
@@ -959,7 +988,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       }
       fetchFiles()
     }
-  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, isExcelRead, open, workflowId])
+  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, isExcelRead, isExcelEdit, open, workflowId])
 
   // Fetch danh sách kết nối Database đã lưu (cho các khối cần chọn kết nối)
   useEffect(() => {
@@ -1116,6 +1145,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     if (!conn) {
       throw new Error(t('blockEditor.selectDbConnection'));
     }
+    // API danh sách kết nối KHÔNG trả mật khẩu về FE (chỉ có has_password), nên không có
+    // password để gửi. Gửi saved_connection_id để backend tự lấy mật khẩu đang lưu
+    // (routers/database.py _fill_saved_password) — thiếu id này, test kết nối luôn đi với
+    // mật khẩu rỗng và SQL Server báo "Login failed for user 'sa'" dù kết nối lưu đúng.
     return {
       project_id: projectId,
       db_type: conn.db_type,
@@ -1123,7 +1156,8 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       port: conn.port,
       dbname: conn.dbname,
       username: conn.username,
-      password: conn.password,
+      password: '',
+      saved_connection_id: conn.id,
     };
   };
 
@@ -1223,8 +1257,24 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
+      if (isExcelEdit) {
+        if (excelEditSteps.length === 0) {
+          toast.error(t('blockEditor.excelEditErrNoSteps'))
+          return
+        }
+        const incomplete = excelEditSteps.findIndex(s => (
+          s.op === 'delete_rows' ? !String(s.rows || '').trim()
+          : s.op === 'delete_cols' ? !String(s.cols || '').trim()
+          : !String(s.column || '').trim() || !String(s.text || '')
+        ))
+        if (incomplete !== -1) {
+          toast.error(t('blockEditor.excelEditErrStepIncomplete', { n: incomplete + 1 }))
+          return
+        }
+      }
       onSave(node.id, {
         ...values,
+        ...(isExcelEdit ? { excelEditSteps } : {}),
         ...(isGoogleSheets ? { googleSheetsCols, columnMappings: googleSheetsMappings } : {}),
         ...(isExcelRead ? { excelReadCols, columnMappings: excelReadMappings } : {}),
         ...(isPython ? { code: editorRef.current ? editorRef.current.getValue() : code } : {}),
@@ -1267,7 +1317,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     // Mẫu 1: 1/3 màn hình
     if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger', 'queue'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
-    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read', 'input_vars'].includes(type)) return '50vw'
+    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read', 'excel_edit', 'input_vars'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
@@ -1303,7 +1353,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             description: node.data.description || '',
             outputVarName: node.data.outputVarName || (
               node.data.type === 'merge_excel' ? 'merged_excel'
-              : (node.data.type === 'pivot_excel' || node.data.type === 'sql_to_excel') ? 'file_name'
+              : (node.data.type === 'pivot_excel' || node.data.type === 'sql_to_excel' || node.data.type === 'excel_edit') ? 'file_name'
               : (node.data.type === 'google_sheets_read' || node.data.type === 'excel_read') ? 'sheets_data'
               : ''
             ),
@@ -1339,7 +1389,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             telegramListenerToken: node.data.telegramListenerToken || '',
             delete_input: node.data.delete_input || false,
             delete_output: node.data.delete_output || false,
-            excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged_excel.xlsx' : isPivotExcel ? 'pivot.xlsx' : isSqlToExcel ? 'sqltoexcel.xlsx' : 'export.xlsx'),
+            excelFileName: node.data.excelFileName || (isMergeExcel ? 'merged_excel.xlsx' : isPivotExcel ? 'pivot.xlsx' : isSqlToExcel ? 'sqltoexcel.xlsx' : isExcelEdit ? 'edited.xlsx' : 'export.xlsx'),
             headerRows: node.data.headerRows || 3,
             selectedFiles: node.data.selectedFiles || [],
             mailProvider: node.data.mailProvider || 'custom',
@@ -1391,6 +1441,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             googleSheetsUrl: node.data.googleSheetsUrl || '',
             googleSheetsSheetName: node.data.googleSheetsSheetName || 'Sheet1',
             googleSheetsHeaderRow: node.data.googleSheetsHeaderRow !== undefined ? node.data.googleSheetsHeaderRow : 1,
+            excelEditSourceFile: node.data.excelEditSourceFile || '',
+            excelEditSheetName: node.data.excelEditSheetName || '',
+            excelEditKeepHeaderRows: node.data.excelEditKeepHeaderRows !== undefined ? node.data.excelEditKeepHeaderRows : 1,
             excelReadFile: node.data.excelReadFile || '',
             excelReadSheetName: node.data.excelReadSheetName || '',
             excelReadHeaderRow: node.data.excelReadHeaderRow !== undefined ? node.data.excelReadHeaderRow : 1,
@@ -1919,6 +1972,135 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             </>
           )}
 
+          {isExcelEdit && (
+            <>
+              <Divider style={{ margin: '24px 0' }} />
+              <Title level={5} style={{ margin: '0 0 16px 0' }}><FileSpreadsheet size="1rem" style={{ display: 'inline', marginRight: 8, verticalAlign: -2, color: '#db2777' }}/> {t('blockEditor.excelEditConfigTitle')}</Title>
+              <Form.Item label={t('blockEditor.excelReadSourceLabel')} name="excelEditSourceFile" rules={[{ required: true, message: t('blockEditor.excelReadSourceRequired') }]} tooltip={`${t('blockEditor.excelReadSourceTooltipPrefix')} {{ten_file}}`}>
+                <AutoComplete
+                  placeholder={t('blockEditor.excelReadSourcePlaceholder')}
+                  options={availableFiles.map(f => ({ value: f.name, label: `${f.name} (${f.type})` }))}
+                  filterOption={filterFileOption}
+                  allowClear
+                />
+              </Form.Item>
+              <Form.Item label={t('blockEditor.sheetNameLabel')} name="excelEditSheetName" tooltip={t('blockEditor.excelReadSheetTooltip')}>
+                <Input placeholder={t('blockEditor.excelReadSheetPlaceholder')} />
+              </Form.Item>
+              <Form.Item label={t('blockEditor.excelEditKeepHeaderLabel')} name="excelEditKeepHeaderRows" tooltip={t('blockEditor.excelEditKeepHeaderTooltip')}>
+                <InputNumber min={0} style={{ width: '100%' }} placeholder="1" />
+              </Form.Item>
+              <Form.Item label={t('blockEditor.excelResultFileNameLabel')} name="excelFileName" rules={[{ required: true, message: t('blockEditor.excelResultFileNameRequired') }]}>
+                <Input placeholder={t('blockEditor.excelEditFilePlaceholder')} />
+              </Form.Item>
+
+              <Divider style={{ margin: '8px 0 16px' }}>{t('blockEditor.excelEditStepsTitle')}</Divider>
+              <Alert type="info" showIcon style={{ marginBottom: 12 }} description={t('blockEditor.excelEditStepsHint')} />
+
+              {excelEditSteps.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '16px 0', marginBottom: 10, color: 'var(--text-muted)', border: '1px dashed var(--border-default)', borderRadius: 8 }}>
+                  {t('blockEditor.excelEditNoSteps')}
+                </div>
+              )}
+
+              {excelEditSteps.map((s, idx) => (
+                <div key={idx} style={{ border: '1px solid var(--border-default)', borderRadius: 8, padding: 12, marginBottom: 10, background: 'var(--bg-surface)' }}>
+                  <Row gutter={8} align="middle">
+                    <Col flex="none"><Tag color="magenta" style={{ margin: 0 }}>{idx + 1}</Tag></Col>
+                    <Col flex="auto">
+                      <Select
+                        style={{ width: '100%' }}
+                        value={s.op}
+                        aria-label={t('blockEditor.excelEditOpLabel')}
+                        onChange={(v) => changeExcelEditOp(idx, v)}
+                        options={[
+                          { value: 'delete_rows', label: t('blockEditor.excelEditOpDeleteRows') },
+                          { value: 'filter', label: t('blockEditor.excelEditOpFilter') },
+                          { value: 'delete_cols', label: t('blockEditor.excelEditOpDeleteCols') },
+                        ]}
+                      />
+                    </Col>
+                    <Col flex="none">
+                      <Space size={2}>
+                        <Button type="text" size="small" icon={<ArrowUp size={14} />} aria-label={t('blockEditor.excelEditMoveUpAria')} disabled={idx === 0} onClick={() => moveExcelEditStep(idx, -1)} />
+                        <Button type="text" size="small" icon={<ArrowDown size={14} />} aria-label={t('blockEditor.excelEditMoveDownAria')} disabled={idx === excelEditSteps.length - 1} onClick={() => moveExcelEditStep(idx, 1)} />
+                        <Button danger type="text" size="small" icon={<Trash2 size={14} />} aria-label={t('blockEditor.excelEditRemoveStepAria')} onClick={() => removeExcelEditStep(idx)} />
+                      </Space>
+                    </Col>
+                  </Row>
+
+                  <div style={{ marginTop: 10 }}>
+                    {s.op === 'delete_rows' && (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditRowsLabel')}</div>
+                        <Input
+                          aria-label={t('blockEditor.excelEditRowsLabel')}
+                          placeholder={t('blockEditor.excelEditRowsPlaceholder')}
+                          value={s.rows}
+                          onChange={(e) => updateExcelEditStep(idx, { rows: e.target.value })}
+                        />
+                      </>
+                    )}
+                    {s.op === 'delete_cols' && (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditColsLabel')}</div>
+                        <Input
+                          aria-label={t('blockEditor.excelEditColsLabel')}
+                          placeholder={t('blockEditor.excelEditColsPlaceholder')}
+                          value={s.cols}
+                          onChange={(e) => updateExcelEditStep(idx, { cols: e.target.value })}
+                        />
+                      </>
+                    )}
+                    {s.op === 'filter' && (
+                      <>
+                        <Row gutter={8}>
+                          <Col span={9}>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditFilterColumn')}</div>
+                            <Input
+                              aria-label={t('blockEditor.excelEditFilterColumn')}
+                              placeholder={t('blockEditor.excelEditFilterColumnPlaceholder')}
+                              value={s.column}
+                              onChange={(e) => updateExcelEditStep(idx, { column: e.target.value })}
+                            />
+                          </Col>
+                          <Col span={15}>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditFilterMode')}</div>
+                            <Select
+                              style={{ width: '100%' }}
+                              value={s.mode}
+                              aria-label={t('blockEditor.excelEditFilterMode')}
+                              onChange={(v) => updateExcelEditStep(idx, { mode: v })}
+                              options={[
+                                { value: 'keep', label: t('blockEditor.excelEditModeKeep') },
+                                { value: 'remove', label: t('blockEditor.excelEditModeRemove') },
+                              ]}
+                            />
+                          </Col>
+                        </Row>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '8px 0 4px' }}>{t('blockEditor.excelEditFilterText')}</div>
+                        <Input
+                          aria-label={t('blockEditor.excelEditFilterText')}
+                          placeholder={`${t('blockEditor.excelEditFilterTextPlaceholder')} {{ten_bien}}`}
+                          value={s.text}
+                          onChange={(e) => updateExcelEditStep(idx, { text: e.target.value })}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                          <Switch size="small" checked={!!s.caseSensitive} onChange={(v) => updateExcelEditStep(idx, { caseSensitive: v })} />
+                          <span className="text-secondary text-sm">{t('blockEditor.excelEditCaseSensitive')}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <Button type="dashed" block icon={<Plus size={16} />} onClick={() => setExcelEditSteps(prev => [...prev, newExcelEditStep('delete_rows')])}>
+                {t('blockEditor.excelEditAddStep')}
+              </Button>
+            </>
+          )}
+
           {isExcelRead && (
             <>
               <Divider style={{ margin: '24px 0' }} />
@@ -1927,7 +2109,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <AutoComplete
                   placeholder={t('blockEditor.excelReadSourcePlaceholder')}
                   options={availableFiles.map(f => ({ value: f.name, label: `${f.name} (${f.type})` }))}
-                  filterOption={(input, option) => (option?.value || '').toLowerCase().includes(input.toLowerCase())}
+                  filterOption={filterFileOption}
                   allowClear
                 />
               </Form.Item>
@@ -2166,10 +2348,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   <Terminal size="1.5rem" color="#14b8a6" />
                   <Title level={4} style={{ margin: 0 }}>{t('blockEditor.sqlExecCmdTitle')}</Title>
                 </div>
-                <Form.Item name="sqlCommand" rules={[{ required: true, message: t('blockEditor.sqlExecCmdRequired') }]} style={{ flex: 1, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
+                <Form.Item name="sqlCommand" className="form-item-fill" rules={[{ required: true, message: t('blockEditor.sqlExecCmdRequired') }]} style={{ flex: 1, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
                   <Input.TextArea
                     placeholder={'VD: EXEC ten_ham\nhoặc: EXEC ten_ham @tham_so = {{bien}}'}
-                    style={{ fontFamily: 'var(--font-mono)', flex: 1, minHeight: '100%', resize: 'none' }}
+                    style={{ fontFamily: 'var(--font-mono)' }}
                   />
                 </Form.Item>
               </div>

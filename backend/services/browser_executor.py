@@ -188,8 +188,18 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
             log("info", "OK")
 
         elif action == "wait_for_load":
+            # "load" chỉ chờ sự kiện window.load — web SPA (Angular/React) nạp dữ liệu bằng
+            # XHR SAU đó nên bước này trả về gần như ngay dù trang còn đang quay. Chờ thêm
+            # "networkidle" (không còn request nào trong 500ms) mới đúng nghĩa "hết loading".
+            # Site có polling/websocket không bao giờ idle → hết timeout thì cảnh báo rồi đi
+            # tiếp, không làm hỏng step.
+            from playwright.sync_api import TimeoutError as PlaywrightTimeout
             page.wait_for_load_state("load", timeout=timeout)
-            log("info", tr(language, "page_loaded"))
+            try:
+                page.wait_for_load_state("networkidle", timeout=timeout)
+                log("info", tr(language, "page_loaded"))
+            except PlaywrightTimeout:
+                log("warning", tr(language, "page_network_not_idle", seconds=round(timeout / 1000)))
 
         # ── Tương tác ─────────────────────────────────────────────────────
         elif action == "click":

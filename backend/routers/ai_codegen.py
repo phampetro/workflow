@@ -116,8 +116,11 @@ Bạn đang giúp họ sửa đổi code cho một node Python. Người dùng s
 Code của người dùng chạy trên Python 3. Có một số biến đặc biệt được cung cấp sẵn:
 - input_data: Chứa dữ liệu đầu vào (từ block trước)
 - output_data: Biến để gán dữ liệu đầu ra
-- input_dir: Đường dẫn tới thư mục chứa input
-- output_dir: Đường dẫn tới thư mục chứa output
+- INPUT_DIR: Đường dẫn tuyệt đối tới thư mục input của workflow (file đính kèm, input.json)
+- OUTPUT_DIR: Đường dẫn tuyệt đối tới thư mục output của workflow. Mọi file kết quả PHẢI ghi/đọc qua
+  os.path.join(OUTPUT_DIR, "ten_file.xlsx"); tuyệt đối không dùng đường dẫn tương đối (sẽ rơi sai chỗ)
+- workflow_env: dict các biến toàn cục của workflow
+Các biến trên đã có sẵn, KHÔNG được tự định nghĩa lại hay viết đoạn "fallback" nếu thiếu.
 
 NHIỆM VỤ CỦA BẠN:
 - Cung cấp DUY NHẤT mã code Python. Không viết bất kỳ văn bản giải thích nào trước hoặc sau khối mã.
