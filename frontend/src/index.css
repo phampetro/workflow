@@ -477,6 +477,22 @@ body {
   align-items: center;
 }
 
+/* Form.Item cho ô nhập cần giãn hết vùng còn lại (VD: ô SQL của khối EXEC).
+   antd bọc control qua 4 lớp div (row > control > control-input > content), lớp nào
+   cũng flex:0 nên `flex:1` đặt trên Form.Item hay textarea không truyền xuống được —
+   ô bị kẹt ở chiều cao mặc định. Cho cả chuỗi lớp đó giãn theo cột. */
+.form-item-fill .ant-form-item-row,
+.form-item-fill .ant-form-item-control,
+.form-item-fill .ant-form-item-control-input,
+.form-item-fill .ant-form-item-control-input-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch; /* antd đặt center ở control-input → đổi sang cột sẽ co ngang */
+  min-height: 0;
+}
+.form-item-fill textarea { flex: 1; resize: none; }
+
 /* React Flow Nodes */
 /* Hover/selected do BlockNode tự vẽ theo MÀU RIÊNG của từng khối. Không áp
    box-shadow teal lên wrapper ở đây nữa — trước đây gây viền teal nhân đôi đè

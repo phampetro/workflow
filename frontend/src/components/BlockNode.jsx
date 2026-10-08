@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect, useRef, useContext, createContext } from 'react'
 import { Handle, useUpdateNodeInternals } from '@xyflow/react'
 import './BlockNode.css'
-import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput } from 'lucide-react'
+import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput, ListFilter } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 // Handler Sửa/Xóa/Nhân bản được cấp qua Context (value ổn định, memo hóa ở
@@ -143,6 +143,13 @@ const BLOCK_TYPES = {
     gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
     description: 'Tổng hợp dữ liệu (Pivot)',
   },
+  excel_edit: {
+    label: 'Xử lý Excel',
+    icon: <ListFilter size="0.875rem" />,
+    color: '#db2777',
+    gradient: 'linear-gradient(135deg, #db2777, #9d174d)',
+    description: 'Xóa dòng, lọc theo cột, xóa cột trong file Excel',
+  },
   browser: {
     label: 'Trình Duyệt',
     icon: <Globe size="0.875rem" />,
@@ -275,7 +282,7 @@ const BlockNode = memo(({ id, data, selected }) => {
 
       {/* Body */}
       <div className="block-body">
-        {!['browser', 'merge_excel', 'pivot_excel', 'input_vars', 'sql_to_excel', 'delay', 'condition', 'loop'].includes(data.type) && (
+        {!['browser', 'merge_excel', 'pivot_excel', 'excel_edit', 'input_vars', 'sql_to_excel', 'delay', 'condition', 'loop'].includes(data.type) && (
           <div className="block-name">{data.label || `${typeLabel} Block`}</div>
         )}
         {data.type === 'delay' ? (
@@ -293,6 +300,10 @@ const BlockNode = memo(({ id, data, selected }) => {
         ) : data.type === 'pivot_excel' ? (
           <div className="block-desc" style={{ color: '#f59e0b', fontWeight: 600 }}>
             {data.excelFileName || 'pivot.xlsx'}
+          </div>
+        ) : data.type === 'excel_edit' ? (
+          <div className="block-desc" style={{ color: '#db2777', fontWeight: 600 }}>
+            {t('blockNode.excelEditSteps', { count: data.excelEditSteps?.length || 0 })} → {data.excelFileName || 'edited.xlsx'}
           </div>
         ) : data.type === 'browser' ? (
           <div className="block-desc" style={{ color: '#0ea5e9', fontWeight: 600 }}>

@@ -29,6 +29,10 @@ from services import venv_manager
 # "database is locked" và làm run kẹt RUNNING (xem database.apply_sqlite_pragmas).
 from database import connect_sqlite
 from services.log_messages import tr
+from services.excel_edit import (
+    ExcelEditError, apply_steps as excel_edit_apply_steps, normalize_output_name,
+    read_grid, resolve_steps as excel_edit_resolve_steps, write_grid,
+)
 
 DATA_DIR = venv_manager.DATA_DIR
 WORKFLOW_DB = DATA_DIR / "pyflow.db"
@@ -373,6 +377,12 @@ workflow_id = {workflow_id!r}
 block_id = {block_id!r}
 OUTPUT_DIR = {output_dir!r}
 INPUT_DIR = {input_dir!r}
+# Alias chữ thường: AI hỗ trợ viết code (routers/ai_codegen.py) từng được dặn tên
+# `output_dir`/`input_dir`, nên code sinh ra hay dùng tên này. Thiếu alias thì code
+# kiểu `if 'output_dir' not in locals(): output_dir = os.getcwd()` âm thầm rơi vào
+# thư mục backend/ thay vì output của workflow.
+output_dir = OUTPUT_DIR
+input_dir = INPUT_DIR
 
 input_data = None
 workflow_env = {{}}
@@ -481,6 +491,7 @@ BLOCK_OUTPUT_VARS = {
     "sql_to_excel": [("file_name", "outputVarName")],
     "merge_excel": [("file_name", "outputVarName")],
     "pivot_excel": [("file_name", "outputVarName")],
+    "excel_edit": [("file_name", "outputVarName")],
 }
 
 
@@ -996,10 +1007,12 @@ def execute_workflow_thread(run_id, project_id, workflow_id, workflow_name, grap
             label = bdata.get("label", bid)
 
             # Nội suy các biến môi trường (đệ quy vào cả cấu trúc lồng nhau)
-            # Ngoại trừ "steps" của khối Browser để giữ nguyên {{biến}} cho browser_executor tự nội suy động.
+            # Ngoại trừ "steps" của khối Browser để giữ nguyên {{biến}} cho browser_executor tự nội suy động,
+            # và "excelEditSteps" của khối Xử lý Excel (excel_edit.resolve_steps tự nội suy, tránh nhánh
+            # "gõ tên trần" làm cột "A" bị thay bằng giá trị của biến tên A).
             bdata_interpolated = {}
             for k, v in bdata.items():
-                if btype == "browser" and k == "steps":
+                if (btype == "browser" and k == "steps") or (btype == "excel_edit" and k == "excelEditSteps"):
                     bdata_interpolated[k] = v
                 else:
                     bdata_interpolated[k] = interpolate_deep(v, k)
@@ -2542,6 +2555,72 @@ output_data = {{"result": rows, "row_count": row_count}}
                     if log_fn:
                         log_fn(bid, "error", tr(language, "read_excel_error", label=label, error=e))
                     if handle_workflow_error(str(e), bid, label):
+                        return
+                    else:
+                        continue
+            elif btype == "excel_edit":
+                # Chạy INLINE trong backend (pandas) như excel_read, không sinh script con.
+                try:
+                    src_name = safe_filename(bdata.get("excelEditSourceFile", ""), "")
+                    if not src_name:
+                        raise ExcelEditError("no_source")
+                    raw_steps = bdata.get("excelEditSteps") or []
+                    if not raw_steps:
+                        raise ExcelEditError("no_steps")
+
+                    src_path = input_dir / src_name
+                    if not src_path.exists():
+                        src_path = wf_dir / "output" / src_name
+                    if not src_path.exists():
+                        raise ExcelEditError("file_not_found", file=src_name)
+
+                    ctx = dict(workflow_env)
+                    if isinstance(current_input, dict):
+                        ctx.update(current_input)
+                    steps = excel_edit_resolve_steps(raw_steps, ctx)
+                    _hdr = bdata.get("excelEditKeepHeaderRows")
+                    keep_header = 1 if _hdr in (None, "") else max(0, int(_hdr))
+
+                    out_dir = wf_dir / "output"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    out_name = normalize_output_name(safe_filename(bdata.get("excelFileName", ""), "edited.xlsx"))
+                    sheet = str(bdata.get("excelEditSheetName") or "").strip()
+
+                    if log_fn:
+                        log_fn(bid, "info", tr(language, "excel_edit_running", label=label, file=src_name))
+
+                    def _excel_edit_desc(step):
+                        op = step.get("op")
+                        if op == "delete_rows":
+                            return tr(language, "excel_edit_desc_delete_rows", spec=step.get("rows", ""))
+                        if op == "delete_cols":
+                            return tr(language, "excel_edit_desc_delete_cols", spec=step.get("cols", ""))
+                        key = "excel_edit_desc_filter_remove" if step.get("mode") == "remove" else "excel_edit_desc_filter_keep"
+                        return tr(language, key, col=str(step.get("column", "")).upper(), text=step.get("text", ""))
+
+                    def _excel_edit_log_step(i, step, d):
+                        if log_fn:
+                            log_fn(bid, "info", tr(language, "excel_edit_step", i=i + 1, n=len(steps),
+                                                   desc=_excel_edit_desc(step), rows=len(d), cols=d.shape[1]))
+
+                    df = read_grid(src_path, sheet)
+                    df = excel_edit_apply_steps(df, steps, keep_header, _excel_edit_log_step)
+                    try:
+                        write_grid(df, out_dir / out_name, sheet)
+                    except PermissionError:
+                        raise ExcelEditError("file_locked", file=out_name)
+
+                    # Giống pivot/merge: output của khối thay hẳn current_input; workflow_env
+                    # và dòng log "Biến trả về" do phần chung phía dưới lo.
+                    current_input = rename_output_keys(btype, bdata, {"file_name": out_name})
+                    if log_fn:
+                        log_fn(bid, "success", tr(language, "excel_edit_success", src=src_name, out=out_name,
+                                                  rows=len(df), cols=df.shape[1]))
+                except Exception as e:
+                    err_text = tr(language, f"excel_edit_err_{e.code}", **e.params) if isinstance(e, ExcelEditError) else str(e)
+                    if log_fn:
+                        log_fn(bid, "error", tr(language, "excel_edit_error", label=label, error=err_text))
+                    if handle_workflow_error(err_text, bid, label):
                         return
                     else:
                         continue

@@ -363,6 +363,70 @@ MESSAGES = {
         "en": "📊 Running Pivot Excel: {label}...",
     },
 
+    # ── Xử lý Excel (excel_edit): xóa dòng / lọc theo cột / xóa cột ──
+    "excel_edit_running": {
+        "vi": "✏️ Đang chạy Xử lý Excel: {label} (nguồn: {file})...",
+        "en": "✏️ Running Excel Edit: {label} (source: {file})...",
+    },
+    "excel_edit_step": {
+        "vi": "   [{i}/{n}] {desc} → còn {rows} dòng × {cols} cột",
+        "en": "   [{i}/{n}] {desc} → {rows} rows × {cols} columns left",
+    },
+    "excel_edit_desc_delete_rows": {"vi": "Xóa dòng {spec}", "en": "Delete rows {spec}"},
+    "excel_edit_desc_delete_cols": {"vi": "Xóa cột {spec}", "en": "Delete columns {spec}"},
+    "excel_edit_desc_filter_keep": {
+        "vi": "Giữ dòng có cột {col} chứa '{text}'",
+        "en": "Keep rows where column {col} contains '{text}'",
+    },
+    "excel_edit_desc_filter_remove": {
+        "vi": "Xóa dòng có cột {col} chứa '{text}'",
+        "en": "Remove rows where column {col} contains '{text}'",
+    },
+    "excel_edit_success": {
+        "vi": "✅ Xử lý Excel xong: '{src}' → '{out}' ({rows} dòng × {cols} cột)",
+        "en": "✅ Excel Edit done: '{src}' → '{out}' ({rows} rows × {cols} columns)",
+    },
+    "excel_edit_error": {
+        "vi": "❌ Xử lý Excel [{label}] lỗi: {error}",
+        "en": "❌ Excel Edit [{label}] failed: {error}",
+    },
+    "excel_edit_err_no_source": {
+        "vi": "Chưa chọn/nhập file Excel nguồn",
+        "en": "No source Excel file selected/entered",
+    },
+    "excel_edit_err_no_steps": {
+        "vi": "Chưa có bước xử lý nào — hãy thêm ít nhất 1 bước",
+        "en": "No processing steps — add at least one step",
+    },
+    "excel_edit_err_file_not_found": {
+        "vi": "Không tìm thấy file '{file}' trong thư mục input/output",
+        "en": "File '{file}' not found in the input/output folders",
+    },
+    "excel_edit_err_bad_rows": {
+        "vi": "Dòng không hợp lệ '{spec}' — nhập dạng 1,2 hoặc 1-10",
+        "en": "Invalid rows '{spec}' — use a form like 1,2 or 1-10",
+    },
+    "excel_edit_err_bad_cols": {
+        "vi": "Cột không hợp lệ '{spec}' — nhập chữ cái cột như A B C hoặc A-C (bước lọc chỉ nhận 1 cột)",
+        "en": "Invalid columns '{spec}' — use column letters like A B C or A-C (a filter step takes a single column)",
+    },
+    "excel_edit_err_col_out_of_range": {
+        "vi": "Cột {col} không tồn tại (dữ liệu hiện chỉ có {max} cột)",
+        "en": "Column {col} does not exist (the data currently has only {max} columns)",
+    },
+    "excel_edit_err_empty_filter_text": {
+        "vi": "Bước lọc theo cột {col}: chưa nhập nội dung cần lọc",
+        "en": "Filter step on column {col}: no text to filter by",
+    },
+    "excel_edit_err_unknown_op": {
+        "vi": "Loại bước không hợp lệ: {op}",
+        "en": "Unknown step type: {op}",
+    },
+    "excel_edit_err_file_locked": {
+        "vi": "Không thể lưu file '{file}' vì đang mở trong Excel. Hãy đóng file rồi chạy lại.",
+        "en": "Cannot save '{file}' because it is open in Excel. Close the file and run again.",
+    },
+
     # ── Excel to SQL ─────────────────────────────────────────────────
     "excel_to_sql_missing_config": {
         "vi": "❌ Thiếu cấu hình: File nguồn hoặc Bảng đích",
@@ -518,6 +582,10 @@ MESSAGES = {
 
     # ── Browser: log từng bước (execute_step) ────────────────────────
     "page_loaded": {"vi": "Trang đã tải xong", "en": "Page loaded"},
+    "page_network_not_idle": {
+        "vi": "Trang đã tải nhưng mạng vẫn chưa ngưng sau {seconds}s (web có thể đang polling) — tiếp tục bước sau",
+        "en": "Page loaded but network still not idle after {seconds}s (site may be polling) — continuing",
+    },
     "field_cleared": {"vi": "'{selector}' đã xóa ✓", "en": "'{selector}' cleared ✓"},
     "file_uploaded": {"vi": "Đã upload '{value}' 📤", "en": "Uploaded '{value}' 📤"},
     "waiting_download_click": {
