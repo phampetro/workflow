@@ -60,6 +60,7 @@ ACTION_LABELS = {
     "press_key":        "⌨️ Nhấn phím",
     "upload_file":      "📎 Upload file",
     "click_and_download": "📥 Tải file",
+    "click_and_upload": "📤 Click & chọn file",
     # Form & Select
     "select_option":    "📋 Chọn dropdown",
     "check":            "☑️ Tick checkbox",
@@ -109,7 +110,7 @@ def get_locator(page, selector: str):
 # (Không gồm wait_for_selector vì nó có state hidden/detached, không nên pre-check attached.)
 _SELECTOR_FALLBACK_ACTIONS = {
     "click", "double_click", "right_click", "hover", "scroll_to",
-    "fill", "type_slowly", "clear", "press_key", "upload_file", "click_and_download",
+    "fill", "type_slowly", "clear", "press_key", "upload_file", "click_and_download", "click_and_upload",
     "select_option", "check", "uncheck",
     "get_text", "get_attribute", "get_all_text",
 }
@@ -137,6 +138,59 @@ def resolve_selector(page, candidates, timeout: int) -> str:
         except Exception:
             continue
     return valid[-1]
+
+
+def _explain_select_timeout(base, wanted, timeout_ms: int, language: str) -> str:
+    """Lý do bước select_option hết giờ: ô không tồn tại / ẩn / bị vô hiệu / thiếu option.
+
+    `base` là locator CHƯA .first — cần biết selector khớp bao nhiêu phần tử, vì bước luôn
+    lấy phần tử ĐẦU TIÊN: selector rút gọn kiểu `app-xyz select` khớp cả những <select>
+    ẩn/không liên quan nằm trước ô cần chọn, rồi báo "ẩn" khiến người dùng tưởng web lỗi.
+    """
+    secs = round(timeout_ms / 1000)
+    try:
+        total = base.count()
+    except Exception:
+        total = 0
+    if total > 1:
+        rows = []
+        visible_idx = []
+        for i in range(min(total, 12)):
+            try:
+                d = base.nth(i).evaluate(
+                    "e => ({ vis: !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length),"
+                    " id: e.id || '', name: e.getAttribute('name') || e.getAttribute('formcontrolname') || '',"
+                    " opts: e.tagName === 'SELECT' ? [...e.options].slice(0, 3).map(o => o.text.trim()).join('/') : '' })",
+                    timeout=1500,
+                )
+            except Exception:
+                continue
+            if d["vis"]:
+                visible_idx.append(i)
+            tag = (f"#{d['id']}" if d["id"] else "") + (f"[{d['name']}]" if d["name"] else "")
+            rows.append(f"nth={i} {'HIỆN' if d['vis'] else 'ẨN'}{(' ' + tag) if tag else ''} ({d['opts'] or '—'})")
+        if 0 not in visible_idx:
+            return tr(language, "select_timeout_multi", wanted=wanted, seconds=secs, count=total,
+                      details="; ".join(rows) + ("; …" if total > 12 else ""))
+    loc = base.first
+    try:
+        info = loc.evaluate(
+            "e => ({ tag: e.tagName, disabled: !!e.disabled,"
+            " visible: !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length),"
+            " options: e.tagName === 'SELECT' ? [...e.options].map(o => o.text.trim() + ' [' + o.value + ']') : null })",
+            timeout=2000,
+        )
+    except Exception:
+        return tr(language, "select_timeout_missing", wanted=wanted, seconds=secs)
+    if info.get("tag") != "SELECT":
+        return tr(language, "select_timeout_not_select", wanted=wanted, tag=info.get("tag"))
+    if info.get("disabled"):
+        return tr(language, "select_timeout_disabled", wanted=wanted, seconds=secs)
+    if not info.get("visible"):
+        return tr(language, "select_timeout_hidden", wanted=wanted, seconds=secs)
+    opts = info.get("options") or []
+    shown = "; ".join(opts[:15]) + (f"; … (+{len(opts) - 15})" if len(opts) > 15 else "")
+    return tr(language, "select_timeout_no_option", wanted=wanted, seconds=secs, count=len(opts), options=shown or "—")
 
 
 def execute_step(page, step: dict, collected_data: dict, log_callback, block_id: str, output_dir: str = "", stop_event=None, language: str = "vi") -> BrowserStepResult:
@@ -264,6 +318,24 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
             get_locator(page, selector).first.set_input_files(value, timeout=timeout)
             log("info", tr(language, "file_uploaded", value=value))
 
+        elif action == "click_and_upload":
+            # Click vùng tải lên rồi chặn hộp thoại chọn file của Windows ngay từ sự kiện
+            # filechooser (hộp thoại không bao giờ hiện, khỏi cần thao tác ngoài trình duyệt).
+            # CHỈ nhận TÊN FILE trong output/ hoặc input/ của workflow: value đi qua nội suy
+            # {{var}} nên có thể do người ngoài điều khiển — cho đường dẫn tuyệt đối là
+            # bot gửi được file bất kỳ trên máy (pyflow.db, mật khẩu…) lên web bên ngoài.
+            name = os.path.basename(str(value).replace("\\", "/")).strip()
+            wf_dir = os.path.dirname(os.path.normpath(output_dir)) if output_dir else ""
+            path = next((p for p in (os.path.join(output_dir, name), os.path.join(wf_dir, "input", name))
+                         if name and output_dir and os.path.isfile(p)), None)
+            if not path:
+                raise FileNotFoundError(tr(language, "upload_file_not_found", name=name or value))
+            log("info", tr(language, "waiting_upload_click", selector=selector))
+            with page.expect_file_chooser(timeout=timeout) as chooser_info:
+                get_locator(page, selector).first.click(timeout=timeout)
+            chooser_info.value.set_files(path)
+            log("success", tr(language, "file_uploaded", value=name))
+
         elif action == "click_and_download":
             log("info", tr(language, "waiting_download_click", selector=selector))
             with page.expect_download(timeout=timeout) as download_info:
@@ -293,12 +365,40 @@ def execute_step(page, step: dict, collected_data: dict, log_callback, block_id:
 
         # ── Form & Select ─────────────────────────────────────────────────
         elif action == "select_option":
+            # Không cần click mở <select> trước: select_option tự đặt giá trị + bắn sự kiện
+            # input/change. Click trước còn gây hại — ở chế độ có cửa sổ, Chrome mở danh sách
+            # gốc của hệ điều hành (Playwright không điều khiển được), nhìn như "chưa chọn".
+            from playwright.sync_api import TimeoutError as PlaywrightTimeout
+            base = get_locator(page, selector)
+            loc = base.first
             try:
-                idx = int(value)
-                get_locator(page, selector).first.select_option(index=idx, timeout=timeout)
-            except (ValueError, TypeError):
-                get_locator(page, selector).first.select_option(label=value, timeout=timeout)
-            log("info", f"'{selector}' = '{value}' ✓")
+                try:
+                    loc.select_option(index=int(value), timeout=timeout)
+                except (ValueError, TypeError):
+                    # Chuỗi thường khớp CẢ nhãn hiển thị lẫn value của <option> (trước đây chỉ
+                    # khớp nhãn → TimeoutError khi người dùng gõ đúng value).
+                    loc.select_option(str(value), timeout=timeout)
+            except PlaywrightTimeout as e:
+                # Playwright CHỜ tới hết timeout nếu ô chưa hiện/đang bị vô hiệu hóa/chưa có
+                # option khớp, rồi mới báo một câu chung chung "Timeout" → người dùng chỉ thấy
+                # log đứng im. Nói rõ nó đang kẹt ở đâu và web đang có những option nào.
+                raise RuntimeError(_explain_select_timeout(base, value, timeout, language)) from e
+            # Đọc lại: nhiều web (Angular/React) tự đặt lại giá trị ngay sau sự kiện change.
+            # Bước "✓" mà trang không giữ lựa chọn từng không để lại dấu vết nào trong log.
+            page.wait_for_timeout(200)
+            picked = loc.evaluate(
+                "e => (e.tagName === 'SELECT' && e.selectedIndex >= 0) "
+                "? [e.options[e.selectedIndex].text.trim(), e.value] : null"
+            )
+            if picked:
+                wanted = str(value).strip().lower()
+                by_index = str(value).strip().lstrip("-").isdigit()
+                if not by_index and wanted not in (picked[0].lower(), picked[1].lower()):
+                    log("warning", tr(language, "select_not_kept", text=picked[0], wanted=value))
+                else:
+                    log("info", tr(language, "select_picked", selector=selector, text=picked[0], value=picked[1]))
+            else:
+                log("info", f"'{selector}' = '{value}' ✓")
 
         elif action == "check":
             get_locator(page, selector).first.check(timeout=timeout)

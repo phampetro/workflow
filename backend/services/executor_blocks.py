@@ -2220,6 +2220,7 @@ if mapping:
     sql_df = pd.DataFrame(index=range(len(df)))
     matched_count = 0
     unmatched = []
+    skipped = []
     for sql_col, excel_col in mapping.items():
         if excel_col and excel_col in df.columns:
             sql_df[sql_col] = df[excel_col].values
@@ -2228,10 +2229,18 @@ if mapping:
             sql_df[sql_col] = None
             unmatched.append(f"'{{excel_col}}' -> '{{sql_col}}'")
         else:
-            sql_df[sql_col] = None
+            # Cột để trống: KHÔNG đưa vào INSERT. Trước đây gán None nên INSERT ghi NULL
+            # tường minh → cột IDENTITY báo lỗi 544 ("Cannot insert explicit value for
+            # identity column") và DEFAULT của SQL (VD CreatedAt = getdate()) bị NULL đè mất.
+            # Bỏ khỏi INSERT thì SQL tự dùng IDENTITY/DEFAULT, không có thì vẫn là NULL.
+            skipped.append(sql_col)
     print(f"Đã khớp {{matched_count}}/{{len(mapping)}} cột. Tổng dòng cần import: {{len(sql_df)}}")
+    if skipped:
+        print(f"Bỏ trống {{len(skipped)}} cột (không đưa vào INSERT, SQL tự dùng IDENTITY/DEFAULT hoặc NULL): {{skipped}}")
     if unmatched:
         print(f"⚠ {{len(unmatched)}} cột Excel không khớp (sẽ để NULL): {{unmatched[:5]}}")
+    if sql_df.shape[1] == 0:
+        raise ValueError("Chưa ánh xạ cột nào từ Excel sang SQL")
 else:
     print("Không có Mapping cụ thể, đẩy toàn bộ dữ liệu Excel hiện có...")
     sql_df = df.copy()
@@ -2341,11 +2350,15 @@ print(f"Đang thực thi: {{sql_command}}")
 
 with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
     result = conn.execute(text(sql_command))
-    if result.returns_rows:
+    returns_rows = result.returns_rows
+    if returns_rows:
         rows = [dict(r._mapping) for r in result.fetchall()]
+        # Câu SELECT/EXEC có trả tập kết quả: số dòng là len(rows) kể cả khi = 0.
+        # (rowcount của SELECT luôn = -1 nên không dùng được cho trường hợp rỗng)
+        row_count = len(rows)
     else:
         rows = []
-    row_count = len(rows) if rows else result.rowcount
+        row_count = result.rowcount
 
 if rows:
     print(f"✅ Thực thi thành công. {{len(rows)}} dòng kết quả trả về.")
@@ -2354,6 +2367,8 @@ if rows:
         print(f"  {{r}}")
     if len(rows) > 5:
         print("  ...")
+elif returns_rows:
+    print("✅ Thực thi thành công. Không có dòng nào trả về (0 dòng).")
 else:
     if row_count == -1:
         print(f"✅ Thực thi thành công (Hệ thống DB không trả về số dòng ảnh hưởng).")

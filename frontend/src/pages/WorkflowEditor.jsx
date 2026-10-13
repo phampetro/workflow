@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { ReactFlow, Background, Controls, MiniMap, addEdge, useNodesState, useEdgesState, BackgroundVariant, MarkerType, ReactFlowProvider, useReactFlow, useNodesInitialized } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import BlockNode, { BLOCK_TYPES, NodeActionsContext, tBlockType } from '../components/BlockNode'
+import NoteNode from '../components/NoteNode'
 import DeleteEdge from '../components/DeleteEdge'
 import BlockEditorModal from '../components/BlockEditorModal'
 import LogViewer, { formatLogTime } from '../components/LogViewer'
@@ -19,7 +20,7 @@ import useStore from '../store/useStore'
 import useUndoRedo from '../hooks/useUndoRedo'
 import { canAddBlock, isFeatureDisabled } from '../config/blockRules'
 
-const nodeTypes = { block: BlockNode }
+const nodeTypes = { block: BlockNode, note: NoteNode }
 const edgeTypes = { custom: DeleteEdge }
 
 const getBlockGroups = (t) => [
@@ -30,7 +31,8 @@ const getBlockGroups = (t) => [
   { title: t('workflowEditor.groupDataProcessing'), items: ['google_sheets_read', 'excel_read', 'excel_edit', 'merge_excel', 'pivot_excel'] },
   { title: t('workflowEditor.groupDatabase'), items: ['sql_to_excel', 'excel_to_sql', 'run_sql_exec'] },
   { title: t('workflowEditor.groupMessaging'), items: ['telegram', 'telegram_listener', 'email'] },
-  { title: t('workflowEditor.groupSystem'), items: ['error_trigger', 'delete_files'] }
+  { title: t('workflowEditor.groupSystem'), items: ['error_trigger', 'delete_files'] },
+  { title: t('workflowEditor.groupUtility'), items: ['note'] }
 ];
 
 // Nhãn mặc định của Start/End khi TẠO WORKFLOW MỚI theo ngôn ngữ đang chọn lúc đó.
@@ -365,6 +367,9 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           type: n.type,
           position: n.position,
           data: cleanData,
+          // Ghi chú kéo giãn được, mà width/height nằm NGOÀI data → phải lưu riêng ở
+          // đây, nếu không tải lại trang là kích thước về mặc định.
+          ...(n.type === 'note' ? { width: n.width ?? n.measured?.width, height: n.height ?? n.measured?.height } : {}),
         }
       }),
       edges: currentEdges,
@@ -477,8 +482,19 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   // Đọc node từ nodesRef.current để không cần `nodes` làm dependency.
   const openEditor = useCallback((nodeId) => {
     const node = nodesRef.current.find((n) => n.id === nodeId)
-    if (node) setEditingNode(node)
+    // Ghi chú gõ thẳng trên tờ giấy, không có drawer cấu hình
+    if (node && node.type !== 'note') setEditingNode(node)
   }, [])
+
+  // Sửa nội dung/màu/cỡ chữ ghi chú. snapshot=false cho các lần commit sau của cùng một
+  // phiên gõ (NoteNode lo) để cả phiên gõ chỉ là 1 mục Ctrl+Z.
+  const changeNote = useCallback((nodeId, patch, { snapshot = true } = {}) => {
+    if (snapshot) takeSnapshot(nodesRef.current, edgesRef.current)
+    setNodes(nds => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n))
+    triggerAutoSave()
+  }, [takeSnapshot, setNodes, triggerAutoSave])
+
+  const snapshotNow = useCallback(() => takeSnapshot(nodesRef.current, edgesRef.current), [takeSnapshot])
 
   const deleteNode = useCallback((nodeId) => {
     takeSnapshot(nodesRef.current, edgesRef.current)
@@ -666,7 +682,21 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         x: event.clientX,
         y: event.clientY,
       })
-      
+
+      // Ghi chú: node loại 'note' (không cổng nối), có kích thước tường minh để kéo giãn,
+      // được chọn sẵn → NoteNode tự đặt con trỏ vào để gõ ngay.
+      if (type === 'note') {
+        setNodes(nds => [
+          ...nds.map(n => n.selected ? { ...n, selected: false } : n),
+          {
+            id: `note-${++nodeIdCounter}`, type: 'note', position, width: 240, height: 160, selected: true,
+            data: { type: 'note', label: tBlockType(t, 'note', 'label'), text: '', noteColor: 'yellow', noteSize: 'md' },
+          },
+        ])
+        triggerAutoSave()
+        return
+      }
+
       const id = `${type}-${++nodeIdCounter}`
       const newNode = {
         id,
@@ -707,8 +737,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   // node khiến mọi node re-render mỗi frame kéo; nay node nhận `nodes` nguyên bản,
   // node không đổi giữ nguyên reference → memo(BlockNode) chỉ render node thật sự đổi.
   const nodeActions = useMemo(
-    () => ({ onEdit: openEditor, onDelete: deleteNode, onDuplicate: duplicateNode }),
-    [openEditor, deleteNode, duplicateNode]
+    () => ({ onEdit: openEditor, onDelete: deleteNode, onDuplicate: duplicateNode, onNoteChange: changeNote, onSnapshot: snapshotNow }),
+    [openEditor, deleteNode, duplicateNode, changeNote, snapshotNow]
   )
 
   // Rebind onDelete (giống nodesWithCb) — edge không bao giờ giữ closure cũ,

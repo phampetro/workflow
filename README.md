@@ -148,7 +148,8 @@ workflow/
         │                                Chạy/Dừng, mở Logs/Scheduler/History
         │
         ├── components/
-        │   ├── BlockNode.jsx         ← Node hiển thị trên canvas (22 loại khối)
+        │   ├── BlockNode.jsx         ← Node hiển thị trên canvas (22 loại khối chạy được)
+        │   ├── NoteNode.jsx          ← Khối "Ghi chú" (giấy dán, không cổng nối, không chạy)
         │   ├── BlockEditorModal.jsx  ← 2000+ dòng: form cấu hình từng loại khối
         │   ├── LogViewer.jsx         ← Drawer SSE log (auto-scroll, download log)
         │   ├── SchedulerPanel.jsx    ← Drawer quản lý cron schedule + banner user-active
@@ -341,6 +342,14 @@ File luôn lưu vào Output. Mặc định biến `file_name`.
 - Kết quả ghi ra **file `.xlsx` MỚI trong `output/`** (`excelFileName`), file gốc nguyên vẹn. Số/ngày giữ đúng kiểu; định dạng ô (màu, merge) không giữ — giống `pivot_excel`/`merge_excel`.
 - Chạy **inline trong backend** (pandas, như `excel_read`), không sinh script con; logic thuần ở [`services/excel_edit.py`](backend/services/excel_edit.py), nhánh chạy ở `executor_blocks.py`.
 - `excelEditSteps` **bỏ qua nội suy chung** (giống `steps` của Browser): `excel_edit.resolve_steps` tự thay `{{biến}}` 1 lượt `re.sub`, vì nhánh "gõ tên trần" của `interpolate()` sẽ biến cột `A` thành giá trị của biến tên `A`.
+
+### 12c. `note` — Ghi chú (KHÔNG chạy)
+Tờ giấy dán trên canvas để ghi chú tự do (nhiều dòng, 5 màu, 3 cỡ chữ, kéo giãn được). Không có biến output.
+
+- Là node React Flow **loại `note`** (không phải `block`), vẽ bằng [`NoteNode.jsx`](frontend/src/components/NoteNode.jsx), **không có `<Handle>`** nên không nối được → executor duyệt từ khối Start theo đường nối **không bao giờ tới nó**. Backend không có nhánh riêng cho `note`; mọi chỗ quét toàn bộ node (`pkg_scanner`, `block_rules`…) đã dùng `data.get("type")` nên bỏ qua loại lạ — **code mới quét toàn bộ node phải giữ tính chất này**.
+- Dữ liệu: `data = { type:'note', text, noteColor, noteSize }`. **`width`/`height` nằm NGOÀI `data`** (React Flow giữ ở node) nên `saveGraph` ([WorkflowEditor.jsx](frontend/src/pages/WorkflowEditor.jsx)) phải lưu riêng cho node `note` — bỏ đoạn đó là kéo giãn xong tải lại trang kích thước về mặc định.
+- Gõ thẳng trên tờ giấy (không mở drawer). Nội dung giữ trong state cục bộ, đẩy lên editor sau 600ms / khi mất focus (đẩy từng phím sẽ re-render + autosave cả canvas); **1 phiên gõ = 1 mục Ctrl+Z**. Phím tắt Ctrl+Z của canvas đã bỏ qua khi đang gõ trong textarea.
+- Màu ở `--note-<màu>-{bg,border,text}` ([index.css](frontend/src/index.css), đủ sáng/tối, tương phản ≥ 4,5:1 kể cả chữ gợi ý ở độ đậm 80%) — đổi màu phải đo lại.
 
 ### 13. `excel_to_sql` — Import Excel → SQL
 ```json

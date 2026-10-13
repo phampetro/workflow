@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect, useRef, useContext, createContext } from 'react'
 import { Handle, useUpdateNodeInternals } from '@xyflow/react'
 import './BlockNode.css'
-import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput, ListFilter } from 'lucide-react'
+import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput, ListFilter, StickyNote } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 // Handler Sửa/Xóa/Nhân bản được cấp qua Context (value ổn định, memo hóa ở
@@ -156,6 +156,15 @@ const BLOCK_TYPES = {
     color: '#0ea5e9',
     gradient: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
     description: 'Tự động hóa trình duyệt web',
+  },
+  // Ghi chú KHÔNG vẽ bằng BlockNode (có component riêng NoteNode, không có cổng nối);
+  // khai ở đây để palette, minimap và tBlockType dùng chung bảng với các khối khác.
+  note: {
+    label: 'Ghi chú',
+    icon: <StickyNote size="0.875rem" />,
+    color: '#eab308',
+    gradient: 'linear-gradient(135deg, #facc15, #eab308)',
+    description: 'Ghi chú tự do trên canvas, không chạy',
   },
   delete_files: {
     label: 'Xóa Tập Tin',
