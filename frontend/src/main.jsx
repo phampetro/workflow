@@ -6,6 +6,13 @@
 // chưa escape là đường chèn HTML thẳng vào DOM.
 if (import.meta.env.DEV) {
   window.onerror = function (msg, url, lineNo, columnNo, error) {
+    // "ResizeObserver loop completed with undelivered notifications" (và bản cũ
+    // "...loop limit exceeded") là cảnh báo LÀNH TÍNH của trình duyệt: ResizeObserver chưa
+    // giao hết thông báo trong một khung hình. React Flow bắn ra mỗi khi kéo giãn khối
+    // Ghi chú (NodeResizer đổi kích thước → bộ đo node chạy lại ngay trong khung đó).
+    // Không có lỗi thật nào đứng sau, nên bỏ qua thay vì hiện overlay đỏ.
+    if (typeof msg === 'string' && msg.startsWith('ResizeObserver loop')) return true
+
     const box = document.createElement('div')
     box.style.cssText = [
       'position:fixed', 'right:12px', 'bottom:12px', 'max-width:min(560px,92vw)',

@@ -565,6 +565,7 @@ MESSAGES = {
     "action_press_key": {"vi": "⌨️ Nhấn phím", "en": "⌨️ Press key"},
     "action_upload_file": {"vi": "📎 Upload file", "en": "📎 Upload file"},
     "action_click_and_download": {"vi": "📥 Tải file", "en": "📥 Download file"},
+    "action_click_and_upload": {"vi": "📤 Click & chọn file", "en": "📤 Click & choose file"},
     "action_select_option": {"vi": "📋 Chọn dropdown", "en": "📋 Select dropdown"},
     "action_check": {"vi": "☑️ Tick checkbox", "en": "☑️ Tick checkbox"},
     "action_uncheck": {"vi": "☐ Bỏ tick checkbox", "en": "☐ Untick checkbox"},
@@ -588,6 +589,46 @@ MESSAGES = {
     },
     "field_cleared": {"vi": "'{selector}' đã xóa ✓", "en": "'{selector}' cleared ✓"},
     "file_uploaded": {"vi": "Đã upload '{value}' 📤", "en": "Uploaded '{value}' 📤"},
+    "select_picked": {
+        "vi": "'{selector}' đang chọn: '{text}' (value='{value}') ✓",
+        "en": "'{selector}' now selected: '{text}' (value='{value}') ✓",
+    },
+    "select_timeout_multi": {
+        "vi": "Không chọn được '{wanted}': selector khớp {count} phần tử và bước luôn dùng phần tử ĐẦU TIÊN, mà nó đang ẨN. Các phần tử khớp: {details}. Hãy thu hẹp selector tới đúng ô cần chọn, hoặc thêm vị trí, VD: <selector> >> nth=2 (đếm từ 0, chọn nth của phần tử HIỆN)",
+        "en": "Could not select '{wanted}': the selector matches {count} elements and the step always uses the FIRST one, which is HIDDEN. Matches: {details}. Narrow the selector to the exact select, or add a position, e.g. <selector> >> nth=2 (0-based, pick the nth of a VISIBLE one)",
+    },
+    "select_timeout_missing": {
+        "vi": "Không chọn được '{wanted}': sau {seconds}s vẫn không tìm thấy ô chọn (selector sai, hoặc ô chưa xuất hiện — thêm bước 'Chờ phần tử' trước đó)",
+        "en": "Could not select '{wanted}': after {seconds}s the select element was still not found (wrong selector, or it has not appeared yet — add a 'Wait for element' step before)",
+    },
+    "select_timeout_not_select": {
+        "vi": "Không chọn được '{wanted}': phần tử tìm thấy là <{tag}>, không phải <select> (dropdown tự vẽ bằng div thì phải Click mở rồi Click vào dòng cần chọn)",
+        "en": "Could not select '{wanted}': the element found is <{tag}>, not a <select> (for a custom div dropdown, click to open it then click the wanted row)",
+    },
+    "select_timeout_disabled": {
+        "vi": "Không chọn được '{wanted}': ô chọn đang bị VÔ HIỆU HÓA (disabled) suốt {seconds}s — web chưa mở khóa nó, thường do ô trước chưa được 'xác nhận' (thử nhấn Tab/Enter sau khi nhập, hoặc chờ dữ liệu tải)",
+        "en": "Could not select '{wanted}': the select stayed DISABLED for {seconds}s — the site has not unlocked it, usually because the previous field was not committed (try Tab/Enter after typing, or wait for data to load)",
+    },
+    "select_timeout_hidden": {
+        "vi": "Không chọn được '{wanted}': ô chọn đang bị ẨN suốt {seconds}s (không hiển thị trên trang)",
+        "en": "Could not select '{wanted}': the select stayed HIDDEN for {seconds}s (not visible on the page)",
+    },
+    "select_timeout_no_option": {
+        "vi": "Không chọn được '{wanted}': sau {seconds}s không có option nào khớp (khớp theo nhãn hiển thị hoặc value, phân biệt chính tả). Ô đang có {count} option: {options}",
+        "en": "Could not select '{wanted}': no option matched after {seconds}s (matches the visible label or the value, exact spelling). The select has {count} option(s): {options}",
+    },
+    "select_not_kept": {
+        "vi": "Trang đã đổi lại lựa chọn: đang là '{text}', không phải '{wanted}' (web có thể tự đặt lại giá trị sau khi chọn, hoặc option chưa tải xong)",
+        "en": "The page changed the selection back: it is '{text}', not '{wanted}' (the site may reset the value after selecting, or the options were not loaded yet)",
+    },
+    "waiting_upload_click": {
+        "vi": "Click '{selector}' và chọn file (không mở hộp thoại Windows)...",
+        "en": "Clicking '{selector}' and choosing the file (no Windows dialog)...",
+    },
+    "upload_file_not_found": {
+        "vi": "Không tìm thấy file '{name}' trong thư mục output/ hoặc input/ của workflow (chỉ nhận TÊN file, không nhận đường dẫn)",
+        "en": "File '{name}' not found in the workflow's output/ or input/ folder (file NAME only, no paths)",
+    },
     "waiting_download_click": {
         "vi": "Đang chờ tải file khi click '{selector}'...",
         "en": "Waiting for download after clicking '{selector}'...",

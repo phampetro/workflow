@@ -667,3 +667,21 @@ body {
 .ant-dropdown-menu-item-divider {
   margin: 4px 0 !important;
 }
+
+/* --- Màu khối "Ghi chú" (NoteNode) ---
+   Mỗi màu 3 token bg/border/text, khai đủ cho dark + light. Cặp text/bg đã đo
+   tương phản ≥ 4,5:1 (chữ gợi ý ở độ đậm 80% vẫn ≥ 4,9:1). Đổi màu phải đo lại. */
+:root {
+  --note-yellow-bg: #3f3a10; --note-yellow-border: #a16207; --note-yellow-text: #fef08a;
+  --note-blue-bg:   #172554; --note-blue-border:   #1d4ed8; --note-blue-text:   #bfdbfe;
+  --note-green-bg:  #14351f; --note-green-border:  #15803d; --note-green-text:  #bbf7d0;
+  --note-pink-bg:   #4a1230; --note-pink-border:   #be185d; --note-pink-text:   #fbcfe8;
+  --note-gray-bg:   #2a303a; --note-gray-border:   #64748b; --note-gray-text:   #e5e7eb;
+}
+:root[data-theme="light"] {
+  --note-yellow-bg: #fef9c3; --note-yellow-border: #facc15; --note-yellow-text: #422006;
+  --note-blue-bg:   #dbeafe; --note-blue-border:   #60a5fa; --note-blue-text:   #1e3a8a;
+  --note-green-bg:  #dcfce7; --note-green-border:  #4ade80; --note-green-text:  #14532d;
+  --note-pink-bg:   #fce7f3; --note-pink-border:   #f472b6; --note-pink-text:   #831843;
+  --note-gray-bg:   #f1f5f9; --note-gray-border:   #94a3b8; --note-gray-text:   #1e293b;
+}

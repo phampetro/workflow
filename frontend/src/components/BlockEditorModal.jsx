@@ -147,6 +147,7 @@ const getBrowserActions = (t) => [
   ]},
   { group: t('browserStep.groupDownload'), actions: [
     { value: 'click_and_download', label: t('browserStep.actionClickAndDownload'), params: ['key_name'], needsSelector: true },
+    { value: 'click_and_upload',   label: t('browserStep.actionClickAndUpload'),   params: ['file'], needsSelector: true },
   ]},
   { group: t('browserStep.groupModalDialog'), actions: [
     { value: 'wait_for_selector', label: t('browserStep.actionWaitForSelector'), params: [], needsSelector: true },
@@ -168,14 +169,16 @@ const getBrowserActions = (t) => [
 ]
 
 const SCROLL_DIR_OPTIONS = ['down', 'up', 'bottom', 'top']
-const KEY_OPTIONS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F5']
+// Chỉ là GỢI Ý — ô nhập tự do, backend đưa thẳng vào Playwright press() nên gõ tổ hợp bất kỳ
+// (VD: Control+A, Shift+End) đều chạy được.
+const KEY_OPTIONS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'Delete', 'Control+A', 'Home', 'End', 'Shift+Home', 'Shift+End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F2', 'F5']
 
 const STEP_COLORS = {
   navigate: '#0ea5e9', go_back: '#0ea5e9', go_forward: '#0ea5e9', reload: '#0ea5e9', wait_for_load: '#0ea5e9',
   click: '#8b5cf6', double_click: '#8b5cf6', right_click: '#8b5cf6', hover: '#8b5cf6', scroll_to: '#8b5cf6', scroll_page: '#8b5cf6',
   fill: '#10b981', type_slowly: '#10b981', clear: '#10b981', press_key: '#10b981',
   select_option: '#f59e0b', check: '#f59e0b', uncheck: '#f59e0b',
-  click_and_download: '#0ea5e9',
+  click_and_download: '#0ea5e9', click_and_upload: '#0ea5e9',
   wait_for_selector: '#ec4899', accept_dialog: '#ec4899', dismiss_dialog: '#ec4899',
   get_text: '#06b6d4', get_attribute: '#06b6d4', get_all_text: '#06b6d4', get_url: '#06b6d4', screenshot: '#06b6d4', evaluate_js: '#06b6d4',
   wait: '#f97316', wait_for_url: '#f97316',
@@ -492,9 +495,11 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
                   {step.action === 'press_key' && (
                     <div>
                       <label style={labelStyle}>{t('browserStep.keyLabel')}</label>
-                      <select value={step.value || 'Enter'} onChange={e => updateStep(i, 'value', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        {KEY_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
-                      </select>
+                      <input list={`pw-keys-${i}`} style={inputStyle} placeholder="Enter" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                      <datalist id={`pw-keys-${i}`}>
+                        {KEY_OPTIONS.map(k => <option key={k} value={k} />)}
+                      </datalist>
+                      <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('browserStep.keyHint')}</div>
                     </div>
                   )}
 
@@ -546,6 +551,14 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
                     <div>
                       <label style={labelStyle}>{t('browserStep.jsExprLabel')}</label>
                       <textarea style={{ ...inputStyle, height: 64, resize: 'vertical', fontFamily: 'monospace' }} placeholder={t('browserStep.jsExprPlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                    </div>
+                  )}
+
+                  {step.action === 'click_and_upload' && (
+                    <div>
+                      <label style={labelStyle}>{t('browserStep.uploadFileNameLabel')}</label>
+                      <input style={inputStyle} placeholder={t('browserStep.uploadFileNamePlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
+                      <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('browserStep.uploadFileHint')}</div>
                     </div>
                   )}
 
