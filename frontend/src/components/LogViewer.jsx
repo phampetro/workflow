@@ -98,13 +98,12 @@ export default function LogViewer({ runId, isRunning, streamedRunId, onClose, on
     const cached = useStore.getState().runLogs[runId] || []
     const cleanup = createLogStream(
       runId,
-      (data) => {
-        const entry = {
+      (batch) => {
+        useStore.getState().appendLogs(runId, batch.map(data => ({
           time: formatLogTime(data.time),
           level: data.level || 'info',
           msg: data.message || ''
-        }
-        useStore.getState().appendLog(runId, entry)
+        })))
       },
       (err) => { console.error('SSE Error:', err) },
       cached.length

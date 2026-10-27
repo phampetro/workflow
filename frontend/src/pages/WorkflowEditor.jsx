@@ -209,54 +209,62 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     
     const cleanup = createLogStream(
       currentRunId,
-      (data) => {
-        // 1. Lưu log vào store
-        const entry = {
+      (batch) => {
+        // 1. Lưu log vào store — cả lô 1 lần (xem createLogStream)
+        useStore.getState().appendLogs(currentRunId, batch.map(data => ({
           time: formatLogTime(data.time),
           level: data.level || 'info',
           msg: data.message || ''
-        }
-        useStore.getState().appendLog(currentRunId, entry)
+        })))
 
-        // 2. Cập nhật trạng thái cho Node (Real-time highlight)
-        if (data.block_id) {
-          // Backend gửi level CHỮ THƯỜNG ('error'/'success'/'info'/'warning'). Trước đây so
-          // sánh với 'ERROR'/'SUCCESS' nên không bao giờ khớp → mọi khối kẹt ở 'running'
-          // và nháy xanh mãi. Chuẩn hoá về chữ thường trước khi so.
-          const level = String(data.level || '').toLowerCase()
-          setNodes(nds => nds.map(n => {
-            if (n.id === data.block_id) {
-              let nextStatus = n.data.runStatus
+        // 2+3. Trạng thái khối: duyệt cả lô THEO ĐÚNG THỨ TỰ trên một bảng tạm rồi
+        // chỉ setNodes 1 lần. Gọi setNodes theo từng dòng làm React Flow vẽ lại canvas
+        // hàng nghìn lần khi backend đổ lịch sử → treo tab.
+        setNodes(nds => {
+          const status = new Map(nds.map(n => [n.id, n.data.runStatus]))
+          for (const data of batch) {
+            if (data.block_id && status.has(data.block_id)) {
+              // Backend gửi level CHỮ THƯỜNG ('error'/'success'/'info'/'warning'). Trước đây so
+              // sánh với 'ERROR'/'SUCCESS' nên không bao giờ khớp → mọi khối kẹt ở 'running'
+              // và nháy xanh mãi. Chuẩn hoá về chữ thường trước khi so.
+              const level = String(data.level || '').toLowerCase()
+              const cur = status.get(data.block_id)
+              let nextStatus = cur
               if (level === 'error') nextStatus = 'error'
               else if (level === 'success') nextStatus = 'success'
-              else if (nextStatus !== 'error' && nextStatus !== 'success') {
-                nextStatus = 'running'
-              }
-              if (n.data.runStatus !== nextStatus) {
-                return { ...n, data: { ...n.data, runStatus: nextStatus } }
-              }
+              else if (cur !== 'error' && cur !== 'success') nextStatus = 'running'
+              status.set(data.block_id, nextStatus)
             }
-            return n
-          }))
-        }
 
-        // 3. Xử lý kết thúc run — dựa vào field `event` (ổn định, không đổi theo
-        // ngôn ngữ log), KHÔNG so khớp chuỗi `message` nữa: từ khi log song ngữ,
-        // message có thể là tiếng Anh tuỳ ngôn ngữ lúc chạy.
-        const doneOk = data.event === 'workflow_done'
-        const doneErr = data.event === 'workflow_system_error' || data.event === 'workflow_failed'
-        const doneStop = data.event === 'workflow_stopped'
-        if (doneOk || doneErr || doneStop) {
-          // Khối nào còn 'running' thì phải thôi nháy: hoàn thành → success,
-          // còn dừng/lỗi hệ thống → idle (không báo success sai sự thật).
-          const fallback = doneOk ? 'success' : 'idle'
-          setNodes(nds => nds.map(n => (
-            n.data.runStatus === 'running'
-              ? { ...n, data: { ...n.data, runStatus: fallback } }
-              : n
-          )))
-          useStore.getState().clearActiveRun(wfData?.id)
-        }
+            // Kết thúc run — dựa vào field `event` (ổn định, không đổi theo
+            // ngôn ngữ log), KHÔNG so khớp chuỗi `message` nữa: từ khi log song ngữ,
+            // message có thể là tiếng Anh tuỳ ngôn ngữ lúc chạy.
+            const doneOk = data.event === 'workflow_done'
+            const doneErr = data.event === 'workflow_system_error' || data.event === 'workflow_failed'
+            const doneStop = data.event === 'workflow_stopped'
+            if (doneOk || doneErr || doneStop) {
+              // Khối nào còn 'running' thì phải thôi nháy: hoàn thành → success,
+              // còn dừng/lỗi hệ thống → idle (không báo success sai sự thật).
+              const fallback = doneOk ? 'success' : 'idle'
+              for (const [id, s] of status) if (s === 'running') status.set(id, fallback)
+            }
+          }
+          let changed = false
+          const next = nds.map(n => {
+            const s = status.get(n.id)
+            if (s === n.data.runStatus) return n
+            changed = true
+            return { ...n, data: { ...n.data, runStatus: s } }
+          })
+          return changed ? next : nds
+        })
+        // Quét `event` ngoài updater của setNodes: updater có thể chạy trễ / chạy 2 lần
+        // (StrictMode), không dựa vào cờ đặt bên trong nó cho side effect.
+        const runEnded = batch.some(d => (
+          d.event === 'workflow_done' || d.event === 'workflow_system_error'
+          || d.event === 'workflow_failed' || d.event === 'workflow_stopped'
+        ))
+        if (runEnded) useStore.getState().clearActiveRun(wfData?.id)
       },
       (err) => { console.error('SSE Error:', err) },
       cached.length
