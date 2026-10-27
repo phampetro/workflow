@@ -50,8 +50,11 @@ class DbConnectionBody(BaseModel):
     dbname: str = ""
 
 def run_db_script(config: DbConfig, script_template: str):
-    python_path = get_python_path(config.project_id) if config.project_id else "python"
-    
+    try:
+        python_path = get_python_path(config.project_id) if config.project_id else "python"
+    except Exception as e:  # project không còn → cũng không được để thành 500 trần (xem dưới)
+        raise HTTPException(400, str(e))
+
     # Cài đặt thư viện theo db_type
     if config.project_id:
         from services.executor_blocks import ensure_packages
@@ -59,8 +62,20 @@ def run_db_script(config: DbConfig, script_template: str):
         if config.db_type == "postgresql": pkgs.append("psycopg2-binary")
         elif config.db_type == "mysql": pkgs.extend(["pymysql", "cryptography"])
         elif config.db_type == "sqlserver": pkgs.append("pyodbc")
-        ensure_packages(config.project_id, pkgs, None, "api", "Schema Check", None)
-        
+        # PHẢI bắt lỗi tại đây: trước đây ensure_packages nằm ngoài mọi try nên lỗi
+        # cài đặt thành 500 trần — response đó không có header CORS, trình duyệt
+        # chặn đọc nên FE chỉ hiện "Lỗi kết nối mạng" dù nguyên nhân là venv hỏng
+        # (VD cài lại Windows mất bản Python đã tạo venv của project).
+        try:
+            ensure_packages(config.project_id, pkgs, None, "api", "Schema Check", None)
+        except Exception as e:
+            raise HTTPException(
+                400,
+                f"Không cài được thư viện {', '.join(pkgs)} vào môi trường Python của project ({e}). "
+                f"Môi trường có thể đã hỏng (VD cài lại Windows làm mất bản Python đã tạo nó) "
+                f"— xoá thư mục .venv của project rồi tạo lại.",
+            )
+
     config_json = config.json() if hasattr(config, "json") else json.dumps(config.dict())
     code = f'''
 import json, urllib.parse, sys
