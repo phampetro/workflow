@@ -141,7 +141,15 @@ export const toggleSchedule    = (id)         => api.patch(`/api/schedules/${id}
 // Auto-reconnect với offset += số log đã nhận, để nếu mất mạng vài giây thì kết nối
 // lại và không mất log ở giữa. Trước đây gọi es.close() trong onerror làm EventSource
 // mất luôn cả cơ chế retry gốc -> log ngừng vĩnh viễn cho tới khi F5.
-export const createLogStream = (runId, onMessage, onError, offset = 0) => {
+//
+// `onBatch` nhận MẢNG dòng log, không phải từng dòng. Mở lại workflow có run chạy lâu
+// (Telegram Listener) thì backend đổ ngay tới 5000 dòng lịch sử, mỗi dòng 1 sự kiện
+// `onmessage`. Bản cũ gọi callback theo từng dòng → mỗi dòng 1 lần chép mảng log
+// trong store + 1 lần setNodes vẽ lại canvas → hàng nghìn lần render liền nhau,
+// trình duyệt treo và báo "Trang không phản hồi". Giờ gom lại, xả 1 lần mỗi ~100ms.
+const LOG_FLUSH_MS = 100
+
+export const createLogStream = (runId, onBatch, onError, offset = 0) => {
   // TỔNG số dòng đã nhận từ lúc mở stream, KHÔNG phải của riêng lần kết nối này.
   // Trước đây `received` cộng dồn qua các lần reconnect nhưng lại được cộng vào
   // `startOffset` (vốn đã bao gồm số dòng cũ) → từ lần đứt thứ 2 offset bị thổi
@@ -151,6 +159,16 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
   let stopped = false
   let es = null
   let retryTimer = null
+  let pending = []
+  let flushTimer = null
+
+  const flush = () => {
+    flushTimer = null
+    if (stopped || pending.length === 0) return
+    const batch = pending
+    pending = []
+    onBatch(batch)
+  }
 
   const connect = (startOffset) => {
     if (stopped) return
@@ -160,8 +178,10 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
       try {
         const data = JSON.parse(e.data)
         if (data.run_id && data.message) {
+          // Đếm ngay lúc nhận (không đợi xả) để offset reconnect luôn đúng.
           totalReceived += 1
-          onMessage(data)
+          pending.push(data)
+          if (!flushTimer) flushTimer = setTimeout(flush, LOG_FLUSH_MS)
         }
       } catch (_) {}
     }
@@ -183,6 +203,10 @@ export const createLogStream = (runId, onMessage, onError, offset = 0) => {
   return () => {
     stopped = true
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+    // Bỏ phần chưa xả: caller mở lại stream với offset = số dòng đã có trong store
+    // nên các dòng này sẽ được backend gửi lại, không mất.
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+    pending = []
     if (es) { try { es.close() } catch (_) {} es = null }
   }
 }

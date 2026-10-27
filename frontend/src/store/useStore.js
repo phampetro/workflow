@@ -147,17 +147,22 @@ const useStore = create((set, get) => ({
   runLogs: {},
   activeRuns: {},
 
-  appendLog: (runId, line) => set((state) => {
+  // Nhận cả lô (xem createLogStream): 1 lần chép mảng + 1 lần set cho cả lô thay vì
+  // mỗi dòng 1 lần — chép lại mảng theo từng dòng là O(n²), 5000 dòng là treo tab.
+  appendLogs: (runId, lines) => set((state) => {
     const existing = state.runLogs[runId] || []
-    // Dedup: kiểm tra dòng cuối xem giống hoàn toàn chưa
-    const last = existing[existing.length - 1]
-    if (last && last.time === line.time && last.msg === line.msg) {
-      return state // không thêm dòng trung
+    const next = existing.slice()
+    for (const line of lines) {
+      // Dedup: kiểm tra dòng cuối xem giống hoàn toàn chưa
+      const last = next[next.length - 1]
+      if (last && last.time === line.time && last.msg === line.msg) continue
+      next.push(line)
     }
+    if (next.length === existing.length) return state // không thêm dòng nào
     return {
       runLogs: {
         ...state.runLogs,
-        [runId]: [...existing, line],
+        [runId]: next,
       }
     }
   }),
