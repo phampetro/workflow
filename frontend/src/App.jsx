@@ -19,13 +19,24 @@ import 'dayjs/locale/en'
 import dayjs from 'dayjs'
 import { useTranslation } from 'react-i18next'
 import useStore from './store/useStore'
-import { checkHealth, getUsers, getDashboardStats, importProject, getLicenseStatus, getProject } from './api/client'
+import { checkHealth, getUsers, getDashboardStats, importProject, getLicenseStatus, getProject, getWorkflow } from './api/client'
 import toast from 'react-hot-toast'
 
 const VIEWS = {
   DASHBOARD: 'dashboard',
   PROJECT: 'project',
   EDITOR: 'editor',
+}
+
+// Màn hình đang mở chỉ nằm trong state nên mọi lần tải lại (Vite HMR mất kết nối
+// sau khi máy sleep, Chrome Memory Saver giải phóng tab...) đều văng về trang chủ.
+// Lưu id project/workflow vào sessionStorage — theo TỪNG TAB: F5 quay lại đúng chỗ,
+// còn tab mới / mở lại trình duyệt vẫn vào trang chủ như cũ. Chỉ lưu id, khi khôi
+// phục luôn tải lại từ backend (project/workflow có thể đã bị xoá, đổi tên).
+const NAV_STORAGE_KEY = 'pyflow_nav'
+
+function readSavedNav() {
+  try { return JSON.parse(sessionStorage.getItem(NAV_STORAGE_KEY)) } catch { return null }
 }
 
 export default function App() {
@@ -44,6 +55,23 @@ export default function App() {
   const [view, setView] = useState(VIEWS.DASHBOARD)
   const [selectedProject, setSelectedProject] = useState(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState(null)
+
+  // Chưa khôi phục xong thì KHÔNG ghi: lần render đầu view = DASHBOARD, ghi ngay
+  // là xoá mất màn hình đã lưu trước khi bootstrap kịp đọc.
+  const navRestoredRef = useRef(false)
+  useEffect(() => {
+    if (!navRestoredRef.current) return
+    try {
+      if (view === VIEWS.DASHBOARD || !selectedProject?.id) {
+        sessionStorage.removeItem(NAV_STORAGE_KEY)
+      } else {
+        sessionStorage.setItem(NAV_STORAGE_KEY, JSON.stringify({
+          projectId: selectedProject.id,
+          workflowId: view === VIEWS.EDITOR ? selectedWorkflow?.id || null : null,
+        }))
+      }
+    } catch { /* storage bị chặn (private mode...) — chỉ mất tính năng nhớ màn hình */ }
+  }, [view, selectedProject?.id, selectedWorkflow?.id])
 
   // Panel 1/3 bên phải — dùng chung cho Dashboard lẫn ProjectDetail (không còn
   // riêng màn hình workflow nữa), KHÔNG hiện ở Editor (đã có Logs/History/Scheduler
@@ -111,6 +139,29 @@ export default function App() {
     }
   }
 
+  // Mở lại màn hình đã lưu trong tab này (xem NAV_STORAGE_KEY). Chạy TRƯỚC khi
+  // bootstrap xong để không nháy trang chủ rồi mới nhảy vào. Project/workflow không
+  // còn (bị xoá, hoặc workflow đã chuyển sang project khác) → về trang chủ như cũ.
+  const restoreSavedNav = async () => {
+    const saved = readSavedNav()
+    if (!saved?.projectId) return
+    try {
+      const projRes = await getProject(saved.projectId)
+      if (saved.workflowId) {
+        const wfRes = await getWorkflow(saved.workflowId)
+        if (wfRes.data?.project_id !== saved.projectId) throw new Error('workflow moved')
+        setSelectedWorkflow(wfRes.data)
+        setSelectedProject(projRes.data)
+        setView(VIEWS.EDITOR)
+      } else {
+        setSelectedProject(projRes.data)
+        setView(VIEWS.PROJECT)
+      }
+    } catch {
+      try { sessionStorage.removeItem(NAV_STORAGE_KEY) } catch { /* bỏ qua */ }
+    }
+  }
+
   // ── Bootstrap: check backend + user selection ──────────────
   useEffect(() => {
     const bootstrap = async () => {
@@ -150,10 +201,12 @@ export default function App() {
           setShowUserPicker(true)
         }
         // else: đã có currentUser từ localStorage → vào thẳng
+        else await restoreSavedNav()
       } catch {
         // Nếu lỗi, vẫn cho vào nhưng không có user
       }
 
+      navRestoredRef.current = true
       setBootstrapDone(true)
     }
     bootstrap()
