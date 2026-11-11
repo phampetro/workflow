@@ -190,6 +190,16 @@ def get_hardware_info():
     }
 
 
+@router.get("/env-check")
+def env_check():
+    """Kiểm tra Python hệ thống, ODBC Driver, Chromium, venv các project.
+
+    Hàm sync → FastAPI chạy trong threadpool (có gọi subprocess + đọc registry).
+    """
+    from services.env_check import run_all
+    return run_all()
+
+
 @router.get("/update-status")
 def get_update_status():
     """Trạng thái lần cập nhật gần nhất. FE poll sau khi bấm Cập nhật."""
@@ -365,7 +375,7 @@ powershell -command "Expand-Archive -Force -Path update.zip -DestinationPath ."
 echo Hoan tat giai nen. Xoa file tam...
 del update.zip
 echo Khoi dong lai phan mem...
-start backend\start.vbs
+start backend\\start.vbs
 del "%~f0"
 ''')
                 subprocess.Popen(["cmd.exe", "/c", bat_path], cwd=parent_dir, creationflags=0x00000010)

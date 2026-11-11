@@ -317,6 +317,8 @@ export const checkHealth = () => api.get('/health')
 export const systemApi = {
   getInfo: () => api.get('/api/system/info').then(res => res.data),
   checkUpdate: () => api.get('/api/system/check-update').then(res => res.data),
+  // Mỗi mục trả {code, status, params} — FE dịch qua t('envCheck.<code>.<status>').
+  envCheck: () => api.get('/api/system/env-check').then(res => res.data),
   update: () => api.post('/api/system/update').then(res => res.data),
   // Lý do cập nhật thất bại (vd chữ ký không hợp lệ). run_updater chạy ở
   // thread nền SAU KHI /update đã trả về, nên lỗi chỉ lấy được qua đây.

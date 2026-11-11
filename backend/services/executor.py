@@ -71,5 +71,5 @@ async def execute_workflow(
         if _last_log_future is not None:
             try:
                 await asyncio.wrap_future(_last_log_future)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Không ghi được lô log cuối của workflow: %s", e)

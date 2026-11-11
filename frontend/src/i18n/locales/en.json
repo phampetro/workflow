@@ -17,6 +17,7 @@
   "navbar": {
     "switchUser": "Switch user",
     "aiSettings": "AI settings",
+    "envCheck": "Environment check",
     "darkTheme": "Dark theme",
     "lightTheme": "Light theme",
     "switchToEnglish": "Switch to English",
@@ -52,6 +53,41 @@
     "schedulesActivated": "{{count}} schedules activated",
     "workspaceReady": "Your workspace is ready",
     "activateError": "Error activating user: {{message}}"
+  },
+  "envCheck": {
+    "title": "Environment check",
+    "intro": "Components outside the app that workflows need to run on this machine.",
+    "recheck": "Check again",
+    "loadError": "Could not check the environment. Please try again.",
+    "status": {
+      "ok": "OK",
+      "warn": "Warning",
+      "error": "Error"
+    },
+    "python": {
+      "title": "System Python",
+      "ok": "Python {{version}} — used to create each project's environment.",
+      "error": "Python not found. Install Python 3.13 from python.org (tick \"Add python.exe to PATH\") and restart the app."
+    },
+    "odbc": {
+      "title": "ODBC Driver for SQL Server",
+      "ok": "{{driver}} is installed.",
+      "warn": "{{driver}} is not installed. Only needed for SQL blocks using a SQL Server connection.",
+      "error": "{{driver}} is not installed — {{connections}} SQL Server connection(s) will fail with IM002. Install with: winget install Microsoft.msodbcsql.17"
+    },
+    "chromium": {
+      "title": "Browser for the Browser block",
+      "ok": "The app's own Chromium is installed.",
+      "warn": "The app's own Chromium is missing — falling back to this machine's Chrome/Edge, which company policies may block from signing in. Run: pyflow-backend.exe install-browser",
+      "error": "Neither the app's Chromium nor Chrome/Edge was found. Run: pyflow-backend.exe install-browser"
+    },
+    "venvs": {
+      "title": "Project Python environments",
+      "ok": "{{total}} project(s) — no broken environments.",
+      "warn": "Could not read the project list.",
+      "error": "Broken environments (base Python removed or Windows user changed): {{broken}}. Open the project and click \"Auto-install libraries\" to rebuild."
+    },
+    "detail": "Details: {{detail}}"
   },
   "about": {
     "title": "About",

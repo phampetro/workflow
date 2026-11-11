@@ -34,10 +34,20 @@ backendDir = scriptDir & "\backend"
 frontendDir = scriptDir & "\frontend"
 pythonExe = backendDir & "\.venv\Scripts\python.exe"
 
-If Not fso.FileExists(pythonExe) Then
-    logFile.WriteLine Now & " - LOI: Khong tim thay " & pythonExe & " - hay chay setup.bat truoc."
-    logFile.Close
-    WScript.Quit 1
+' venv luu duong dan tuyet doi toi Python goc (pyvenv.cfg) -> hong khi doi may / cai lai Python.
+' Kiem tra venv con chay duoc khong; neu khong (hoac chua co) thi chay setup.bat de tao lai.
+venvOk = False
+If fso.FileExists(pythonExe) Then
+    venvOk = (ws.Run("""" & pythonExe & """ -c ""import uvicorn, pandas""", 0, True) = 0)
+End If
+If Not venvOk Then
+    logFile.WriteLine Now & " - venv thieu/hong, chay setup.bat de tao lai..."
+    ws.Run "cmd /c """ & scriptDir & "\setup.bat""", 1, True
+    If Not fso.FileExists(pythonExe) Then
+        logFile.WriteLine Now & " - LOI: setup.bat khong tao duoc " & pythonExe
+        logFile.Close
+        WScript.Quit 1
+    End If
 End If
 
 ' Khoi dong Backend (an)

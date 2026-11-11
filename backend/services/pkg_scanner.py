@@ -59,6 +59,19 @@ except AttributeError:  # fallback cho 3.8/3.9
     }
 
 
+def required_packages(block_type: str, db_type: str | None = None) -> list:
+    """Package một khối cần trong venv project — NGUỒN DUY NHẤT cho cả lúc chạy thật
+    (``ensure_packages`` trong block_handlers) lẫn lúc quét "Tự động cài thư viện".
+
+    Trước đây hai nơi tự khai danh sách riêng và chỉ được giữ khớp bằng lời dặn;
+    lệch một gói là quét báo "đã đủ" rồi chạy thật văng ImportError giữa chừng.
+    """
+    pkgs = list(_BLOCK_BASE.get(block_type, []))
+    if block_type in _DRIVER_BLOCKS:
+        pkgs.extend(_DB_DRIVERS.get(db_type, ["pyodbc"]))
+    return pkgs
+
+
 def _parse_python_imports(code: str) -> set:
     """Lấy tên module top-level được import trong code (bỏ relative import)."""
     mods = set()

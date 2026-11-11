@@ -79,9 +79,44 @@ def get_pip_cmd(project_id: str) -> list:
     return [get_python_path(project_id), "-m", "pip"]
 
 
+def _venv_base_python_ok(venv: Path) -> bool:
+    """Python gốc mà venv trỏ tới (dòng ``home`` trong pyvenv.cfg) còn tồn tại không.
+
+    ``Scripts/python.exe`` của venv chỉ là launcher: khi Python gốc bị gỡ/đổi user/
+    copy sang máy khác, file này VẪN còn nhưng chạy là lỗi "did not find executable".
+    Chỉ kiểm sự tồn tại của launcher (như bản cũ) thì venv hỏng bị coi là khoẻ →
+    không bao giờ tạo lại, mọi lệnh pip đều thất bại.
+    """
+    cfg = venv / "pyvenv.cfg"
+    try:
+        for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, _, val = line.partition("=")
+            if key.strip().lower() == "home":
+                return os.path.isfile(os.path.join(val.strip(), "python.exe"))
+    except OSError:
+        return False
+    return False
+
+
+def venv_is_stale(project_id: str) -> bool:
+    """venv có thư mục nhưng Python gốc đã mất → cần tạo lại bằng ``venv --clear``."""
+    venv = get_venv_path(project_id)
+    return (venv / "pyvenv.cfg").is_file() and not _venv_base_python_ok(venv)
+
+
 def venv_exists(project_id: str) -> bool:
     python = get_python_path(project_id)
-    return os.path.isfile(python)
+    if not os.path.isfile(python):
+        return False
+    return _venv_base_python_ok(get_venv_path(project_id))
+
+
+def venv_create_cmd(python_cmd: str, project_id: str) -> list:
+    """Lệnh tạo venv; thêm ``--clear`` khi venv cũ hỏng để dựng lại sạch."""
+    cmd = [python_cmd, "-m", "venv", str(get_venv_path(project_id))]
+    if venv_is_stale(project_id):
+        cmd.insert(3, "--clear")
+    return cmd
 
 
 def get_system_python() -> str:
@@ -90,10 +125,14 @@ def get_system_python() -> str:
         return sys.executable
     
     import shutil
-    if shutil.which("python"):
-        return "python"
-    if shutil.which("python3"):
-        return "python3"
+    # Ưu tiên py launcher (cài kèm bộ cài python.org): luôn trỏ tới Python thật.
+    # Bỏ qua python.exe trong WindowsApps — đó là stub "App execution alias" của
+    # Microsoft Store, có sẵn trên Windows kể cả khi CHƯA cài Python; chạy nó chỉ
+    # in "Python was not found" và trả mã lỗi → venv tạo hỏng, thông báo khó hiểu.
+    for name in ("py", "python", "python3"):
+        path = shutil.which(name)
+        if path and "windowsapps" not in path.lower():
+            return path
     raise RuntimeError("Hệ thống không tìm thấy Python. Vui lòng cài đặt Python trên máy tính này.")
 
 async def create_venv(project_id: str) -> dict:
@@ -109,7 +148,7 @@ async def create_venv(project_id: str) -> dict:
     # toàn bộ event loop (mọi request khác của app) trong lúc tạo venv (vài giây).
     result = await asyncio.to_thread(
         subprocess.run,
-        [python_cmd, "-m", "venv", str(venv_path)],
+        venv_create_cmd(python_cmd, project_id),
         capture_output=True,
         text=True,
         timeout=120

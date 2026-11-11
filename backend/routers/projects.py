@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -11,6 +12,8 @@ from database import get_session
 from models import Project, Workflow, WorkflowRun
 from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir, rename_project_dir, slugify
 from routers.ownership import ensure_project_owner
+
+logger = logging.getLogger("pyflow.projects")
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -212,8 +215,11 @@ async def update_project(project_id: str, body: dict, request: Request, session:
         if renamed:
             try:
                 rename_project_dir(new_name, old_name)
-            except Exception:
-                pass
+            except Exception as rb_err:
+                # Thư mục đã mang tên MỚI nhưng DB vẫn tên CŨ → project mất venv + dữ liệu.
+                # Không chặn được nữa, nhưng phải để lại dấu vết để còn sửa tay.
+                logger.error("Rollback đổi tên thư mục project %r -> %r thất bại: %s",
+                             new_name, old_name, rb_err)
         raise
     await session.refresh(proj)
     return proj.to_dict()
@@ -355,8 +361,8 @@ def _install_worker(project_id: str, packages: list):
                 with connect_sqlite() as conn:
                     conn.execute("UPDATE project SET venv_ready=1 WHERE id=?", (project_id,))
                     conn.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Không cập nhật được venv_ready cho project %s: %s", project_id, e)
         pip = get_pip_cmd(project_id)
         for i, pkg in enumerate(packages):
             j["current"] = pkg
@@ -429,8 +435,9 @@ async def scan_project_packages(project_id: str, session: AsyncSession = Depends
         if w.graph_json:
             try:
                 graphs.append(_json.loads(w.graph_json))
-            except Exception:
-                pass
+            except Exception as e:
+                # Bỏ qua workflow hỏng thì quét sẽ THIẾU package của nó — phải để lại dấu vết.
+                logger.warning("Bỏ qua workflow %s khi quét package: graph_json lỗi (%s)", w.id, e)
     from services.pkg_scanner import scan_packages
     items = scan_packages(graphs)
 

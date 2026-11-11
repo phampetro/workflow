@@ -1,0 +1,5 @@
+# Chỉ dùng khi phát triển — KHÔNG đóng gói vào bản build, KHÔNG cài trên máy khách.
+# Cài: .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+# Chạy test: .venv\Scripts\python.exe -m pytest
+-r requirements.txt
+pytest==8.4.2

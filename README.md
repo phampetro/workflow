@@ -102,9 +102,14 @@ workflow/
 │   ├── services/                     ← Nghiệp vụ (không lộ HTTP)
 │   │   ├── executor.py               ← Bridge async ↔ thread; sở hữu
 │   │   │                                ThreadPoolExecutor(max_workers=256) riêng
-│   │   ├── executor_blocks.py        ← 2000+ dòng: dispatch từng btype trong queue,
-│   │   │                                nội suy {{var}}, cập nhật workflow_env,
-│   │   │                                gọi _finish_run, quản lý listener flag
+│   │   ├── executor_blocks.py        ← Hạ tầng run: script con trong venv, kill/stop run,
+│   │   │                                _finish_run, BLOCK_OUTPUT_VARS/NON_INTERPOLATED_KEYS
+│   │   ├── block_handlers/           ← MỖI LOẠI KHỐI MỘT HANDLER handler(ctx, step)
+│   │   │   ├── runner.py             ← Vòng lặp điều phối: queue, rẽ nhánh, workflow_env
+│   │   │   ├── context.py            ← RunContext/BlockStep, nội suy {{var}} 1 lượt,
+│   │   │   │                            tín hiệu SKIP/BREAK/ABORT, xử lý Bắt Lỗi
+│   │   │   └── basic/flow/sql/excel/read_data/telegram/email_block/browser/python_block.py
+│   │   ├── env_check.py              ← Kiểm Python/ODBC/Chromium/venv (màn Kiểm tra môi trường)
 │   │   ├── browser_executor.py       ← Playwright: chạy các step Browser
 │   │   ├── telegram_listener.py      ← httpx long-polling getUpdates + trigger workflow
 │   │   ├── scheduler.py              ← APScheduler (AsyncIOScheduler) + build_cron_trigger
@@ -238,7 +243,7 @@ workflow/
 
 ## 🧩 Các khối Workflow (Block Types)
 
-Các khối (`btype`) được xử lý trong `backend/services/executor_blocks.py`, cộng thêm 1 loại đặc biệt (`error_trigger`) không nằm trong luồng chạy chính mà chỉ được kích hoạt khi có lỗi. Ngoài danh sách dưới đây còn có `input_vars` và `queue` — xem mục riêng ở cuối.
+Các khối (`btype`) được xử lý trong `backend/services/block_handlers/` (mỗi loại một handler, đăng ký trong `BLOCK_HANDLERS`), cộng thêm 1 loại đặc biệt (`error_trigger`) không nằm trong luồng chạy chính mà chỉ được kích hoạt khi có lỗi. Ngoài danh sách dưới đây còn có `input_vars` và `queue` — xem mục riêng ở cuối.
 
 > Quy ước: `current_input` là dữ liệu đầu vào khối nhận được (từ khối nối trước nó); sau khi khối chạy, giá trị mới gán cho `current_input` sẽ là dữ liệu truyền tiếp cho khối kế tiếp theo cạnh nối. Nhiều khối gọi biến này là `output_data` bên trong code/script do chính khối đó sinh ra.
 
@@ -303,6 +308,8 @@ Mỗi bước (step) trong cấu hình có 1 field `key_name` (tên biến bạn
 
 Toàn bộ các `key_name` này được gộp thành 1 dict rồi **merge vào `current_input` cũ** — giữ lại key cũ (như `chat_id`, `sent_message_id` từ khối Telegram trước), key trùng tên bị ghi đè bởi giá trị mới.
 
+**Nghỉ cố định 1 giây giữa 2 bước liên tiếp** (`STEP_GAP_SEC` trong [`browser_executor.py`](backend/services/browser_executor.py)): máy chạy nhanh hơn trang web (render lại, request nền, ô nhập chưa được mở khóa) nên bước sau hay chạm vào thứ chưa sẵn sàng. Không có ô cấu hình, áp cho mọi khối Trình duyệt; cần chờ lâu hơn ở đâu thì thêm bước `Dừng chờ` ở đó. Bước rỗng không tính; nhịp nghỉ chờ theo `stop_event` nên bấm Dừng có tác dụng ngay. Khối nhiều bước sẽ chậm thêm ~(số bước − 1) giây.
+
 ### 9. `python` — Chạy code Python tùy ý
 Script nhận biến `input_data` (deserialize từ JSON, chính là `current_input` của khối trước), có thể gán bất kỳ giá trị nào vào `output_data`. Sau khi chạy xong, hệ thống `json.dumps(output_data)` rồi gán ngược thành `current_input` cho khối kế. **Nếu không gán `output_data`** → mặc định `None` → khối kế nhận `current_input = None`. Cấu trúc biến trả về hoàn toàn do người dùng quyết định qua code.
 
@@ -340,7 +347,7 @@ File luôn lưu vào Output. Mặc định biến `file_name`.
 - Dòng 1 = dòng đầu tiên của file (kể cả tiêu đề), cột A = cột đầu; **số dòng/cột ở bước sau tính theo kết quả của bước trước**. Dòng/cột vượt quá kích thước hiện có bị bỏ qua; riêng bước lọc báo lỗi nếu cột không tồn tại hoặc ô nội dung trống.
 - `excelEditKeepHeaderRows` (mặc định 1): số dòng đầu **không bao giờ bị bước lọc xóa** (giữ dòng tiêu đề). Đặt 0 nếu file không có tiêu đề.
 - Kết quả ghi ra **file `.xlsx` MỚI trong `output/`** (`excelFileName`), file gốc nguyên vẹn. Số/ngày giữ đúng kiểu; định dạng ô (màu, merge) không giữ — giống `pivot_excel`/`merge_excel`.
-- Chạy **inline trong backend** (pandas, như `excel_read`), không sinh script con; logic thuần ở [`services/excel_edit.py`](backend/services/excel_edit.py), nhánh chạy ở `executor_blocks.py`.
+- Chạy **inline trong backend** (pandas, như `excel_read`), không sinh script con; logic thuần ở [`services/excel_edit.py`](backend/services/excel_edit.py), handler ở `block_handlers/excel.py`.
 - `excelEditSteps` **bỏ qua nội suy chung** (giống `steps` của Browser): `excel_edit.resolve_steps` tự thay `{{biến}}` 1 lượt `re.sub`, vì nhánh "gõ tên trần" của `interpolate()` sẽ biến cột `A` thành giá trị của biến tên `A`.
 
 ### 12c. `note` — Ghi chú (KHÔNG chạy)
@@ -574,7 +581,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 - **Trước khi xóa** workflow/project: **phải** gọi `_stop_and_wait_workflow_runs(wf_id)` để kill run + đợi thread thoát, ngược lại thread executor còn ghi vào folder đang bị `shutil.rmtree` (race).
 
 ### Về concurrency
-- Set `_workflow_run_ids[workflow_id]` có thể bị `_finish_run` pop key giữa `if ... in ...` và `for run_id in ...` → dùng `list(_workflow_run_ids.get(workflow_id, set()))` thay if-in-then-index (đã fix ở [executor_blocks.py:58](backend/services/executor_blocks.py:58)).
+- Set `_workflow_run_ids[workflow_id]` có thể bị `_finish_run` pop key giữa `if ... in ...` và `for run_id in ...` → dùng `list(_workflow_run_ids.get(workflow_id, set()))` thay if-in-then-index (đã fix ở `stop_all_runs_for_workflow` trong [executor_blocks.py](backend/services/executor_blocks.py)).
 - **APScheduler `max_instances=1` chỉ bảo vệ hàm job** (return ngay lập tức) chứ không bảo vệ workflow thật. `trigger_workflow_from_scheduler` phải tự check `_workflow_run_ids` skip run trùng.
 
 ### Về nội suy `{{var}}`

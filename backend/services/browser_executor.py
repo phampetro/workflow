@@ -16,6 +16,26 @@ from services.log_messages import tr, tr_action
 
 _VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
+# Nghỉ cố định giữa 2 bước liên tiếp của khối Trình duyệt (giây). Cố ý KHÔNG có ô cấu
+# hình: cần chờ lâu hơn ở chỗ nào thì thêm bước "Dừng chờ" ngay chỗ đó.
+STEP_GAP_SEC = 1.0
+
+
+def _sleep_unless_stopped(seconds: float, stop_event) -> bool:
+    """Ngủ `seconds` giây; trả True nếu bị Dừng giữa chừng.
+
+    stop_event lúc chạy thật là SyncStopEvent (executor.py) — CHỈ có is_set()/set(), không
+    có wait() như threading.Event. Nên phải kiểm tra từng lát ngắn (giống action `wait`).
+    """
+    end = time.monotonic() + seconds
+    while True:
+        if stop_event and stop_event.is_set():
+            return True
+        left = end - time.monotonic()
+        if left <= 0:
+            return False
+        time.sleep(min(0.1, left))
+
 
 def _interpolate_once(text: str, ctx: dict) -> str:
     """Thay {{ten_bien}} bằng giá trị, QUÉT ĐÚNG MỘT LƯỢT.
@@ -994,6 +1014,8 @@ def run_browser_block(
         page = session["page"]
 
         step_count = len(steps)
+        log("info", tr(language, "browser_step_gap", seconds=f"{STEP_GAP_SEC:g}"))
+        ran_step = False
         for i, step in enumerate(steps, 1):
             if stop_event and stop_event.is_set():
                 log("warning", tr(language, "browser_stopped_by_user"))
@@ -1006,6 +1028,20 @@ def run_browser_block(
 
             if not step.get("action"):
                 continue
+
+            # Nghỉ giữa 2 bước liên tiếp: máy chạy nhanh hơn trang web (render lại, request
+            # chạy nền, mở khóa ô nhập…) nên bước sau hay chạm vào thứ chưa sẵn sàng. Đợi theo
+            # stop_event để bấm Dừng vẫn có tác dụng ngay, không phải chờ hết nhịp nghỉ.
+            if ran_step:
+                if _sleep_unless_stopped(STEP_GAP_SEC, stop_event):
+                    log("warning", tr(language, "browser_stopped_by_user"))
+                    return {
+                        "success": False,
+                        "output_data": collected_data if collected_data else None,
+                        "error": "stopped",
+                        "stopped": True,
+                    }
+            ran_step = True
 
             action = step.get("action", "")
             label = tr_action(action, language, ACTION_LABELS.get(action, action))

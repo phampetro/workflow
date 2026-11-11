@@ -166,10 +166,11 @@ async def activate_user(user_id: str, session: AsyncSession = Depends(get_sessio
         for wf_id in running_wf_ids:
             try:
                 await stop_telegram_listener(wf_id)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                # Listener sót lại sẽ tiếp tục nhận tin nhắn cho workspace không còn active.
+                logger.warning("Không dừng được Telegram Listener %s khi đổi user: %s", wf_id, e)
+    except Exception as e:
+        logger.warning("Lỗi khi dừng Telegram Listener của user cũ: %s", e)
 
     # Deactivate all
     users = await session.execute(select(User))

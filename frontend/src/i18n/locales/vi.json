@@ -17,6 +17,7 @@
   "navbar": {
     "switchUser": "Chuyển người dùng",
     "aiSettings": "Cài đặt AI",
+    "envCheck": "Kiểm tra môi trường",
     "darkTheme": "Giao diện Tối",
     "lightTheme": "Giao diện Sáng",
     "switchToEnglish": "Chuyển sang Tiếng Anh",
@@ -52,6 +53,41 @@
     "schedulesActivated": "{{count}} lịch chạy đã được kích hoạt",
     "workspaceReady": "Không gian làm việc riêng của bạn đã sẵn sàng",
     "activateError": "Lỗi kích hoạt người dùng: {{message}}"
+  },
+  "envCheck": {
+    "title": "Kiểm tra môi trường",
+    "intro": "Những thành phần ngoài ứng dụng mà workflow cần để chạy được trên máy này.",
+    "recheck": "Kiểm tra lại",
+    "loadError": "Không kiểm tra được môi trường. Hãy thử lại.",
+    "status": {
+      "ok": "Đạt",
+      "warn": "Cảnh báo",
+      "error": "Lỗi"
+    },
+    "python": {
+      "title": "Python hệ thống",
+      "ok": "Python {{version}} — dùng để tạo môi trường cho từng project.",
+      "error": "Không tìm thấy Python. Hãy cài Python 3.13 từ python.org (chọn \"Add python.exe to PATH\") rồi khởi động lại ứng dụng."
+    },
+    "odbc": {
+      "title": "ODBC Driver cho SQL Server",
+      "ok": "Đã cài {{driver}}.",
+      "warn": "Chưa cài {{driver}}. Chỉ cần khi dùng khối SQL với kết nối SQL Server.",
+      "error": "Chưa cài {{driver}} — {{connections}} kết nối SQL Server sẽ báo lỗi IM002 khi chạy. Cài bằng lệnh: winget install Microsoft.msodbcsql.17"
+    },
+    "chromium": {
+      "title": "Trình duyệt cho khối Trình duyệt",
+      "ok": "Đã có Chromium riêng của ứng dụng.",
+      "warn": "Chưa có Chromium riêng — đang tạm dùng Chrome/Edge của máy, có thể bị chính sách công ty chặn đăng nhập. Chạy: pyflow-backend.exe install-browser",
+      "error": "Không tìm thấy Chromium riêng lẫn Chrome/Edge. Chạy: pyflow-backend.exe install-browser"
+    },
+    "venvs": {
+      "title": "Môi trường Python của các project",
+      "ok": "{{total}} project — không có môi trường nào bị hỏng.",
+      "warn": "Không đọc được danh sách project.",
+      "error": "Môi trường bị hỏng (Python gốc đã bị gỡ hoặc đổi user Windows): {{broken}}. Mở project và bấm \"Tự động cài thư viện\" để tạo lại."
+    },
+    "detail": "Chi tiết: {{detail}}"
   },
   "about": {
     "title": "Thông tin",

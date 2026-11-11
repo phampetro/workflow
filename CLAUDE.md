@@ -86,7 +86,8 @@ Nếu buộc phải dùng màu ngoài palette (VD màu log level, syntax highlig
 - Executor call phải dùng `_WORKFLOW_EXECUTOR` (256 workers) từ [`services/executor.py`](backend/services/executor.py), **không** `asyncio.to_thread` (cạn default pool nếu có nhiều Telegram Listener idle).
 - Rename thư mục project/workflow phải qua `rename_project_dir` / `rename_workflow_dir` **trước** commit DB; rollback nếu commit fail.
 - Xoá workflow/project phải gọi `_stop_and_wait_workflow_runs` **trước** khi `rmtree` folder.
-- Interpolate `{{var}}` dùng `re.sub` 1 lượt trong [`services/executor_blocks.py`](backend/services/executor_blocks.py) — **không** for-loop replace (chain-replace nguy cơ rò rỉ biến).
+- Interpolate `{{var}}` dùng `re.sub` 1 lượt trong `BlockStep.interpolate` ([`services/block_handlers/context.py`](backend/services/block_handlers/context.py)) — **không** for-loop replace (chain-replace nguy cơ rò rỉ biến). Cấu hình khối (`step.bdata`) **đã được nội suy sẵn** trước khi vào handler: handler **không được** gọi `interpolate` lần nữa trên giá trị trong `bdata` — nội suy 2 lần chính là chain-replace (từng có ở `excel_read`/`google_sheets_read`, đã gỡ).
+- Mỗi loại khối là một handler `handler(ctx, step)` trong [`services/block_handlers/`](backend/services/block_handlers/__init__.py); vòng lặp điều phối ở `runner.py`. Handler báo luồng bằng giá trị trả về `None`/`SKIP`/`BREAK`/`ABORT` (xem docstring `context.py`) — không tự `_finish_run` hay đụng `ctx.queue`, trừ khối Queue. Thêm khối mới: viết handler + khai vào `HANDLERS` của module + thêm test vào `backend/tests/test_workflow_engine.py`.
 - Update endpoint nhận `expected_updated_at` → so với DB, trả 409 nếu lệch (ETag pattern).
 - Telegram Listener persist qua cột `workflow.listener_on` — set True khi bật, False khi dừng; startup [`main.py`](backend/main.py) `reload_telegram_listeners` tự bật lại cho user active.
 
@@ -112,7 +113,7 @@ Chi tiết đầy đủ + bảng field theo từng khối: README §"Biến toà
 
 Nếu khối mới **chạy trong venv riêng của project** (không phải venv backend chung — xem phân biệt ở đầu file `pkg_scanner.py`) và cần cài thêm package pip:
 
-1. Khai package cố định của khối vào **`_BLOCK_BASE`** trong [`services/pkg_scanner.py`](backend/services/pkg_scanner.py), khớp đúng với danh sách `packages_to_install` mà khối đó truyền cho `ensure_packages()` ở [`services/executor_blocks.py`](backend/services/executor_blocks.py). Hai chỗ này **phải luôn đồng bộ** — `ensure_packages()` tự cài khi chạy thật (không khai vẫn chạy được), nhưng **không khai vào `_BLOCK_BASE`** thì tính năng "Tự động cài thư viện" (quét trước khi chạy) sẽ **không thấy** khối này cần gì, người dùng bấm quét xong tưởng đã đủ nhưng thiếu — chỉ lộ ra khi chạy thật và văng lỗi `ImportError` giữa chừng.
+1. Khai package cố định của khối vào **`_BLOCK_BASE`** trong [`services/pkg_scanner.py`](backend/services/pkg_scanner.py), rồi trong handler gọi **`ensure_block_packages(ctx, step, db_type)`** ([`block_handlers/common.py`](backend/services/block_handlers/common.py)). Đây là **nguồn duy nhất**: cả lúc chạy thật lẫn lúc quét "Tự động cài thư viện" đều đọc `required_packages()` từ bảng này. **Không** tự viết danh sách `packages_to_install` riêng trong handler — trước đây hai nơi khai riêng và lệch nhau là quét báo "đã đủ" rồi chạy thật văng `ImportError` giữa chừng.
 2. Nếu khối cần driver khác nhau theo loại kết nối DB (giống các khối SQL hiện có), khai thêm vào **`_DRIVER_BLOCKS`** + **`_DB_DRIVERS`** cùng file.
 3. Nếu khối là loại tự do (kiểu Python Block, người dùng viết code tay) thì **không cần** khai vào `_BLOCK_BASE` — cơ chế quét `ast.parse()` import tự động lo phần này. Chỉ cần bổ sung vào **`_MODULE_ALIAS`** nếu tên module import khác tên gói pip thật (VD `cv2`→`opencv-python`) mà bảng chưa có.
 
@@ -128,6 +129,7 @@ Có hệ thống license + `Releases/` + tự cập nhật, tức app chạy tr�
   - Tên file phải qua `safe_filename()` — kể cả file đính kèm Telegram/Email.
   - Nội suy phải là **một lượt `re.sub`** (`interpolate` ở executor, `_interpolate_once` ở [browser_executor.py](backend/services/browser_executor.py)). For-loop `replace` gây chain-replace làm rò mật khẩu từ `input.json`.
 - **`_csrf_guard`** trong main.py kiểm `Origin`/`Sec-Fetch-Site`: CORS chỉ chặn ĐỌC response, không chặn GỬI request.
+- **`_host_guard`** trong main.py chỉ nhận `Host` loopback (`localhost`/`127.0.0.1`/`[::1]`): chống DNS rebinding — trang lạ trỏ tên miền của nó về 127.0.0.1 là ĐỌC được GET API (file export kèm mật khẩu). Truy cập qua IP LAN sẽ bị 403 — đúng ý đồ.
 - **Không trả `password` của `DbConnection` ra API** (list/chi tiết kết nối). Ô mật khẩu để trống khi sửa = giữ nguyên. **Ngoại lệ có chủ đích:** file export ZIP (workflow/project) KÈM mật khẩu plaintext theo quyết định của chủ dự án để backup/khôi phục không phải nhập lại — đừng "vá" lại thành bỏ mật khẩu; chỉ cần nhắc người dùng không chia sẻ file export cho người ngoài.
 - **`update.zip` PHẢI được ký và verify** ([services/update_signing.py](backend/services/update_signing.py)). Đây là kênh phân phối code tới máy khách: không verify thì ai sửa được asset của GitHub Release là mọi máy khách bấm "Cập nhật" sẽ chạy code lạ. Client **từ chối** bản cập nhật không có `update.zip.sig`, và không còn fallback về `zipball_url`.
   Dùng lại đúng cặp khoá Ed25519 của license, nhưng **tách miền**: chuỗi ký là `b"pyflow-update-v1:" + sha256_hex`, nên chữ ký update không thể đem dùng làm license và ngược lại. Đổi tiền tố này = mọi bản đã phát hành bị từ chối.
@@ -144,6 +146,9 @@ Hệ thống có nhiều user, chỉ **1 user `is_active=True`** tại 1 thời 
 
 ## Testing / Verify
 
+- **Chạy bộ test backend trước khi báo xong** mọi thay đổi ở executor/handler/main.py:
+  `backend\.venv\Scripts\python.exe -m pytest` (trong thư mục `backend/`; cài lần đầu: `pip install -r requirements-dev.txt`).
+  `tests/test_workflow_engine.py` chạy `execute_workflow_thread` THẬT trên DB tạm — chỉ giả lập khối Python. Mỗi test ứng với một bug đã từng xảy ra; test đỏ = đổi hành vi workflow đang chạy của khách, đừng sửa test cho xanh khi chưa hiểu vì sao.
 - Sau khi sửa UI, phải **preview + verify** qua `mcp__Claude_Browser__preview_start` (config sẵn ở [`.claude/launch.json`](.claude/launch.json)). Đọc console messages, xác nhận không có warning antd/React mới.
 - Chạy 1 workflow thật cuối cùng để verify không regression.
 - Trước khi báo xong, chạy Pre-Delivery Checklist của skill (mục "Pre-Delivery Checklist" ở cuối SKILL.md).

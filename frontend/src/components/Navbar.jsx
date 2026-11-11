@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, Languages, UserCog, Upload, Sparkles, Info, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Settings, Zap, Plus, RefreshCw, FolderOpen, Workflow, Clock, CalendarCheck, CalendarDays, Sun, Moon, Languages, UserCog, Upload, Sparkles, Info, PanelRightClose, PanelRightOpen, Stethoscope } from 'lucide-react'
 import { Button, Tooltip, Dropdown } from 'antd'
 import dayjs from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
@@ -57,6 +57,7 @@ export default function Navbar({
   onSwitchUser,
   onOpenAiSettings,
   onOpenAbout,
+  onOpenEnvCheck,
   sidePanelOpen,
   onToggleSidePanel,
 }) {
@@ -112,6 +113,16 @@ export default function Navbar({
       onClick: () => setLanguage(isEn ? 'vi' : 'en'),
     },
     { type: 'divider' },
+    {
+      key: 'env-check',
+      label: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Stethoscope size="0.875rem" />
+          {t('navbar.envCheck')}
+        </span>
+      ),
+      onClick: onOpenEnvCheck,
+    },
     {
       key: 'about',
       label: (

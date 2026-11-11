@@ -371,8 +371,11 @@ async def update_workflow(workflow_id: str, body: dict, request: Request, sessio
         if renamed and pj_name:
             try:
                 rename_workflow_dir(pj_name, new_name, old_name)
-            except Exception:
-                pass
+            except Exception as rb_err:
+                # Thư mục đã mang tên MỚI nhưng DB vẫn tên CŨ → workflow mất input/output.
+                # Không chặn được nữa, nhưng phải để lại dấu vết để còn sửa tay.
+                logger.error("Rollback đổi tên thư mục workflow %r -> %r thất bại: %s",
+                             new_name, old_name, rb_err)
         raise
     await session.refresh(wf)
     return wf.to_dict()

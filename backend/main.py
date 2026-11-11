@@ -250,11 +250,38 @@ async def _csrf_guard(request, call_next):
     return await call_next(request)
 
 
+# ── Host guard (chống DNS rebinding) ─────────────────────────────────────────
+# CSRF guard chỉ chặn GHI. Còn ĐỌC: trang lạ trỏ tên miền của nó về 127.0.0.1
+# (DNS rebinding) là trình duyệt coi như CÙNG origin với chính trang đó → đọc được
+# GET /api/... (file export ZIP có mật khẩu DB plaintext, log, cấu hình workflow).
+# Request kiểu đó luôn mang Host là tên miền lạ, nên chỉ nhận Host loopback.
+_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "[::1]"})
+
+
+def _host_allowed(host_header: str | None) -> bool:
+    if not host_header:
+        return False
+    host = host_header.strip().lower()
+    if host.startswith("["):                      # IPv6: "[::1]:8000"
+        host = host[: host.find("]") + 1]
+    else:
+        host = host.split(":", 1)[0]
+    return host in _ALLOWED_HOSTS
+
+
+async def _host_guard(request, call_next):
+    if not _host_allowed(request.headers.get("host")):
+        return JSONResponse(status_code=403, content={"error": "bad_host",
+                                                      "detail": "Host không được phép."})
+    return await call_next(request)
+
+
 # Thứ tự add_middleware là NGOÀI-VÀO-TRONG ngược lại: add sau = chạy trước.
 # Muốn CORS bọc ngoài cùng (để cả response 403 vẫn có header CORS) thì CORS phải
 # được add SAU CÙNG — xem lệnh add CORSMiddleware ngay bên dưới.
 app.add_middleware(BaseHTTPMiddleware, dispatch=_license_guard)
 app.add_middleware(BaseHTTPMiddleware, dispatch=_csrf_guard)
+app.add_middleware(BaseHTTPMiddleware, dispatch=_host_guard)
 
 app.add_middleware(
     CORSMiddleware,

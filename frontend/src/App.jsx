@@ -7,6 +7,7 @@ import WorkflowEditor from './pages/WorkflowEditor'
 import UserPickerModal from './components/UserPickerModal'
 import AiSettingsModal from './components/AiSettingsModal'
 import AboutModal from './components/AboutModal'
+import EnvCheckModal from './components/EnvCheckModal'
 import LicenseGate from './components/LicenseGate'
 import SidePanel from './components/SidePanel'
 import useIsSmallScreen from './hooks/useIsSmallScreen'
@@ -105,6 +106,7 @@ export default function App() {
   const [openCreateModal, setOpenCreateModal] = useState(false)
   const [openAiSettings, setOpenAiSettings] = useState(false)
   const [openAbout, setOpenAbout] = useState(false)
+  const [openEnvCheck, setOpenEnvCheck] = useState(false)
 
   // Import state
   const importInputRef = useRef(null)
@@ -419,6 +421,8 @@ export default function App() {
           licenseStatus={licenseStatus}
         />
 
+        <EnvCheckModal open={openEnvCheck} onClose={() => setOpenEnvCheck(false)} />
+
         {bootstrapDone && !licenseLocked && (
           <>
             {/* Navbar */}
@@ -444,6 +448,7 @@ export default function App() {
                   onSwitchUser={() => setShowUserPicker(true)}
                   onOpenAiSettings={() => setOpenAiSettings(true)}
                   onOpenAbout={() => setOpenAbout(true)}
+                  onOpenEnvCheck={() => setOpenEnvCheck(true)}
                   sidePanelOpen={isSmallScreen ? drawerOpen : sidePanelOpen}
                   onToggleSidePanel={handleToggleSidePanel}
                 />

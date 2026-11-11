@@ -45,3 +45,6 @@ pyflow-studio/
 # File dump/debug tạm
 diff_output.txt
 frontend/fix_alert.cjs
+
+# Cấu hình quyền Claude Code riêng từng máy — không commit
+.claude/settings.local.json

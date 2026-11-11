@@ -589,6 +589,10 @@ MESSAGES = {
     },
     "field_cleared": {"vi": "'{selector}' đã xóa ✓", "en": "'{selector}' cleared ✓"},
     "file_uploaded": {"vi": "Đã upload '{value}' 📤", "en": "Uploaded '{value}' 📤"},
+    "browser_step_gap": {
+        "vi": "⏱ Tự động nghỉ {seconds}s giữa các bước cho trang kịp ổn định (cần chờ lâu hơn ở đâu thì thêm bước 'Dừng chờ' ở đó)",
+        "en": "⏱ Pausing {seconds}s between steps so the page can settle (need longer somewhere? add a 'Wait' step there)",
+    },
     "select_picked": {
         "vi": "'{selector}' đang chọn: '{text}' (value='{value}') ✓",
         "en": "'{selector}' now selected: '{text}' (value='{value}') ✓",
