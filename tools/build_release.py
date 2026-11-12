@@ -6,10 +6,53 @@ import json
 import urllib.request
 import urllib.error
 
+def _version_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except ValueError:
+        return (0,)
+
+
+def compute_version(root_dir, backend_src):
+    """Tính version từ số commit. Lỗi là DỪNG HẲN — không được đoán.
+
+    Trước đây git lỗi thì âm thầm rơi về "1.0.0" rồi vẫn build + upload: đổi user
+    Windows làm git báo "dubious ownership" là phát hành ra bản v1.0.0 trong khi khách
+    đang ở v2.2.x. Kèm `-c safe.directory` cho đúng repo này để lỗi đó không chặn build.
+    """
+    git = ["git", "-c", f"safe.directory={root_dir.replace(os.sep, '/')}"]
+    try:
+        count = int(subprocess.check_output(git + ["rev-list", "--count", "HEAD"], text=True, cwd=root_dir).strip())
+        date_out = subprocess.check_output(
+            git + ["log", "-1", "--format=%cd", "--date=format:%d/%m/%Y %H:%M:%S"], text=True, cwd=root_dir).strip()
+    except Exception as e:
+        sys.exit(f"[LOI] Khong doc duoc lich su git de tinh version: {e}\n"
+                 f"      Kiem tra: git -C \"{root_dir}\" rev-list --count HEAD")
+
+    base_count = 24
+    increment = max(0, count - base_count) // 10
+    version = f"{1 + increment // 10}.{increment % 10}.{count}"
+
+    # Không bao giờ phát hành bản có số NHỎ HƠN bản đang commit trong repo: client so
+    # version khác nhau là coi như "có bản mới", nên bản lùi số vẫn bị cài như nâng cấp.
+    version_file = os.path.join(backend_src, "release_version.json")
+    if os.path.exists(version_file):
+        with open(version_file, "r", encoding="utf-8") as f:
+            prev = json.load(f).get("version", "0")
+        if _version_tuple(version) < _version_tuple(prev):
+            sys.exit(f"[LOI] Version moi {version} NHO HON ban truoc {prev} — dung build.")
+    return version, date_out, count
+
+
 def main():
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     os.chdir(root_dir)
-    
+    backend_src = os.path.join(root_dir, "backend")
+
+    # Tính version TRƯỚC khi xoá/build gì: sai thì dừng ngay, không phí 10 phút build.
+    version, date_out, count = compute_version(root_dir, backend_src)
+    print(f"Version se phat hanh: v{version} ({count} commit)")
+
     release_dir = os.path.join(root_dir, "Releases", "pyflow-studio")
     
     print("Don dep thu muc release cu...")
@@ -22,29 +65,11 @@ def main():
     subprocess.run(["npm", "run", "build"], cwd=frontend_dir, shell=True, check=True)
     
     print("Build Backend (EXE) bang PyInstaller...")
-    backend_src = os.path.join(root_dir, "backend")
-    
-    # Kiem tra python exe
     python_exe = os.path.join(backend_src, ".venv", "Scripts", "python.exe")
     if not os.path.exists(python_exe):
-        python_exe = os.path.join(backend_src, ".venv", "bin", "python")
-        
+        sys.exit(f"[LOI] Khong tim thay {python_exe} — chay setup.bat truoc.")
+
     print("Tao file release_version.json...")
-    try:
-        count_out = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
-        count = int(count_out)
-        base_count = 24
-        adjusted = max(0, count - base_count)
-        increment = adjusted // 10
-        major = 1 + (increment // 10)
-        minor = increment % 10
-        version = f"{major}.{minor}.{count}"
-        date_out = subprocess.check_output(["git", "log", "-1", "--format=%cd", "--date=format:%d/%m/%Y %H:%M:%S"], text=True).strip()
-    except Exception:
-        version = "1.0.0"
-        date_out = "Unknown"
-        count = 0
-        
     version_file = os.path.join(backend_src, "release_version.json")
     with open(version_file, "w") as f:
         json.dump({"version": version, "updatedAt": date_out, "commitCount": count}, f)
