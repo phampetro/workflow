@@ -415,17 +415,21 @@ const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
           const actionLabel = actionDef.label || step.action
 
           return (
-            <div 
-              key={i} 
-              draggable
+            <div
+              key={i}
+              // Thu gọn: kéo cả thẻ. Đang mở: CHỈ thanh tiêu đề kéo được (xem header bên
+              // dưới) — để cả thẻ draggable thì bôi đen chữ / bấm đúp trong ô nhập bị
+              // trình duyệt hiểu thành kéo thẻ, bước nhảy chỗ khác.
+              draggable={!isExpanded}
               onDragStart={(e) => handleDragStart(e, i)}
               onDragEnter={(e) => handleDragEnter(e, i)}
               onDragOver={(e) => e.preventDefault()}
               onDragEnd={handleDragEnd}
               style={{ flexShrink: 0, borderRadius: 10, border: `1px solid ${isExpanded ? accentColor : 'var(--border-default)'}`, background: 'var(--bg-surface)', overflow: 'hidden', transition: 'border-color 0.2s', boxShadow: isExpanded ? `0 0 0 2px ${accentColor}22` : 'none', cursor: isExpanded ? 'default' : 'grab' }}
             >
-              {/* Step header */}
+              {/* Step header — lúc thẻ đang mở, đây là chỗ DUY NHẤT kéo được */}
               <div
+                draggable={isExpanded}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: isExpanded ? `color-mix(in srgb, ${accentColor} 8%, transparent)` : 'transparent', userSelect: 'none' }}
                 onClick={() => setExpandedIdx(isExpanded ? null : i)}
               >
@@ -681,7 +685,18 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     e.preventDefault()
     dragCmdOverItem.current = index
   }
+  // Dòng lệnh có ô nhập ngay trên dòng → chỉ cho kéo khi nhấn vào biểu tượng ⋮⋮.
+  // Để cả dòng draggable thì bôi đen / bấm đúp chữ trong ô nhập thành kéo dòng.
+  const [cmdDragArmed, setCmdDragArmed] = useState(null)
+  useEffect(() => {
+    if (cmdDragArmed === null) return
+    const disarm = () => setCmdDragArmed(null)   // nhả chuột mà không kéo → tắt lại
+    window.addEventListener('mouseup', disarm)
+    return () => window.removeEventListener('mouseup', disarm)
+  }, [cmdDragArmed])
+
   const handleCmdDragEnd = () => {
+    setCmdDragArmed(null)
     if (dragCmdItem.current === null || dragCmdOverItem.current === null) return
     if (dragCmdItem.current !== dragCmdOverItem.current) {
       const reordered = [...listenerCommands]
@@ -2491,7 +2506,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               {listenerCommands.map((cmd, idx) => (
                 <div
                   key={idx}
-                  draggable
+                  draggable={cmdDragArmed === idx}
                   onDragStart={(e) => handleCmdDragStart(e, idx)}
                   onDragEnter={(e) => handleCmdDragEnter(e, idx)}
                   onDragOver={(e) => e.preventDefault()}
@@ -2499,7 +2514,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                   style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: 14, marginBottom: 10, border: '1px solid var(--border-default)' }}
                 >
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }} title={t('blockEditor.dragReorderTooltip')}>
+                    <div onMouseDown={() => setCmdDragArmed(idx)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }} title={t('blockEditor.dragReorderTooltip')}>
                       <GripVertical size={14} />
                     </div>
                     <Input
