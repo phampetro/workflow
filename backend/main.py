@@ -341,6 +341,12 @@ if os.path.exists(frontend_dist):
 
         if inside and candidate.is_file():
             return FileResponse(candidate)
+        # API không tồn tại → 404 JSON, KHÔNG trả index.html. Trước đây /api/xxx lạ
+        # (VD FE mới gọi backend cũ chưa có route đó) nhận về trang HTML với mã 200:
+        # FE coi chuỗi HTML là dữ liệu → "cloudConnections.map is not a function",
+        # màn Kiểm tra môi trường hiện trống trơn, không ai đoán ra vì sao.
+        if full_path == "api" or full_path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"code": "not_found", "detail": "Not Found"})
         # Còn lại (các route của react-router, và mọi mưu toan thoát thư mục)
         return FileResponse(_INDEX_HTML)
 

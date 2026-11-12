@@ -430,26 +430,25 @@ async def scan_project_packages(project_id: str, session: AsyncSession = Depends
     import json as _json
     from models import Workflow
     wfs = (await session.execute(select(Workflow).where(Workflow.project_id == project_id))).scalars().all()
-    graphs = []
+    graphs, names = [], []
     for w in wfs:
         if w.graph_json:
             try:
                 graphs.append(_json.loads(w.graph_json))
+                names.append(w.name)
             except Exception as e:
                 # Bỏ qua workflow hỏng thì quét sẽ THIẾU package của nó — phải để lại dấu vết.
                 logger.warning("Bỏ qua workflow %s khi quét package: graph_json lỗi (%s)", w.id, e)
-    from services.pkg_scanner import scan_packages
-    items = scan_packages(graphs)
+    from services.pkg_scanner import mark_installed, scan_packages
 
-    # Đối chiếu với gói đã có trong venv → gắn cờ installed (để FE chỉ chọn cái thiếu)
-    from services.executor_blocks import list_pkgs_sync
-    def _norm(x):
-        return str(x).strip().lower().replace("_", "-")
-    installed = {_norm(p["name"]) for p in list_pkgs_sync(project_id)}
-    for it in items:
-        it["installed"] = _norm(it["package"]) in installed
+    def _scan():
+        # get_saved_db_connection (sqlite), pip list + kiểm import trong venv đều CHẶN
+        # vài giây → chạy ngoài event loop, không treo mọi request khác của app.
+        return mark_installed(project_id, scan_packages(graphs, names))
 
-    return {"packages": items, "missing_count": sum(1 for it in items if not it["installed"])}
+    items = await asyncio.to_thread(_scan)
+    return {"packages": items, "workflow_count": len(wfs),
+            "missing_count": sum(1 for it in items if not it["installed"])}
 
 
 @router.post("/{project_id}/packages/auto-install")

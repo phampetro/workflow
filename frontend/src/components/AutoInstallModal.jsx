@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Modal, Button, Input, Tag, Progress, Spin, Empty, Tooltip, Alert } from 'antd'
+import { Modal, Button, Input, Tag, Progress, Spin, Empty, Alert } from 'antd'
 import { PackagePlus, Plus, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -13,7 +13,8 @@ import { scanPackages, autoInstallPackages, getInstallStatus } from '../api/clie
 export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   const { t } = useTranslation()
   const [phase, setPhase] = useState('scan')   // scan | review | installing | done
-  const [items, setItems] = useState([])       // [{package, reasons}]
+  const [items, setItems] = useState([])       // [{package, reasons:[{kind, block, workflow}], installed}]
+  const [workflowCount, setWorkflowCount] = useState(0)
   const [selected, setSelected] = useState([]) // [package string]
   const [custom, setCustom] = useState('')
   const [log, setLog] = useState([])
@@ -28,8 +29,9 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
     setPhase('scan'); setLog([]); setError(null); setProgress({ done: 0, total: 0 }); setCustom('')
     scanPackages(projectId)
       .then(res => {
-        const its = res.data?.packages || []
+        const its = Array.isArray(res.data?.packages) ? res.data.packages : []
         setItems(its)
+        setWorkflowCount(res.data?.workflow_count ?? 0)
         // Mặc định chỉ chọn cài những gói CÒN THIẾU (chưa có trong venv)
         setSelected(its.filter(i => !i.installed).map(i => i.package))
         setPhase('review')
@@ -41,6 +43,15 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   useEffect(() => { logEndRef.current?.scrollIntoView({ block: 'end' }) }, [log])
 
   const removePkg = (p) => setSelected(prev => prev.filter(x => x !== p))
+
+  // Lý do backend trả dạng có cấu trúc → dịch tại FE (khối nào, của workflow nào cần gói này)
+  const reasonText = (p) => {
+    const reasons = items.find(i => i.package === p)?.reasons
+    if (!Array.isArray(reasons) || reasons.length === 0) return t('autoInstall.customAddedReason')
+    return reasons
+      .map(r => typeof r === 'string' ? r : t(`autoInstall.reason_${r.kind}`, { block: r.block, workflow: r.workflow }))
+      .join(' · ')
+  }
   const addCustom = () => {
     const v = custom.trim()
     if (v && !selected.includes(v)) setSelected(prev => [...prev, v])
@@ -108,6 +119,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
         return (
           <div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0 }}>
+              <b>{t('autoInstall.scannedSummary', { count: workflowCount })}</b>{' '}
               {t('autoInstall.reviewDescPrefix')} <b>Python</b> {t('autoInstall.reviewDescSuffix')} <code>import</code> {t('autoInstall.reviewDescEnd')}
             </p>
 
@@ -120,18 +132,19 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
                 <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   {t('autoInstall.needToInstallLabel', { count: selected.length })}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                  {selected.map(p => {
-                    const reason = items.find(i => i.package === p)?.reasons?.join('; ') || t('autoInstall.customAddedReason')
-                    return (
-                      <Tooltip key={p} title={reason}>
-                        <Tag color="orange" closable onClose={(e) => { e.preventDefault(); removePkg(p) }} style={{ padding: '4px 8px', fontSize: '0.8rem' }}>
-                          {p}
-                        </Tag>
-                      </Tooltip>
-                    )
-                  })}
-                </div>
+                {/* Lý do hiện NGAY dưới từng gói (không giấu trong tooltip — không dựa vào hover) */}
+                <ul style={{ listStyle: 'none', margin: '0 0 12px', padding: 0, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+                  {selected.map(p => (
+                    <li key={p} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <Tag color="orange" closable onClose={(e) => { e.preventDefault(); removePkg(p) }}
+                        closeIcon={<span aria-label={t('autoInstall.removePkgAria', { name: p })}>×</span>}
+                        style={{ padding: '2px 8px', fontSize: '0.8rem', flexShrink: 0, marginInlineEnd: 0 }}>
+                        {p}
+                      </Tag>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{reasonText(p)}</span>
+                    </li>
+                  ))}
+                </ul>
               </>
             )}
 

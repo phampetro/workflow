@@ -105,7 +105,8 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       loadFiles()
       loadDbConnections()
       loadCloudConnections()
-      getCloudProviders().then(res => setCloudProviders(res.data || {})).catch(() => {})
+      // Kiểm đúng dạng: backend bản cũ chưa có route này → không được tin dữ liệu lạ.
+      getCloudProviders().then(res => setCloudProviders(res.data && typeof res.data === 'object' ? res.data : {})).catch(() => {})
     }
   }, [open, initialData])
 
@@ -114,8 +115,9 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
     setLoadingCloud(true)
     try {
       const res = await getCloudConnections(workflowId)
-      setCloudConnections(res.data || [])
-      return res.data || []
+      const list = Array.isArray(res.data) ? res.data : []
+      setCloudConnections(list)
+      return list
     } catch (e) {
       message.error(t('inputJsonModal.cloudLoadError', { message: e.message }))
       return []

@@ -1023,7 +1023,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     if (isCloudUpload && open && workflowId) {
       setLoadingCloudConnections(true)
       getCloudConnections(workflowId)
-        .then(res => setCloudConnections(res.data || []))
+        .then(res => setCloudConnections(Array.isArray(res.data) ? res.data : []))
         .catch(() => setCloudConnections([]))
         .finally(() => setLoadingCloudConnections(false))
     }
