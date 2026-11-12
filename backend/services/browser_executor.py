@@ -38,9 +38,39 @@ def _sleep_unless_stopped(seconds: float, stop_event) -> bool:
         time.sleep(min(0.1, left))
 
 
-# Kích thước cửa sổ khi chạy ẩn (tắt debug) — bằng màn hình Full HD phổ biến, để bố cục
-# trang giống lúc người dùng dựng bước ở chế độ debug (cửa sổ phóng to).
-HEADLESS_SIZE = {"width": 1920, "height": 1080}
+# Dự phòng khi không đọc được màn hình (VD chạy như Windows service không có desktop).
+HEADLESS_FALLBACK = {"width": 1920, "height": 1080, "scale": 1.0}
+
+
+def headless_screen() -> dict:
+    """Kích thước "cửa sổ phóng to" của CHÍNH máy này, để chạy ẩn giống hệt chế độ debug.
+
+    Trả {"width", "height", "scale"}: width/height là vùng làm việc (trừ taskbar) tính
+    theo pixel CSS — đúng đơn vị trang web thấy; scale là tỉ lệ Windows (175% → 1.75).
+    Không dùng số cố định: máy 1920x1080 đặt scale 175% thì cửa sổ phóng to chỉ rộng
+    ~1097px CSS, còn laptop 2880px scale 175% rộng ~1646px — headless phải khớp đúng
+    máy đang chạy thì menu responsive mới thu/mở giống lúc dựng bước ở chế độ debug.
+    """
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        user32 = ctypes.windll.user32
+        rect = wt.RECT()
+        if not user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+            return dict(HEADLESS_FALLBACK)
+        width, height = rect.right - rect.left, rect.bottom - rect.top
+        scale = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100.0 or 1.0
+        # Process đã DPI-aware (VD manifest của exe) → Windows trả pixel VẬT LÝ, phải quy
+        # về pixel CSS. Process thường (DPI-unaware) đã nhận sẵn số đã chia scale.
+        ctx = user32.GetThreadDpiAwarenessContext()
+        if user32.GetAwarenessFromDpiAwarenessContext(ctx) != 0:
+            width, height = round(width / scale), round(height / scale)
+        if width < 800 or height < 600:
+            return dict(HEADLESS_FALLBACK)
+        return {"width": width, "height": height, "scale": scale}
+    except Exception as e:
+        logging.getLogger("pyflow.browser").warning("Không đọc được kích thước màn hình: %s", e)
+        return dict(HEADLESS_FALLBACK)
 
 
 def _hide_headless_user_agent(context, page) -> None:
@@ -993,14 +1023,20 @@ def run_browser_block(
             if not headless:
                 launch_args.append("--start-maximized")
             else:
-                launch_args.append(f"--window-size={HEADLESS_SIZE['width']},{HEADLESS_SIZE['height']}")
+                screen = headless_screen()
+                size = {"width": screen["width"], "height": screen["height"]}
+                launch_args.append(f"--window-size={size['width']},{size['height']}")
 
-            # Headless phải "giống" cửa sổ debug càng nhiều càng tốt — người dùng dựng bước
-            # ở chế độ debug (cửa sổ phóng to ~1920px) rồi tắt debug để chạy thật. Trước đây
+            # Cả 2 chế độ đều "toàn màn hình": debug = cửa sổ phóng to thật; headless = đúng
+            # kích thước + tỉ lệ scale của màn hình máy này (headless_screen). Người dùng dựng
+            # bước ở chế độ debug rồi tắt debug để chạy thật — bố cục phải y hệt. Trước đây
             # headless cố định 1280x800: trang kiểu Bravo thu menu thành icon ở bề ngang hẹp
             # → "Chờ phần tử: text=Quản lý mua hàng" hết 20s dù bật debug thì chạy được.
-            context_viewport_args = ({"no_viewport": True} if not headless
-                                     else {"viewport": dict(HEADLESS_SIZE), "screen": dict(HEADLESS_SIZE)})
+            if headless:
+                context_viewport_args = {"viewport": size, "screen": size,
+                                         "device_scale_factor": screen["scale"]}
+            else:
+                context_viewport_args = {"no_viewport": True}
 
             try:
                 if browser_profile_dir:
