@@ -22,12 +22,11 @@ router = APIRouter(prefix="/api/system", tags=["System"])
 # dù trình duyệt trên chính máy đó vào GitHub bình thường. Dùng CA bundle của
 # certifi (đã có sẵn qua httpx, PyInstaller tự đóng gói cacert.pem nhờ
 # hook-certifi.py) để không phụ thuộc Windows cert store nữa.
+# Nay dùng chung services.net.https_context() (certifi + Windows store) cho mọi
+# request HTTPS — cùng lỗi này từng làm khối Telegram gửi tin thất bại.
 def _github_ssl_context() -> ssl.SSLContext:
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except Exception:
-        return ssl.create_default_context()
+    from services.net import https_context
+    return https_context()
 
 # Lỗi của lần cập nhật gần nhất.
 # run_updater() chạy trong threading.Timer, tức SAU KHI /update đã trả response

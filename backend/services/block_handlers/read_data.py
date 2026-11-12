@@ -16,6 +16,7 @@ import urllib.request
 import pandas as pd
 
 from services.executor_blocks import safe_filename
+from services.net import https_context
 
 
 def _df_to_records(df, custom_mappings):
@@ -77,12 +78,19 @@ def handle_google_sheets_read(ctx, step):
         if not url:
             raise Exception("Chưa cấu hình Link Google Sheet")
 
-        req = urllib.request.Request(_google_csv_url(url, sheet_name), headers={
+        csv_url = _google_csv_url(url, sheet_name)
+        # Cùng hàng rào SSRF với route xem trước (routers/files.py): ô Link đi qua nội suy
+        # {{var}} nên có thể là "http://169.254.169.254/spreadsheets/d/e/..." do người ngoài
+        # gửi qua Telegram → backend gọi hộ vào dịch vụ nội bộ. Chỉ nhận docs.google.com.
+        parsed = urllib.parse.urlparse(csv_url)
+        if parsed.scheme != "https" or parsed.hostname != "docs.google.com":
+            raise Exception("Chỉ chấp nhận link Google Sheet (https://docs.google.com/...)")
+        req = urllib.request.Request(csv_url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         })
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=20, context=https_context()) as resp:
                 text = resp.read().decode("utf-8", errors="ignore")
         except Exception as e:
             raise Exception(f"Không thể tải Google Sheet ({e}). Hãy kiểm tra link và đảm bảo file ở chế độ Public View.")

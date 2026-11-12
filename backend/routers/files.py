@@ -451,7 +451,8 @@ async def get_google_sheets_columns(body: dict):
         req = urllib.request.Request(csv_url, headers=headers)
 
         def _fetch_csv():
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            from services.net import https_context
+            with urllib.request.urlopen(req, timeout=15, context=https_context()) as resp:
                 return resp.read().decode('utf-8', errors='ignore')
 
         # to_thread: urlopen chặn tới 15s — đủ để treo SSE log và làm cron lỡ giờ.

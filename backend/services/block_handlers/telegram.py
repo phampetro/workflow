@@ -6,6 +6,7 @@ import urllib.request
 import uuid
 
 from services import executor_blocks as eb
+from services.net import https_context
 
 from .context import BREAK, SKIP
 
@@ -14,7 +15,7 @@ from .context import BREAK, SKIP
 def _post_json(url, payload, timeout=15):
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -59,7 +60,7 @@ def _tg_send_document(bot_token, chat_id, file_path, file_name, caption="", pars
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{bot_token}/sendDocument", data=b"\r\n".join(lines),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    with urllib.request.urlopen(req, timeout=60) as response:
+    with urllib.request.urlopen(req, timeout=60, context=https_context()) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
