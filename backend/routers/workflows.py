@@ -404,9 +404,13 @@ async def _cascade_delete_workflow_children(session: AsyncSession, workflow_id: 
     # không xoá nên sau khi xoá workflow/project, các row này ở lại vĩnh viễn TRONG
     # KHI VẪN CHỨA MẬT KHẨU: người dùng tưởng đã xoá sạch mà credential vẫn nằm
     # trong pyflow.db, không có cách nào dọn từ giao diện.
-    from models import DbConnection
+    from models import DbConnection, CloudConnection
     await session.execute(
         delete(DbConnection).where(DbConnection.workflow_id == workflow_id)
+    )
+    # Tương tự với kết nối đám mây — row này giữ refresh token (quyền ghi Drive/OneDrive).
+    await session.execute(
+        delete(CloudConnection).where(CloudConnection.workflow_id == workflow_id)
     )
 
 

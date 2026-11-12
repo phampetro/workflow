@@ -743,3 +743,9 @@ body {
   font-size: var(--text-xs);
   word-break: break-all;
 }
+
+/* Dòng gợi ý dưới ô nhập (Form.Item extra): màu mặc định của antd chỉ đạt ~2,6:1 trên
+   --bg-surface ở theme sáng (< 4,5:1). Dùng token của dự án — đạt > 6:1 cả 2 theme. */
+.ant-form-item .ant-form-item-extra {
+  color: var(--text-secondary);
+}

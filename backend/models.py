@@ -210,3 +210,35 @@ class RunStatus:
     SUCCESS = "success"
     ERROR = "error"
     STOPPED = "stopped"
+
+
+class CloudConnection(Base):
+    """Kết nối lưu trữ đám mây (Google Drive / OneDrive) của 1 workflow — khối "Tải lên đám mây".
+
+    Lưu refresh token sau khi người dùng đăng nhập (OAuth). Token cho quyền GHI vào
+    Drive/OneDrive của tài khoản đó nên KHÔNG bao giờ trả ra API, và KHÔNG đóng gói
+    vào file export (import xong phải đăng nhập lại) — xem services/export_import.py.
+    """
+    __tablename__ = "cloud_connection"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String, nullable=False, index=True)
+    provider = Column(String, nullable=False)          # "google" | "onedrive"
+    label = Column(String, default="")
+    account = Column(String, default="")               # email tài khoản đã đăng nhập
+    refresh_token = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "workflow_id": self.workflow_id,
+            "provider": self.provider,
+            "label": self.label or self.account,
+            "account": self.account,
+            # Chỉ báo "đã đăng nhập hay chưa" — không bao giờ trả token.
+            "connected": bool(self.refresh_token),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

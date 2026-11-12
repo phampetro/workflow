@@ -50,6 +50,8 @@ class Engine:
                 CREATE TABLE project (id TEXT PRIMARY KEY, name TEXT);
                 CREATE TABLE db_connection (id TEXT PRIMARY KEY, db_type TEXT, host TEXT,
                     port TEXT, username TEXT, password TEXT, dbname TEXT);
+                CREATE TABLE cloud_connection (id TEXT PRIMARY KEY, workflow_id TEXT, provider TEXT,
+                    label TEXT, account TEXT, refresh_token TEXT);
             """)
 
         monkeypatch.setattr(eb, "connect_sqlite", lambda **kw: sqlite3.connect(self.db_path))
@@ -79,6 +81,12 @@ class Engine:
         with sqlite3.connect(self.db_path) as c:
             c.execute("INSERT INTO db_connection VALUES (?,?,?,?,?,?,?)",
                       (conn_id, db_type, "h", "", "u", "p", "d"))
+        return conn_id
+
+    def add_cloud_connection(self, conn_id="cc1", provider="google", account="a@congty.vn", token="rt"):
+        with sqlite3.connect(self.db_path) as c:
+            c.execute("INSERT INTO cloud_connection VALUES (?,?,?,?,?,?)",
+                      (conn_id, "wf1", provider, account, account, token))
         return conn_id
 
     def write_input_json(self, data):

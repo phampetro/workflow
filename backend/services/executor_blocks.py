@@ -446,6 +446,7 @@ NON_INTERPOLATED_KEYS = frozenset({
     "telegramSentMessageIdVarName", "telegramChatIdVarName",
     "telegramListenerChatIdVarName", "telegramListenerMessageIdVarName",
     "telegramListenerTextVarName", "telegramListenerSenderNameVarName",
+    "cloudLinkVarName", "cloudCountVarName",
     # Tên biến của khối Loop và khối "Biến đầu vào" (inputFields[].name)
     "loopArrayVar", "loopItemVar", "name",
     # dict {tên cột gốc: tên biến custom} của khối đọc Excel/Google Sheets
@@ -485,6 +486,10 @@ BLOCK_OUTPUT_VARS = {
     "merge_excel": [("file_name", "outputVarName")],
     "pivot_excel": [("file_name", "outputVarName")],
     "excel_edit": [("file_name", "outputVarName")],
+    "cloud_upload": [
+        ("cloud_link", "cloudLinkVarName"),
+        ("cloud_count", "cloudCountVarName"),
+    ],
 }
 
 

@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect, useRef, useContext, createContext } from 'react'
 import { Handle, useUpdateNodeInternals } from '@xyflow/react'
 import './BlockNode.css'
-import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput, ListFilter, StickyNote } from 'lucide-react'
+import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput, ListFilter, StickyNote, UploadCloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 // Handler Sửa/Xóa/Nhân bản được cấp qua Context (value ổn định, memo hóa ở
@@ -114,6 +114,13 @@ const BLOCK_TYPES = {
     color: '#0f9d58',
     gradient: 'linear-gradient(135deg, #0f9d58, #0b8043)',
     description: 'Đọc dữ liệu từ Google Sheet (Public Link)',
+  },
+  cloud_upload: {
+    label: 'Tải lên đám mây',
+    icon: <UploadCloud size="0.875rem" />,
+    color: '#0284c7',
+    gradient: 'linear-gradient(135deg, #38bdf8, #0284c7)',
+    description: 'Tải file lên Google Drive / OneDrive',
   },
   excel_read: {
     label: 'Đọc Excel',

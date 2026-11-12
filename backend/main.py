@@ -29,7 +29,7 @@ import os
 
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
-from routers import projects, workflows, users, dashboard, files, schedule_endpoints, ai_codegen, database, system, license
+from routers import projects, workflows, users, dashboard, files, schedule_endpoints, ai_codegen, database, system, license, cloud
 from services import licensing
 from services.venv_manager import DATA_DIR
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -301,6 +301,7 @@ app.include_router(ai_codegen.router)
 app.include_router(database.router)
 app.include_router(system.router)
 app.include_router(license.router)
+app.include_router(cloud.router)
 
 @app.get("/health")
 def health_check():

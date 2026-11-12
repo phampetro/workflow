@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getGoogleSheetsColumns, startBrowserRecording, stopBrowserRecording, createRecordingStream } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert, ArrowUp, ArrowDown } from 'lucide-react'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getCloudConnections, getGoogleSheetsColumns, startBrowserRecording, stopBrowserRecording, createRecordingStream } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert, ArrowUp, ArrowDown, UploadCloud } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col } from 'antd'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -734,6 +734,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const isExcelRead = node.data.type === 'excel_read'
   const isInputVars = node.data.type === 'input_vars'
   const isExcelEdit = node.data.type === 'excel_edit'
+  const isCloudUpload = node.data.type === 'cloud_upload'
   const hasOutputVarField = isSqlToExcel || isMergeExcel || isPivotExcel || isExcelEdit
 
   // Excel to SQL states
@@ -746,6 +747,10 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   // Danh sách kết nối Database đã lưu (dùng chung cho sql_to_excel/excel_to_sql/run_sql_exec)
   const [dbConnections, setDbConnections] = useState([])
   const [loadingDbConnections, setLoadingDbConnections] = useState(false)
+
+  // Kết nối lưu trữ đám mây (khối cloud_upload) — quản lý ở Dữ liệu workflow → Lưu trữ đám mây
+  const [cloudConnections, setCloudConnections] = useState([])
+  const [loadingCloudConnections, setLoadingCloudConnections] = useState(false)
 
   const excelToSqlInputFile = Form.useWatch('excelToSqlInputFile', form)
   const excelToSqlHeaderRow = Form.useWatch('excelToSqlHeaderRow', form)
@@ -980,7 +985,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     availableFiles.some(f => f.name === input) || (option?.value || '').toLowerCase().includes(input.toLowerCase())
 
   useEffect(() => {
-    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql || isExcelRead || isExcelEdit) && open && workflowId) {
+    if ((isMergeExcel || isEmail || isPivotExcel || isExcelToSql || isExcelRead || isExcelEdit || isCloudUpload) && open && workflowId) {
       const fetchFiles = async () => {
         setLoadingFiles(true)
         try {
@@ -1001,7 +1006,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
       }
       fetchFiles()
     }
-  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, isExcelRead, isExcelEdit, open, workflowId])
+  }, [isMergeExcel, isEmail, isPivotExcel, isExcelToSql, isExcelRead, isExcelEdit, isCloudUpload, open, workflowId])
 
   // Fetch danh sách kết nối Database đã lưu (cho các khối cần chọn kết nối)
   useEffect(() => {
@@ -1013,6 +1018,16 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         .finally(() => setLoadingDbConnections(false))
     }
   }, [isSqlToExcel, isExcelToSql, isRunSqlExec, open, workflowId])
+
+  useEffect(() => {
+    if (isCloudUpload && open && workflowId) {
+      setLoadingCloudConnections(true)
+      getCloudConnections(workflowId)
+        .then(res => setCloudConnections(res.data || []))
+        .catch(() => setCloudConnections([]))
+        .finally(() => setLoadingCloudConnections(false))
+    }
+  }, [isCloudUpload, open, workflowId])
 
   // Reset form & đồng bộ dữ liệu khi mở modal hoặc đổi node
   useEffect(() => {
@@ -1330,7 +1345,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
     // Mẫu 1: 1/3 màn hình
     if (['start', 'end', 'condition', 'delay', 'delete_files', 'error_trigger', 'queue'].includes(type)) return '33vw'
     // Mẫu 2: 1/2 màn hình
-    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read', 'excel_edit', 'input_vars'].includes(type)) return '50vw'
+    if (['run_sql_exec', 'loop', 'google_sheets_read', 'excel_read', 'excel_edit', 'input_vars', 'cloud_upload'].includes(type)) return '50vw'
     // Mẫu 3: 3/4 màn hình
     return '75vw'
   }
@@ -1463,6 +1478,13 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             rowCountVarName: node.data.rowCountVarName || 'sheets_rows',
             loopArrayVar: node.data.loopArrayVar || 'sheets_data',
             loopItemVar: node.data.loopItemVar || 'item',
+            cloudConnectionId: node.data.cloudConnectionId || undefined,
+            cloudFiles: node.data.cloudFiles || [],
+            cloudFolder: node.data.cloudFolder || '',
+            cloudConflict: node.data.cloudConflict || 'rename',
+            cloudShare: node.data.cloudShare || 'none',
+            cloudLinkVarName: node.data.cloudLinkVarName || 'cloud_link',
+            cloudCountVarName: node.data.cloudCountVarName || 'cloud_count',
           }}
         >
           <div style={{ width: leftPanelWidth, height: '100%', minHeight: 0, padding: 24, background: 'var(--bg-surface)', borderRight: hasRightPanel ? '1px solid var(--border-default)' : 'none', overflowY: 'auto' }}>
@@ -2111,6 +2133,76 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
               <Button type="dashed" block icon={<Plus size={16} />} onClick={() => setExcelEditSteps(prev => [...prev, newExcelEditStep('delete_rows')])}>
                 {t('blockEditor.excelEditAddStep')}
               </Button>
+            </>
+          )}
+
+          {isCloudUpload && (
+            <>
+              <Divider style={{ margin: '24px 0' }} />
+              <Title level={5} style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <UploadCloud size={18} color="var(--accent-primary)" aria-hidden="true" /> {t('blockEditor.cloudConfigTitle')}
+              </Title>
+              <Form.Item
+                name="cloudConnectionId"
+                label={t('blockEditor.cloudConnectionLabel')}
+                rules={[{ required: true, message: t('blockEditor.cloudConnectionRequired') }]}
+                extra={t('blockEditor.cloudConnectionHint')}
+              >
+                <Select
+                  loading={loadingCloudConnections}
+                  placeholder={t('blockEditor.cloudConnectionPlaceholder')}
+                  notFoundContent={loadingCloudConnections ? t('blockEditor.dbConnectionLoading') : t('blockEditor.cloudConnectionEmpty')}
+                  options={cloudConnections.map(c => ({
+                    value: c.id,
+                    label: `${t(`blockEditor.cloudProvider_${c.provider}`)} — ${c.label || c.account}${c.connected ? '' : ` (${t('blockEditor.cloudNeedsLogin')})`}`,
+                  }))}
+                />
+              </Form.Item>
+              <Form.Item
+                name="cloudFiles"
+                label={t('blockEditor.cloudFilesLabel')}
+                rules={[{ required: true, type: 'array', min: 1, message: t('blockEditor.cloudFilesRequired') }]}
+                extra={t('blockEditor.cloudFilesHint', { bien: '{{ten_file}}' })}
+              >
+                <Select
+                  mode="tags"
+                  loading={loadingFiles}
+                  placeholder={t('blockEditor.cloudFilesPlaceholder')}
+                  style={{ width: '100%' }}
+                  options={availableFiles.map(f => ({ value: f.name, label: f.name }))}
+                />
+              </Form.Item>
+              <Form.Item name="cloudFolder" label={t('blockEditor.cloudFolderLabel')} extra={t('blockEditor.cloudFolderHint')}>
+                <Input placeholder={t('blockEditor.cloudFolderPlaceholder', { bien: '{{thang}}' })} />
+              </Form.Item>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item name="cloudConflict" label={t('blockEditor.cloudConflictLabel')}>
+                    <Select options={[
+                      { value: 'rename', label: t('blockEditor.cloudConflictRename') },
+                      { value: 'replace', label: t('blockEditor.cloudConflictReplace') },
+                      { value: 'fail', label: t('blockEditor.cloudConflictFail') },
+                    ]} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="cloudShare" label={t('blockEditor.cloudShareLabel')} tooltip={t('blockEditor.cloudShareTooltip')}>
+                    <Select options={[
+                      { value: 'none', label: t('blockEditor.cloudShareNone') },
+                      { value: 'organization', label: t('blockEditor.cloudShareOrg') },
+                      { value: 'anyone', label: t('blockEditor.cloudShareAnyone') },
+                    ]} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col span={12}>
+                  {renderVarNameField('cloudLinkVarName', t('blockEditor.cloudLinkVarLabel'), t('blockEditor.cloudLinkVarTooltip'), 'cloud_link')}
+                </Col>
+                <Col span={12}>
+                  {renderVarNameField('cloudCountVarName', t('blockEditor.cloudCountVarLabel'), t('blockEditor.cloudCountVarTooltip'), 'cloud_count')}
+                </Col>
+              </Row>
             </>
           )}
 

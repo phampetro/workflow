@@ -9,7 +9,7 @@ Thêm khối mới:
    pkg_scanner.py, rồi gọi ``ensure_block_packages(ctx, step)`` (common.py).
 4. Thêm test vào backend/tests/test_workflow_engine.py.
 """
-from . import basic, browser, email_block, excel, flow, python_block, read_data, sql, telegram
+from . import basic, browser, cloud, email_block, excel, flow, python_block, read_data, sql, telegram
 
 
 def _error_trigger(ctx, step):
@@ -22,7 +22,7 @@ def _error_trigger(ctx, step):
 
 
 BLOCK_HANDLERS = {"error_trigger": _error_trigger}
-for _mod in (basic, browser, email_block, excel, flow, python_block, read_data, sql, telegram):
+for _mod in (basic, browser, cloud, email_block, excel, flow, python_block, read_data, sql, telegram):
     for _btype, _fn in _mod.HANDLERS.items():
         assert _btype not in BLOCK_HANDLERS, f"Trùng handler cho khối {_btype}"
         BLOCK_HANDLERS[_btype] = _fn

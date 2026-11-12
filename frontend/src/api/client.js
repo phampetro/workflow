@@ -219,6 +219,13 @@ export const createDbConnection = (data) => api.post('/api/database/connections'
 export const updateDbConnection = (id, data) => api.put(`/api/database/connections/${id}`, data)
 export const deleteDbConnection = (id) => api.delete(`/api/database/connections/${id}`)
 
+// Kết nối lưu trữ đám mây (Google Drive / OneDrive) — khối "Tải lên đám mây".
+// API không bao giờ trả token; chỉ có cờ `connected`.
+export const getCloudProviders = () => api.get('/api/cloud/providers')
+export const getCloudConnections = (workflowId) => api.get('/api/cloud/connections', { params: { workflow_id: workflowId } })
+export const startCloudLogin = (data) => api.post('/api/cloud/connections/start', data)
+export const deleteCloudConnection = (id) => api.delete(`/api/cloud/connections/${id}`)
+
 // ── AI Code Assistant ─────────────────────────────────────
 export const getAiSettings   = ()      => api.get('/api/ai/settings')
 export const saveAiSettings  = (data)  => api.put('/api/ai/settings', data)

@@ -30,7 +30,7 @@ const getBlockGroups = (t) => [
   { title: t('workflowEditor.groupWebAutomation'), items: ['browser'] },
   { title: t('workflowEditor.groupDataProcessing'), items: ['google_sheets_read', 'excel_read', 'excel_edit', 'merge_excel', 'pivot_excel'] },
   { title: t('workflowEditor.groupDatabase'), items: ['sql_to_excel', 'excel_to_sql', 'run_sql_exec'] },
-  { title: t('workflowEditor.groupMessaging'), items: ['telegram', 'telegram_listener', 'email'] },
+  { title: t('workflowEditor.groupMessaging'), items: ['telegram', 'telegram_listener', 'email', 'cloud_upload'] },
   { title: t('workflowEditor.groupSystem'), items: ['error_trigger', 'delete_files'] },
   { title: t('workflowEditor.groupUtility'), items: ['note'] }
 ];

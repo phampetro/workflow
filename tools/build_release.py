@@ -44,8 +44,37 @@ def compute_version(root_dir, backend_src):
     return version, date_out, count
 
 
+MANIFEST_NAME = "release_files.txt"
+
+
+def write_release_manifest(backend_dest, version):
+    """Ghi danh sách MỌI file trong backend\\_internal của bản này.
+
+    Cập nhật = giải nén update.zip ĐÈ lên thư mục cũ (trình cập nhật nằm trong code
+    của BẢN CŨ đang chạy trên máy khách — không sửa từ xa được). File của bản cũ mà
+    bản mới không còn thì nằm lại; v2.3.155 (build Python 3.13 đè lên bản 3.14) chính
+    vì thế mà treo hẳn trên máy khách, cài sạch giữ `data` là chạy. start.vbs MỚI (được
+    giải nén ra trước khi chạy) đọc file này để xoá file lạc loài, chừa thư mục data.
+
+    UTF-16 (start.vbs mở dạng Unicode): đọc ANSI thì tên file có ký tự ngoài bảng mã
+    sẽ không khớp và bị XOÁ NHẦM.
+    """
+    internal = os.path.join(backend_dest, "_internal")
+    files = []
+    for dirpath, dirnames, filenames in os.walk(internal):
+        rel_dir = os.path.relpath(dirpath, internal)
+        if rel_dir == "data" or rel_dir.startswith("data" + os.sep):
+            continue
+        for name in filenames:
+            files.append(os.path.normpath(os.path.join(rel_dir, name)))
+    with open(os.path.join(backend_dest, MANIFEST_NAME), "w", encoding="utf-16") as f:
+        f.write(f"#version={version}\n")
+        f.write("\n".join(sorted(files)) + "\n")
+    print(f"Da ghi {MANIFEST_NAME}: {len(files)} file")
+
+
 def main():
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    root_dir =os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     os.chdir(root_dir)
     backend_src = os.path.join(root_dir, "backend")
 
@@ -74,7 +103,10 @@ def main():
     with open(version_file, "w") as f:
         json.dump({"version": version, "updatedAt": date_out, "commitCount": count}, f)
         
-    subprocess.run([python_exe, "-m", "pip", "install", "pyinstaller"], cwd=backend_src, check=True)
+    # GHIM phiên bản: trước đây cài "pyinstaller" mới nhất mỗi lần build nên bootloader
+    # / cấu trúc _internal đổi ngầm giữa các bản — một nguyên nhân khiến giải nén đè lên
+    # bản cũ để lại file lạc loài (xem release_files.txt + CleanStaleFiles trong start.vbs).
+    subprocess.run([python_exe, "-m", "pip", "install", "pyinstaller==6.22.3"], cwd=backend_src, check=True)
     
     # Icon .exe hiện trong Task Manager/taskbar — generate qua
     # tools/generate_icon.py (render frontend/public/favicon.svg bằng Chromium
@@ -123,6 +155,8 @@ def main():
     if os.path.exists(icon_path):
         shutil.copy2(icon_path, os.path.join(backend_dest, "pyflow.ico"))
 
+    write_release_manifest(backend_dest, version)
+
     print("Tao start.vbs (Windows)...")
     start_vbs_path = os.path.join(backend_dest, "start.vbs")
     with open(start_vbs_path, "w", encoding="utf-8") as f:
@@ -163,6 +197,12 @@ env("PYFLOW_LICENSE_ENFORCE") = "1"
 \' Dong port 8000 neu dang mo
 ws.Run "powershell -Command ""Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 WScript.Sleep 1000
+
+\' ── Don file cua BAN CU con sot lai sau khi cap nhat ────────────────────────
+\' Cap nhat = giai nen update.zip DE len thu muc cu; file ban cu khong con trong
+\' ban moi van nam lai trong _internal va lam backend treo (v2.3.155). Xoa moi file
+\' khong co trong release_files.txt, CHUA NGUYEN thu muc data (du lieu + license).
+CleanStaleFiles scriptDir
 
 backendExe = scriptDir & "\\pyflow-backend.exe"
 
@@ -206,6 +246,67 @@ WScript.Sleep 3000
 
 \' Mo trinh duyet
 ws.Run "http://localhost:8000", 1, False
+
+\' Moi phien ban chi don 1 lan (danh dau trong data\\.cleaned_version).
+Sub CleanStaleFiles(backendDir)
+    Dim manifestPath, internalDir, markerPath, ts, line, keep, version, done
+    manifestPath = backendDir & "\\release_files.txt"
+    internalDir = backendDir & "\\_internal"
+    If Not fso.FileExists(manifestPath) Or Not fso.FolderExists(internalDir) Then Exit Sub
+    Set keep = CreateObject("Scripting.Dictionary")
+    keep.CompareMode = 1
+    version = ""
+    \' -1 = doc dang Unicode (UTF-16) — khop ten file co ky tu ngoai bang ma ANSI
+    Set ts = fso.OpenTextFile(manifestPath, 1, False, -1)
+    Do While Not ts.AtEndOfStream
+        line = Trim(ts.ReadLine)
+        If Left(line, 9) = "#version=" Then
+            version = Mid(line, 10)
+        ElseIf Len(line) > 0 Then
+            keep(line) = True
+        End If
+    Loop
+    ts.Close
+    \' Danh sach rong/hong thi KHONG xoa gi (an toan hon xoa nham ca ban moi)
+    If keep.Count < 100 Or version = "" Then Exit Sub
+    markerPath = internalDir & "\\data\\.cleaned_version"
+    done = ""
+    If fso.FileExists(markerPath) Then
+        Set ts = fso.OpenTextFile(markerPath, 1)
+        If Not ts.AtEndOfStream Then done = Trim(ts.ReadLine)
+        ts.Close
+    End If
+    If done = version Then Exit Sub
+    On Error Resume Next
+    CleanFolder fso.GetFolder(internalDir), "", keep
+    If Not fso.FolderExists(internalDir & "\\data") Then fso.CreateFolder internalDir & "\\data"
+    Set ts = fso.CreateTextFile(markerPath, True)
+    ts.WriteLine version
+    ts.Close
+    On Error GoTo 0
+End Sub
+
+Sub CleanFolder(folder, rel, keep)
+    Dim f, sf, toDelete, emptyDirs, p
+    Set toDelete = CreateObject("Scripting.Dictionary")
+    Set emptyDirs = CreateObject("Scripting.Dictionary")
+    For Each f In folder.Files
+        p = rel & f.Name
+        If Not keep.Exists(p) Then toDelete(f.Path) = True
+    Next
+    For Each p In toDelete.Keys
+        fso.DeleteFile p, True
+    Next
+    For Each sf In folder.SubFolders
+        If Not (rel = "" And LCase(sf.Name) = "data") Then
+            CleanFolder sf, rel & sf.Name & "\\", keep
+            If sf.Files.Count = 0 And sf.SubFolders.Count = 0 Then emptyDirs(sf.Path) = True
+        End If
+    Next
+    For Each p In emptyDirs.Keys
+        fso.DeleteFolder p, True
+    Next
+End Sub
 
 \' Co chromium-<rev>\\chrome-win64\\chrome.exe trong pwRoot hay chua?
 Function ChromiumReady(pwRoot)

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react'
-import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Modal, Form, Input, Select, Alert, App } from 'antd'
+import React, { useState, useEffect, useRef } from 'react'
+import { Drawer, Button, Tabs, Table, Upload, Space, Popconfirm, Tag, Modal, Form, Input, Select, Alert, App, Tooltip } from 'antd'
 import Editor from '@monaco-editor/react'
-import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, openWorkflowFilesFolder, openWorkflowOutputFolder, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, API_BASE } from '../api/client'
-import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen, Database, Plug, Pencil } from 'lucide-react'
+import { updateWorkflowInput, getWorkflowFiles, uploadWorkflowFile, deleteWorkflowFile, getWorkflowOutputFiles, deleteWorkflowOutputFile, openWorkflowFile, openWorkflowOutputFile, openWorkflowFilesFolder, openWorkflowOutputFolder, getDbConnections, createDbConnection, updateDbConnection, deleteDbConnection, getDatabaseTables, getCloudProviders, getCloudConnections, startCloudLogin, deleteCloudConnection, API_BASE } from '../api/client'
+import { UploadCloud, Trash2, FileText, Eye, Download, FolderOpen, Database, Plug, Pencil, Cloud, LogIn, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
@@ -72,6 +72,13 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
   const [savingConnection, setSavingConnection] = useState(false)
   const [dbConnForm] = Form.useForm()
 
+  // Kết nối lưu trữ đám mây (khối "Tải lên đám mây")
+  const [cloudConnections, setCloudConnections] = useState([])
+  const [loadingCloud, setLoadingCloud] = useState(false)
+  const [cloudProviders, setCloudProviders] = useState({ google: false, onedrive: false })
+  const [cloudWaiting, setCloudWaiting] = useState(null) // { provider, snapshot } khi đang chờ đăng nhập
+  const cloudPollRef = useRef(null)
+
   useEffect(() => {
     if (open) {
       const rawText = initialData?.__raw_text__
@@ -97,8 +104,84 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       setActiveTab('json')
       loadFiles()
       loadDbConnections()
+      loadCloudConnections()
+      getCloudProviders().then(res => setCloudProviders(res.data || {})).catch(() => {})
     }
   }, [open, initialData])
+
+  const loadCloudConnections = async () => {
+    if (!workflowId) return []
+    setLoadingCloud(true)
+    try {
+      const res = await getCloudConnections(workflowId)
+      setCloudConnections(res.data || [])
+      return res.data || []
+    } catch (e) {
+      message.error(t('inputJsonModal.cloudLoadError', { message: e.message }))
+      return []
+    } finally {
+      setLoadingCloud(false)
+    }
+  }
+
+  const stopCloudPolling = () => {
+    if (cloudPollRef.current) clearInterval(cloudPollRef.current)
+    cloudPollRef.current = null
+    setCloudWaiting(null)
+  }
+
+  // Dừng poll khi đóng drawer / unmount — không để interval chạy ngầm mãi.
+  useEffect(() => { if (!open) stopCloudPolling() }, [open])
+  useEffect(() => () => stopCloudPolling(), [])
+
+  // Dấu vân tay danh sách kết nối: đổi khi có kết nối mới hoặc kết nối vừa đăng nhập lại.
+  const cloudSnapshot = (list) => list.map(c => `${c.id}:${c.connected}:${c.updated_at}`).sort().join('|')
+
+  const handleCloudLogin = async (provider, connectionId = null) => {
+    // Mở tab NGAY trong sự kiện click — mở sau lệnh await thì trình duyệt chặn popup.
+    const win = window.open('', '_blank')
+    try {
+      const res = await startCloudLogin({ workflow_id: workflowId, provider, connection_id: connectionId })
+      if (!win) {
+        message.warning(t('inputJsonModal.cloudPopupBlocked'))
+        return
+      }
+      win.location.href = res.data.auth_url
+    } catch (e) {
+      if (win) win.close()
+      const code = e.response?.data?.detail?.code
+      message.error(code === 'not_configured'
+        ? t('inputJsonModal.cloudNotConfigured', { provider: t(`inputJsonModal.cloudProvider_${provider}`) })
+        : t('inputJsonModal.cloudStartError', { message: e.message }))
+      return
+    }
+    stopCloudPolling()
+    const snapshot = cloudSnapshot(cloudConnections)
+    setCloudWaiting({ provider })
+    const startedAt = Date.now()
+    cloudPollRef.current = setInterval(async () => {
+      if (Date.now() - startedAt > 5 * 60 * 1000) {
+        stopCloudPolling()
+        message.warning(t('inputJsonModal.cloudLoginTimeout'))
+        return
+      }
+      const list = await loadCloudConnections()
+      if (cloudSnapshot(list) !== snapshot) {
+        stopCloudPolling()
+        message.success(t('inputJsonModal.cloudLoginSuccess'))
+      }
+    }, 2500)
+  }
+
+  const handleDeleteCloud = async (id) => {
+    try {
+      await deleteCloudConnection(id)
+      message.success(t('inputJsonModal.cloudDeleteSuccess'))
+      loadCloudConnections()
+    } catch (e) {
+      message.error(t('inputJsonModal.deleteConnectionError', { message: e.message }))
+    }
+  }
 
   const loadDbConnections = async () => {
     if (!workflowId) return
@@ -570,7 +653,89 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
           />
         </div>
       )
+    },
+    {
+      key: 'cloud',
+      label: (
+        <Space>
+          <Cloud size={14} />
+          {t('inputJsonModal.cloudTab', { count: cloudConnections.length })}
+        </Space>
+      ),
+      children: (
+        <div>
+          <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)' }}>{t('inputJsonModal.cloudIntro')}</p>
+          <Space wrap style={{ marginBottom: 12 }}>
+            {['google', 'onedrive'].map(p => (
+              <Tooltip key={p} title={cloudProviders[p] ? '' : t('inputJsonModal.cloudNotConfigured', { provider: t(`inputJsonModal.cloudProvider_${p}`) })}>
+                <Button
+                  type={p === 'google' ? 'primary' : 'default'}
+                  icon={<LogIn size={14} />}
+                  disabled={!cloudProviders[p] || !!cloudWaiting}
+                  onClick={() => handleCloudLogin(p)}
+                >
+                  {t('inputJsonModal.cloudLoginBtn', { provider: t(`inputJsonModal.cloudProvider_${p}`) })}
+                </Button>
+              </Tooltip>
+            ))}
+          </Space>
+          {cloudWaiting && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              title={t('inputJsonModal.cloudWaiting', { provider: t(`inputJsonModal.cloudProvider_${cloudWaiting.provider}`) })}
+              action={<Button size="small" onClick={stopCloudPolling}>{t('inputJsonModal.cloudCancelWait')}</Button>}
+            />
+          )}
+          <Table
+            dataSource={cloudConnections}
+            rowKey="id"
+            size="small"
+            pagination={false}
+            loading={loadingCloud}
+            locale={{ emptyText: t('inputJsonModal.cloudNoConnections') }}
+            columns={[
+              { title: t('inputJsonModal.cloudColProvider'), dataIndex: 'provider', width: 130,
+                render: (p) => t(`inputJsonModal.cloudProvider_${p}`) },
+              { title: t('inputJsonModal.cloudColAccount'), dataIndex: 'account', render: (a, r) => a || r.label || '—' },
+              {
+                title: t('inputJsonModal.cloudColStatus'),
+                dataIndex: 'connected',
+                width: 170,
+                // Icon + chữ — không dùng màu làm tín hiệu duy nhất.
+                render: (connected) => (
+                  <Tag color={connected ? 'success' : 'warning'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {connected ? <CheckCircle2 size={12} aria-hidden="true" /> : <AlertTriangle size={12} aria-hidden="true" />}
+                    {connected ? t('inputJsonModal.cloudConnected') : t('inputJsonModal.cloudNeedsLogin')}
+                  </Tag>
+                ),
+              },
+              {
+                title: '',
+                key: 'action',
+                width: 90,
+                align: 'center',
+                render: (_, record) => (
+                  <Space size={4}>
+                    <Tooltip title={t('inputJsonModal.cloudReloginAria')}>
+                      <Button type="text" size="small" icon={<LogIn size={14} />}
+                        disabled={!cloudProviders[record.provider] || !!cloudWaiting}
+                        onClick={() => handleCloudLogin(record.provider, record.id)}
+                        aria-label={t('inputJsonModal.cloudReloginAria')} />
+                    </Tooltip>
+                    <Popconfirm title={t('inputJsonModal.cloudDeleteConfirm')} onConfirm={() => handleDeleteCloud(record.id)}>
+                      <Button type="text" size="small" danger icon={<Trash2 size={14} />} aria-label={t('inputJsonModal.cloudDeleteAria')} />
+                    </Popconfirm>
+                  </Space>
+                )
+              }
+            ]}
+          />
+        </div>
+      )
     }
+
   ]
 
   return (
