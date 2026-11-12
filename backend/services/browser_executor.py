@@ -4,6 +4,7 @@ Sử dụng mô hình đồng bộ (sync_playwright) để có thể "treo" trì
 """
 import base64
 import json
+import logging
 import os
 import re
 import sys
@@ -35,6 +36,50 @@ def _sleep_unless_stopped(seconds: float, stop_event) -> bool:
         if left <= 0:
             return False
         time.sleep(min(0.1, left))
+
+
+# Kích thước cửa sổ khi chạy ẩn (tắt debug) — bằng màn hình Full HD phổ biến, để bố cục
+# trang giống lúc người dùng dựng bước ở chế độ debug (cửa sổ phóng to).
+HEADLESS_SIZE = {"width": 1920, "height": 1080}
+
+
+def _hide_headless_user_agent(context, page) -> None:
+    """Đổi "HeadlessChrome" → "Chrome" trong User-Agent của MỌI tab.
+
+    Đã che cờ automation (navigator.webdriver, --enable-automation) nhưng User-Agent
+    headless vẫn tự khai "HeadlessChrome/…" — nhiều hệ thống/WAF thấy chữ này là trả
+    trang khác hoặc chặn đăng nhập, nên bật debug chạy được mà tắt debug thì lỗi.
+    Dùng CDP Network.setUserAgentOverride: đổi cả header HTTP lẫn navigator.userAgent.
+    """
+    try:
+        ua = page.evaluate("navigator.userAgent")
+    except Exception as e:
+        logging.getLogger("pyflow.browser").warning("Không đọc được User-Agent: %s", e)
+        return
+    if "HeadlessChrome" not in ua:
+        return
+    real_ua = ua.replace("HeadlessChrome", "Chrome")
+
+    def _apply(p):
+        try:
+            context.new_cdp_session(p).send("Network.setUserAgentOverride", {"userAgent": real_ua})
+        except Exception as e:  # tab đóng ngay/không hỗ trợ CDP — không được làm chết lượt chạy
+            logging.getLogger("pyflow.browser").warning("Không đổi được User-Agent cho tab: %s", e)
+
+    _apply(page)
+    context.on("page", _apply)   # tab/popup mở sau cũng phải đồng nhất
+
+
+def _save_failure_screenshot(page, output_dir, block_id, step_no, log, language) -> None:
+    """Chạy ẩn không nhìn thấy gì → chụp lại trang lúc bước lỗi để biết trang đang hiện gì."""
+    if not output_dir:
+        return
+    try:
+        name = f"loi_trinh_duyet_{block_id}_buoc_{step_no}.png"
+        page.screenshot(path=os.path.join(output_dir, name), full_page=True, timeout=10000)
+        log("warning", tr(language, "browser_failure_screenshot", name=name))
+    except Exception as e:
+        logging.getLogger("pyflow.browser").warning("Không chụp được màn hình lúc lỗi: %s", e)
 
 
 def _interpolate_once(text: str, ctx: dict) -> str:
@@ -947,8 +992,15 @@ def run_browser_block(
             # và đặt no_viewport=True để Chromium tự động lấp đầy kích thước màn hình máy tính.
             if not headless:
                 launch_args.append("--start-maximized")
+            else:
+                launch_args.append(f"--window-size={HEADLESS_SIZE['width']},{HEADLESS_SIZE['height']}")
 
-            context_viewport_args = {"no_viewport": True} if not headless else {"viewport": {"width": 1280, "height": 800}}
+            # Headless phải "giống" cửa sổ debug càng nhiều càng tốt — người dùng dựng bước
+            # ở chế độ debug (cửa sổ phóng to ~1920px) rồi tắt debug để chạy thật. Trước đây
+            # headless cố định 1280x800: trang kiểu Bravo thu menu thành icon ở bề ngang hẹp
+            # → "Chờ phần tử: text=Quản lý mua hàng" hết 20s dù bật debug thì chạy được.
+            context_viewport_args = ({"no_viewport": True} if not headless
+                                     else {"viewport": dict(HEADLESS_SIZE), "screen": dict(HEADLESS_SIZE)})
 
             try:
                 if browser_profile_dir:
@@ -990,6 +1042,8 @@ def run_browser_block(
             
             # Ẩn thuộc tính webdriver trong Javascript
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+            if headless:
+                _hide_headless_user_agent(context, page)
 
             # Ghi phiên bản thật đang chạy — để so máy dev vs máy khách khi có sự cố
             # (Chromium riêng và Chrome hệ thống cho ra UA khác nhau).
@@ -1078,6 +1132,8 @@ def run_browser_block(
                     log("warning", tr(language, "step_error_skipped", i=i))
                 else:
                     log("error", tr(language, "step_failed_stopping", i=i))
+                    if headless:
+                        _save_failure_screenshot(page, output_dir, block_id, i, log, language)
                     return {
                         "success": False,
                         "output_data": collected_data if collected_data else None,

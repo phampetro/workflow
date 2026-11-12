@@ -717,6 +717,7 @@ MESSAGES = {
         "en": "   ⚠ Step {i} failed — skipping (continue_on_error=true)",
     },
     "step_failed_stopping": {"vi": "   ✗ Dừng do bước {i} thất bại", "en": "   ✗ Stopping because step {i} failed"},
+    "browser_failure_screenshot": {"vi": "   📷 Đã chụp màn hình lúc lỗi: output/{name} (mở xem trang đang hiện gì)", "en": "   📷 Saved a screenshot at failure: output/{name} (open it to see what the page showed)"},
     "browser_block_done": {
         "vi": "✓ Browser Block hoàn thành — {count} dữ liệu thu thập",
         "en": "✓ Browser Block completed — {count} data item(s) collected",
