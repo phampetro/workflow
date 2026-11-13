@@ -43,6 +43,22 @@ def _set_update_error(code: str | None, detail: str = "") -> None:
     _update_error = {"code": code, "detail": detail} if code else None
 
 
+# Thư mục gốc repo (chứa .git) — chỉ dùng ở bản dev (không frozen).
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _git_cmd(*args: str) -> list[str]:
+    """Lệnh git cho bản dev, kèm `-c safe.directory=<repo>`.
+
+    Khi thư mục repo do một tài khoản Windows khác sở hữu (cài lại Windows, copy
+    ổ cứng sang máy mới → SID cũ không còn), git từ chối mọi lệnh với lỗi
+    "detected dubious ownership" → /info trả Version 1.0 / Unknown, /check-update
+    báo không kiểm tra được. Cùng cách xử lý với `tools/build_release.py`; chỉ
+    tin đúng thư mục repo này, không sửa cấu hình git global của người dùng.
+    """
+    return ["git", "-c", f"safe.directory={_REPO_ROOT.replace(os.sep, '/')}", *args]
+
+
 # ── Hardware & Resource Monitoring ─────────────────────────────
 try:
     import psutil
@@ -216,7 +232,7 @@ def get_system_info():
 
     try:
         # Get total commits
-        count_out = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
+        count_out = subprocess.check_output(_git_cmd("rev-list", "--count", "HEAD"), text=True, cwd=_REPO_ROOT).strip()
         count = int(count_out)
         
         # Calculate version
@@ -229,7 +245,7 @@ def get_system_info():
 
         # Get last commit date
         date_out = subprocess.check_output(
-            ["git", "log", "-1", "--format=%cd", "--date=format:%d/%m/%Y %H:%M:%S"], text=True
+            _git_cmd("log", "-1", "--format=%cd", "--date=format:%d/%m/%Y %H:%M:%S"), text=True, cwd=_REPO_ROOT
         ).strip()
 
         return {
@@ -281,8 +297,8 @@ def check_update():
 
     try:
         # Fetch remote updates
-        subprocess.run(["git", "fetch", "origin", "main"], check=True, timeout=10)
-        status_out = subprocess.check_output(["git", "status", "-uno"], text=True)
+        subprocess.run(_git_cmd("fetch", "origin", "main"), check=True, timeout=10, cwd=_REPO_ROOT)
+        status_out = subprocess.check_output(_git_cmd("status", "-uno"), text=True, cwd=_REPO_ROOT)
         if "Your branch is behind" in status_out:
             return {"hasUpdate": True, "code": "update_available", "message": "Có bản cập nhật mới"}
         return {"hasUpdate": False, "code": "up_to_date", "message": "Bạn đang dùng phiên bản mới nhất"}
