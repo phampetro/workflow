@@ -454,5 +454,36 @@ End Function
     else:
         print("Khong tim thay GITHUB_TOKEN trong file .env, bo qua upload.")
 
+def _ensure_backend_venv():
+    """Luôn chạy build bằng Python của backend\\.venv, dù gọi bằng lệnh nào.
+
+    Gõ `python tools\\build_release.py` trong PowerShell là chạy bằng Python HỆ THỐNG —
+    thiếu cryptography nên build xong ~10 phút mới chết ở bước ký update.zip
+    ("No module named 'cryptography'"). PyInstaller/pip trong script vốn đã dùng venv,
+    chỉ bước ký là dùng nhầm interpreter đang chạy.
+    """
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    venv_py = os.path.join(root_dir, "backend", ".venv", "Scripts", "python.exe")
+    if not os.path.exists(venv_py):
+        sys.exit(f"[LOI] Khong tim thay {venv_py} — chay setup.bat truoc.")
+    if os.path.normcase(os.path.abspath(sys.executable)) != os.path.normcase(venv_py):
+        print(f"Chay lai bang Python cua backend\\.venv: {venv_py}")
+        sys.exit(subprocess.call([venv_py, os.path.abspath(__file__), *sys.argv[1:]]))
+
+
+def _preflight_signing(root_dir):
+    """Kiểm ký được TRƯỚC khi build — không đợi build xong mới phát hiện thiếu."""
+    priv_file = os.path.join(root_dir, "secrets", "license_private.txt")
+    if not os.path.exists(priv_file):
+        sys.exit("[LOI] Khong tim thay secrets/license_private.txt — khong ky duoc ban cap nhat. Dung lai.")
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: F401
+    except ImportError:
+        sys.exit("[LOI] backend\\.venv thieu goi cryptography — chay: "
+                 "backend\\.venv\\Scripts\\python.exe -m pip install -r backend\\requirements.txt")
+
+
 if __name__ == "__main__":
+    _ensure_backend_venv()
+    _preflight_signing(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     main()
