@@ -1104,6 +1104,8 @@
     "reviewDescSuffix": "là dự đoán từ",
     "reviewDescEnd": "— bạn có thể bớt/thêm trước khi cài.",
     "allInstalledAlert": "Tất cả thư viện cần thiết đã được cài đủ.",
+    "venvBrokenAlert": "Môi trường Python của project chưa có hoặc đã hỏng (Python gốc bị gỡ, đổi user Windows hoặc chép sang máy khác). Môi trường sẽ được tạo lại trước khi cài; các thư viện cũ cần cài lại.",
+    "rebuildVenvBtn": "Tạo lại môi trường",
     "noPackagesFound": "Không phát hiện thư viện nào cần cài",
     "needToInstallLabel": "Cần cài ({{count}}):",
     "customAddedReason": "Bạn tự thêm",

@@ -1104,6 +1104,8 @@
     "reviewDescSuffix": "blocks are predicted from",
     "reviewDescEnd": "— you can remove/add before installing.",
     "allInstalledAlert": "All required libraries are already installed.",
+    "venvBrokenAlert": "This project's Python environment is missing or broken (base Python removed, Windows user changed, or copied from another machine). It will be rebuilt before installing; previously installed libraries must be reinstalled.",
+    "rebuildVenvBtn": "Rebuild environment",
     "noPackagesFound": "No libraries detected that need installing",
     "needToInstallLabel": "To install ({{count}}):",
     "customAddedReason": "You added this manually",

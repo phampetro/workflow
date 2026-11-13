@@ -57,3 +57,52 @@ def test_importable_in_venv_with_real_interpreter():
     import sys
     res = ps._importable_in_venv(sys.executable, ["json", "khong_ton_tai_xyz"])
     assert res == {"json": True, "khong_ton_tai_xyz": False}
+
+
+def _call_auto_install(monkeypatch, venv_ok, packages):
+    """Gọi thẳng endpoint auto-install với session giả, không chạy thread cài thật."""
+    import asyncio
+    import threading
+    from fastapi import HTTPException
+    from routers import projects
+    from services import venv_manager
+
+    class _Session:
+        async def get(self, model, pid):
+            return object()
+
+    started = []
+    real_thread = threading.Thread
+
+    def _thread(*a, **kw):
+        # Chỉ chặn thread cài gói; thread khác (asyncio.to_thread) vẫn chạy thật.
+        if kw.get("target") is projects._install_worker:
+            started.append(kw["args"])
+            return real_thread(target=lambda: None)
+        return real_thread(*a, **kw)
+
+    monkeypatch.setattr(venv_manager, "venv_exists", lambda pid: venv_ok)
+    monkeypatch.setattr(threading, "Thread", _thread)
+    projects._pkg_jobs.pop("p1", None)
+    try:
+        return asyncio.run(projects.auto_install_packages("p1", {"packages": packages}, _Session())), started
+    except HTTPException as e:
+        return e.status_code, started
+    finally:
+        projects._pkg_jobs.pop("p1", None)
+
+
+def test_auto_install_empty_list_rebuilds_broken_venv(monkeypatch):
+    """Project không cần thư viện nào mà venv hỏng: phải cho tạo lại, không trả 400.
+
+    Bug cũ: Kiểm tra môi trường bảo bấm "Tự động cài thư viện" để tạo lại, nhưng quét
+    ra 0 gói → nút bị khoá, endpoint từ chối danh sách rỗng → venv hỏng vĩnh viễn.
+    """
+    res, started = _call_auto_install(monkeypatch, venv_ok=False, packages=[])
+    assert res == {"status": "started", "total": 0}
+    assert started == [("p1", [])]
+
+
+def test_auto_install_empty_list_rejected_when_venv_healthy(monkeypatch):
+    res, started = _call_auto_install(monkeypatch, venv_ok=True, packages=[])
+    assert res == 400 and started == []

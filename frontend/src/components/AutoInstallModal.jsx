@@ -15,6 +15,8 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   const [phase, setPhase] = useState('scan')   // scan | review | installing | done
   const [items, setItems] = useState([])       // [{package, reasons:[{kind, block, workflow}], installed}]
   const [workflowCount, setWorkflowCount] = useState(0)
+  // venv chưa có / hỏng → luôn cho bấm cài (kể cả 0 gói) để dựng lại môi trường
+  const [venvBroken, setVenvBroken] = useState(false)
   const [selected, setSelected] = useState([]) // [package string]
   const [custom, setCustom] = useState('')
   const [log, setLog] = useState([])
@@ -26,12 +28,13 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   // Mở modal → quét
   useEffect(() => {
     if (!open) return
-    setPhase('scan'); setLog([]); setError(null); setProgress({ done: 0, total: 0 }); setCustom('')
+    setPhase('scan'); setVenvBroken(false); setLog([]); setError(null); setProgress({ done: 0, total: 0 }); setCustom('')
     scanPackages(projectId)
       .then(res => {
         const its = Array.isArray(res.data?.packages) ? res.data.packages : []
         setItems(its)
         setWorkflowCount(res.data?.workflow_count ?? 0)
+        setVenvBroken(res.data?.venv_ok === false)
         // Mặc định chỉ chọn cài những gói CÒN THIẾU (chưa có trong venv)
         setSelected(its.filter(i => !i.installed).map(i => i.package))
         setPhase('review')
@@ -59,7 +62,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   }
 
   const startInstall = async () => {
-    if (selected.length === 0) { toast.error(t('autoInstall.noPackagesToInstall')); return }
+    if (selected.length === 0 && !venvBroken) { toast.error(t('autoInstall.noPackagesToInstall')); return }
     setPhase('installing'); setLog([]); setError(null); setProgress({ done: 0, total: selected.length })
     try {
       await autoInstallPackages(projectId, selected)
@@ -84,7 +87,10 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
   }
 
   const installing = phase === 'installing'
-  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
+  const pct = progress.total
+    ? Math.round((progress.done / progress.total) * 100)
+    : (phase === 'done' && !error ? 100 : 0)   // chỉ tạo lại venv (0 gói)
+  const canInstall = selected.length > 0 || venvBroken
 
   return (
     <Modal
@@ -99,8 +105,8 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
         phase === 'review' ? (
           <>
             <Button onClick={onClose}>{t('common.cancel')}</Button>
-            <Button type="primary" icon={<Play size={15} />} onClick={startInstall} disabled={selected.length === 0}>
-              {t('autoInstall.installBtn', { count: selected.length })}
+            <Button type="primary" icon={<Play size={15} />} onClick={startInstall} disabled={!canInstall}>
+              {selected.length === 0 ? t('autoInstall.rebuildVenvBtn') : t('autoInstall.installBtn', { count: selected.length })}
             </Button>
           </>
         ) : phase === 'done' ? (
@@ -123,8 +129,12 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
               {t('autoInstall.reviewDescPrefix')} <b>Python</b> {t('autoInstall.reviewDescSuffix')} <code>import</code> {t('autoInstall.reviewDescEnd')}
             </p>
 
+            {venvBroken && (
+              <Alert type="warning" showIcon title={t('autoInstall.venvBrokenAlert')} style={{ marginBottom: 12 }} />
+            )}
+
             {selected.length === 0 ? (
-              installedItems.length > 0
+              venvBroken ? null : installedItems.length > 0
                 ? <Alert type="success" showIcon title={t('autoInstall.allInstalledAlert')} style={{ marginBottom: 12 }} />
                 : <Empty description={t('autoInstall.noPackagesFound')} />
             ) : (

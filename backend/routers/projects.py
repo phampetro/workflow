@@ -446,8 +446,13 @@ async def scan_project_packages(project_id: str, session: AsyncSession = Depends
         # vài giây → chạy ngoài event loop, không treo mọi request khác của app.
         return mark_installed(project_id, scan_packages(graphs, names))
 
+    from services.venv_manager import venv_exists
     items = await asyncio.to_thread(_scan)
-    return {"packages": items, "workflow_count": len(wfs),
+    # venv_ok=False (chưa có / Python gốc đã mất): FE phải cho bấm "Tạo lại môi
+    # trường" kể cả khi không thiếu gói nào — nếu không, project không cần thư viện
+    # ngoài sẽ kẹt mãi ở trạng thái hỏng mà Kiểm tra môi trường báo.
+    venv_ok = await asyncio.to_thread(venv_exists, project_id)
+    return {"packages": items, "workflow_count": len(wfs), "venv_ok": venv_ok,
             "missing_count": sum(1 for it in items if not it["installed"])}
 
 
@@ -461,7 +466,9 @@ async def auto_install_packages(project_id: str, body: dict, session: AsyncSessi
     if j and j["status"] == "running":
         return {"status": "running"}
     packages = [str(p).strip() for p in (body.get("packages") or []) if str(p).strip()]
-    if not packages:
+    # Danh sách rỗng chỉ hợp lệ khi venv cần tạo lại: worker dựng lại venv rồi xong.
+    from services.venv_manager import venv_exists
+    if not packages and await asyncio.to_thread(venv_exists, project_id):
         raise HTTPException(400, "Danh sách package trống")
     import threading
     _pkg_jobs[project_id] = {"status": "running", "log": [], "current": "", "total": len(packages), "done": 0, "error": None}

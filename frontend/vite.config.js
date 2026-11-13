@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { execSync } from 'child_process'
+import { fileURLToPath } from 'url'
 
 // Lấy thời điểm commit git gần nhất của repo (không riêng thư mục frontend) làm
 // "Cập nhật" hiển thị ở modal Thông tin - tự động phản ánh lần sửa code gần nhất,
@@ -9,7 +10,11 @@ import { execSync } from 'child_process'
 // dev server khởi động lại / khi build lại (không sống trong lúc dev server đang chạy).
 function getLastUpdatedAt() {
   try {
-    const iso = execSync('git log -1 --format=%cI', { cwd: process.cwd() }).toString().trim()
+    // -c safe.directory: thư mục repo thuộc user Windows cũ (SID khác) thì git chặn
+    // mọi lệnh ("dubious ownership") → ngày cập nhật thành Unknown. Cùng cách với
+    // backend/routers/system.py và tools/build_release.py; không sửa git config global.
+    const repoRoot = fileURLToPath(new URL('..', import.meta.url)).replace(/\\/g, '/').replace(/\/$/, '')
+    const iso = execSync(`git -c "safe.directory=${repoRoot}" log -1 --format=%cI`, { cwd: process.cwd() }).toString().trim()
     const d = new Date(iso)
     const pad = (n) => String(n).padStart(2, '0')
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
