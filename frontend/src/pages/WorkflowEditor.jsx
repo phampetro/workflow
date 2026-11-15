@@ -103,6 +103,8 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   // ETag: server updated_at của lần load/save gần nhất - gửi kèm để BE phát hiện
   // "người khác đã lưu trong lúc bạn đang sửa" và trả 409.
   const expectedUpdatedAtRef = useRef(null)
+  // JSON graph của lần lưu/tải gần nhất — autosave so với nó để bỏ lệnh ghi thừa
+  const lastSavedGraphRef = useRef(null)
   const conflictDialogOpenRef = useRef(false)
 
   const proj  = project  || { name: 'Project', color: '#0d9488' }
@@ -153,6 +155,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
           })
           setNodes(uniqueNodes)
           setEdges(uniqueEdges)
+          lastSavedGraphRef.current = serializeGraph(uniqueNodes, uniqueEdges)
           graphLoadedRef.current = true
           // fitView do effect [nodesInitialized] bên dưới lo — chạy đúng khi node đo xong
         } catch { setNodesFromDefault() }
@@ -361,34 +364,22 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const saveGraph = useCallback(async (currentNodes, currentEdges, { force = false } = {}) => {
     if (!wfData?.id) return
     setSaveStatus('saving')
-    const graph = {
-      nodes: currentNodes.map(n => {
-        const cleanData = { ...n.data }
-        delete cleanData.onDelete
-        delete cleanData.onEdit
-        delete cleanData.onDuplicate
-        // Trạng thái chạy chỉ tồn tại trong phiên xem hiện tại — KHÔNG persist, nếu không
-        // autosave lúc đang chạy sẽ đóng băng 'running' vào DB (khối nháy xanh mãi mãi).
-        delete cleanData.runStatus
-        return {
-          id: n.id,
-          type: n.type,
-          position: n.position,
-          data: cleanData,
-          // Ghi chú kéo giãn được, mà width/height nằm NGOÀI data → phải lưu riêng ở
-          // đây, nếu không tải lại trang là kích thước về mặc định.
-          ...(n.type === 'note' ? { width: n.width ?? n.measured?.width, height: n.height ?? n.measured?.height } : {}),
-        }
-      }),
-      edges: currentEdges,
+    const graphJson = serializeGraph(currentNodes, currentEdges)
+    // Không đổi gì so với lần lưu/tải gần nhất → không gửi. Trước đây vừa mở workflow
+    // là có 1 lệnh PUT (React Flow đo kích thước node → kích hoạt autosave): ghi thừa,
+    // đổi updated_at, dễ gây 409 giữa 2 tab.
+    if (!force && graphJson === lastSavedGraphRef.current) {
+      setSaveStatus('saved')
+      return { ok: true }
     }
-    const payload = { graph_json: JSON.stringify(graph) }
+    const payload = { graph_json: graphJson }
     if (!force && expectedUpdatedAtRef.current) {
       payload.expected_updated_at = expectedUpdatedAtRef.current
     }
     try {
       const res = await updateWorkflow(wfData.id, payload)
       expectedUpdatedAtRef.current = res.data?.updated_at || expectedUpdatedAtRef.current
+      lastSavedGraphRef.current = graphJson
       setSaveStatus('saved')
       return { ok: true }
     } catch (err) {
@@ -1161,6 +1152,33 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       `}</style>
     </div>
   )
+}
+
+// Dạng lưu xuống DB của graph (bỏ callback + trạng thái chạy tạm). Dùng chung cho
+// autosave và mốc "đã lưu" để biết graph có thật sự thay đổi không.
+function serializeGraph(currentNodes, currentEdges) {
+  const graph = {
+    nodes: currentNodes.map(n => {
+      const cleanData = { ...n.data }
+      delete cleanData.onDelete
+      delete cleanData.onEdit
+      delete cleanData.onDuplicate
+      // Trạng thái chạy chỉ tồn tại trong phiên xem hiện tại — KHÔNG persist, nếu không
+      // autosave lúc đang chạy sẽ đóng băng 'running' vào DB (khối nháy xanh mãi mãi).
+      delete cleanData.runStatus
+      return {
+        id: n.id,
+        type: n.type,
+        position: n.position,
+        data: cleanData,
+        // Ghi chú kéo giãn được, mà width/height nằm NGOÀI data → phải lưu riêng ở
+        // đây, nếu không tải lại trang là kích thước về mặc định.
+        ...(n.type === 'note' ? { width: n.width ?? n.measured?.width, height: n.height ?? n.measured?.height } : {}),
+      }
+    }),
+    edges: currentEdges,
+  }
+  return JSON.stringify(graph)
 }
 
 export default function WorkflowEditor(props) {
