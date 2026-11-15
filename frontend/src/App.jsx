@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react'
 import { PanelRightClose } from 'lucide-react'
 import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
-import ProjectDetail from './pages/ProjectDetail'
-import WorkflowEditor from './pages/WorkflowEditor'
+// Tải theo nhu cầu: WorkflowEditor kéo theo React Flow + Monaco + BlockEditorModal
+// (phần lớn của 2MB JS). Trang chủ chỉ cần Dashboard nên không bắt người dùng
+// tải cả trình soạn thảo ngay từ đầu.
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const WorkflowEditor = lazy(() => import('./pages/WorkflowEditor'))
 import UserPickerModal from './components/UserPickerModal'
 import AiSettingsModal from './components/AiSettingsModal'
 import AboutModal from './components/AboutModal'
@@ -455,6 +458,7 @@ export default function App() {
 
             {/* Main Content */}
             <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin size="large" /></div>}>
               {view === VIEWS.EDITOR ? (
                 <WorkflowEditor
                   workflow={selectedWorkflow}
@@ -510,6 +514,7 @@ export default function App() {
                   )}
                 </>
               )}
+              </Suspense>
             </main>
           </>
         )}
