@@ -19,6 +19,15 @@ _VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 # hình: cần chờ lâu hơn ở chỗ nào thì thêm bước "Dừng chờ" ngay chỗ đó.
 STEP_GAP_SEC = 1.0
 
+# Bước KHÔNG làm trang thay đổi (chỉ đọc / chỉ chờ): sau chúng không cần nhịp nghỉ —
+# trang không có gì mới để "ổn định". Trước đây nghỉ 1s sau MỌI bước nên khối 9 bước
+# chậm thêm 8s dù phần lớn là lấy dữ liệu. Sau bước thao tác (click, điền, mở URL…)
+# vẫn nghỉ đủ STEP_GAP_SEC như cũ.
+PASSIVE_ACTIONS = frozenset({
+    "get_text", "get_attribute", "get_all_text", "get_url", "screenshot",
+    "wait", "wait_for_selector", "wait_for_url", "wait_for_load",
+})
+
 
 def _sleep_unless_stopped(seconds: float, stop_event) -> bool:
     """Ngủ `seconds` giây; trả True nếu bị Dừng giữa chừng.
@@ -1103,7 +1112,7 @@ def run_browser_block(
 
         step_count = len(steps)
         log("info", tr(language, "browser_step_gap", seconds=f"{STEP_GAP_SEC:g}"))
-        ran_step = False
+        prev_action = None                   # bước đã chạy ngay trước (None = chưa có)
         for i, step in enumerate(steps, 1):
             if stop_event and stop_event.is_set():
                 log("warning", tr(language, "browser_stopped_by_user"))
@@ -1120,7 +1129,9 @@ def run_browser_block(
             # Nghỉ giữa 2 bước liên tiếp: máy chạy nhanh hơn trang web (render lại, request
             # chạy nền, mở khóa ô nhập…) nên bước sau hay chạm vào thứ chưa sẵn sàng. Đợi theo
             # stop_event để bấm Dừng vẫn có tác dụng ngay, không phải chờ hết nhịp nghỉ.
-            if ran_step:
+            # Bước "Dừng chờ" tự nó đã là khoảng nghỉ → không cộng thêm.
+            if (prev_action is not None and prev_action not in PASSIVE_ACTIONS
+                    and step.get("action") != "wait"):
                 if _sleep_unless_stopped(STEP_GAP_SEC, stop_event):
                     log("warning", tr(language, "browser_stopped_by_user"))
                     return {
@@ -1129,7 +1140,7 @@ def run_browser_block(
                         "error": "stopped",
                         "stopped": True,
                     }
-            ran_step = True
+            prev_action = step.get("action")
 
             action = step.get("action", "")
             label = tr_action(action, language, ACTION_LABELS.get(action, action))
