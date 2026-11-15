@@ -5,7 +5,10 @@ from sqlalchemy import create_engine, event, text
 from models import Base
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "pyflow.db")
+# PYFLOW_DATA_DIR: chỉ dùng cho test đầu-cuối (chạy backend trên dữ liệu tạm). Không
+# đặt thì như cũ: backend/data (bản đóng gói: _internal/data). Phải khớp venv_manager.
+DATA_DIR = os.environ.get("PYFLOW_DATA_DIR") or os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DATA_DIR, "pyflow.db")
 
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 ASYNC_DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"

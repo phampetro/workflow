@@ -12,7 +12,8 @@ import asyncio
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.parent  # thư mục gốc workflow/
-DATA_DIR = BASE_DIR / "data"
+# PYFLOW_DATA_DIR: chỉ dùng cho test đầu-cuối — xem database.py (phải khớp nhau).
+DATA_DIR = Path(os.environ.get("PYFLOW_DATA_DIR") or (BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 

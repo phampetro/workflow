@@ -22,8 +22,9 @@ Claude Code tự đọc file này mỗi session. Quy tắc riêng từng phần 
 | Lint Python | `backend\.venv\Scripts\python.exe -m ruff check . ../tools` |
 | Lint JS | `npx oxlint src` (trong `frontend/`) |
 | Build FE | `npm run build` |
+| Test đầu-cuối giao diện | `npm run build` rồi `backend\.venv\Scripts\python.exe -m pytest -m e2e tests/e2e` (trong `backend/`, cần cổng 8000 trống) |
 
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy đủ 4 việc trên mỗi lần push lên `main`, trên Windows runner. Push xong xem kết quả CI.
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy đủ các việc trên mỗi lần push lên `main`, trên Windows runner. Push xong xem kết quả CI.
 - [`backend/tests/test_conventions.py`](backend/tests/test_conventions.py) biến các quy tắc dễ quên thành test (ô tên biến ↔ `NON_INTERPOLATED_KEYS`, cấm `sqlite3.connect` trần, vi/en cùng bộ key, mọi `t('a.b')` có key…). **Test đỏ = vừa vi phạm quy tắc — sửa code, đừng nới test.**
 - Hook [`.claude/hooks/check-locale.js`](.claude/hooks/check-locale.js) tự kiểm JSON mỗi khi sửa file locale.
 - Sửa UI → preview + verify qua `mcp__Claude_Browser__preview_start` ([.claude/launch.json](.claude/launch.json)), đọc console, không có warning antd/React mới.
