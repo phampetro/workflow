@@ -75,6 +75,37 @@ def _tag_release(root_dir, version):
         print(f"!! Chua day duoc tag {tag} len origin — chay tay: git push origin {tag}")
 
 
+UV_VERSION = "0.13.5"          # khớp requirements-dev.txt
+BUNDLED_PYTHON = "3.13"        # Python cho venv của project trên máy khách
+
+
+def prepare_runtime(release_dir, python_exe, backend_src):
+    """Đóng gói runtime/python (CPython độc lập) + runtime/uv.exe vào bản phát hành.
+
+    Venv của project trên máy khách dựng từ Python NÀY thay vì Python cài sẵn trên
+    máy (gỡ Python / đổi user Windows / stub WindowsApps từng làm venv hỏng). Thư mục
+    tên CỐ ĐỊNH "python": venv ghi đường dẫn vào pyvenv.cfg, đổi tên = mọi venv hỏng.
+    """
+    uv = os.path.join(backend_src, ".venv", "Scripts", "uv.exe")
+    subprocess.run([python_exe, "-m", "pip", "install", f"uv=={UV_VERSION}"], cwd=backend_src, check=True)
+    cache = os.path.join(os.path.dirname(release_dir), "_python_dl")
+    # --no-bin: không tạo python3.x.exe trong ~/.local/bin của máy build (tác dụng phụ)
+    subprocess.run([uv, "python", "install", BUNDLED_PYTHON, "--install-dir", cache, "--no-bin"], check=True)
+    found = sorted(d for d in os.listdir(cache)
+                   if d.startswith(f"cpython-{BUNDLED_PYTHON}.") and "windows-x86_64" in d)
+    if not found:
+        sys.exit(f"[LOI] uv khong tai duoc Python {BUNDLED_PYTHON} vao {cache}")
+    runtime = os.path.join(release_dir, "runtime")
+    shutil.copytree(os.path.join(cache, found[-1]), os.path.join(runtime, "python"))
+    shutil.copy2(uv, os.path.join(runtime, "uv.exe"))
+    py = os.path.join(runtime, "python", "python.exe")
+    out = subprocess.run([py, "-c", "import sys, venv, ensurepip, ssl, sqlite3; print(sys.version.split()[0])"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit(f"[LOI] Python dong goi khong chay duoc: {out.stderr}")
+    print(f"Runtime: Python {out.stdout.strip()} ({found[-1]}) + uv {UV_VERSION}")
+
+
 MANIFEST_NAME = "release_files.txt"
 
 
@@ -131,6 +162,10 @@ def main():
 
     print("Tao file release_version.json...")
     version_file = os.path.join(backend_src, "release_version.json")
+    # --no-upload (build thử): trả lại release_version.json như cũ ở cuối, không thì
+    # bản thử chiếm mất số version của lần phát hành thật kế tiếp.
+    with open(version_file, "r", encoding="utf-8") as f:
+        original_version_json = f.read()
     with open(version_file, "w") as f:
         json.dump({"version": version, "updatedAt": date_out}, f)
         
@@ -188,6 +223,9 @@ def main():
     frontend_dest = os.path.join(release_dir, "frontend")
     os.makedirs(frontend_dest)
     shutil.copytree(os.path.join(frontend_dir, "dist"), os.path.join(frontend_dest, "dist"))
+
+    print("Dong goi runtime Python + uv...")
+    prepare_runtime(release_dir, python_exe, backend_src)
 
     # Icon nam TRONG backend/ (an voi nguoi dung) — start.vbs cung chuyen vao day
     # (xem bên dưới), chỉ để lộ 1 shortcut .lnk có icon riêng ở thư mục gốc release
@@ -412,6 +450,12 @@ End Function
                     token = line.split("=", 1)[1].strip()
                     break
                     
+    if _flag("--no-upload"):
+        with open(version_file, "w", encoding="utf-8") as f:
+            f.write(original_version_json)
+        print("--no-upload: BUILD THU — khong upload, khong gan tag, release_version.json giu nguyen.")
+        token = None
+
     if token:
         print("Dang upload len GitHub Releases...")
         try:
@@ -492,8 +536,12 @@ End Function
             print(f"Loi khi upload GitHub: {e.code} - {err_msg}")
         except Exception as e:
             print(f"Loi khi upload GitHub: {e}")
-    else:
+    elif not _flag("--no-upload"):
         print("Khong tim thay GITHUB_TOKEN trong file .env, bo qua upload.")
+
+def _flag(name):
+    return name in sys.argv[1:]
+
 
 def _bump_arg():
     """`--bump patch|minor|major` (mặc định patch). VD: python tools\build_release.py --bump minor"""

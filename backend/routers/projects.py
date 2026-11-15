@@ -341,7 +341,7 @@ _pkg_jobs = {}  # project_id -> {status, log, current, total, done, error}
 def _install_worker(project_id: str, packages: list):
     import subprocess, time
     from services.executor_blocks import create_venv_sync
-    from services.venv_manager import venv_exists, get_pip_cmd
+    from services.venv_manager import venv_exists, install_attempts
     from database import connect_sqlite
     j = _pkg_jobs[project_id]
     try:
@@ -362,36 +362,31 @@ def _install_worker(project_id: str, packages: list):
                     conn.commit()
             except Exception as e:
                 logger.warning("Không cập nhật được venv_ready cho project %s: %s", project_id, e)
-        pip = get_pip_cmd(project_id)
-        for i, pkg in enumerate(packages):
-            j["current"] = pkg
-            j["log"].append(f"📦 Đang cài {pkg}...")
-            proc = subprocess.Popen(
-                pip + ["install", pkg],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", bufsize=1,
-            )
+        import threading as _th_pip
 
-            # Watchdog: pip KHÔNG có timeout thì mạng công ty chặn PyPI giữa chừng
+        def _run_one(cmd, env):
+            """Chạy 1 lệnh cài, stream log; trả (bị_huỷ_vì_quá_giờ, returncode)."""
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", env=env,
+            )
+            # Watchdog: pip/uv KHÔNG có timeout thì mạng công ty chặn PyPI giữa chừng
             # (stall ở "Downloading…" mà không đóng stdout) sẽ treo thread này vĩnh
             # viễn, j["status"] mãi là "running" → auto_install_packages thấy
             # "running" nên KHÔNG BAO GIỜ cho cài lại cho tới khi restart backend,
             # còn người dùng thì nhìn tiến độ đứng im không có thông báo lỗi nào.
-            # ensure_packages() và venv_manager.install_package() đều đã có timeout,
-            # chỉ đường này bị bỏ sót.
-            import threading as _th_pip
-            _killed = {"v": False}
+            killed = {"v": False}
 
-            def _kill_if_stuck(proc=proc, _killed=_killed):   # gắn biến của đúng vòng lặp này
-                _killed["v"] = True
+            def _kill_if_stuck():
+                killed["v"] = True
                 try:
                     proc.kill()
                 except Exception:
                     pass
 
-            _watchdog = _th_pip.Timer(PIP_INSTALL_TIMEOUT_SEC, _kill_if_stuck)
-            _watchdog.daemon = True
-            _watchdog.start()
+            watchdog = _th_pip.Timer(PIP_INSTALL_TIMEOUT_SEC, _kill_if_stuck)
+            watchdog.daemon = True
+            watchdog.start()
             try:
                 for line in proc.stdout:
                     line = line.rstrip()
@@ -399,16 +394,28 @@ def _install_worker(project_id: str, packages: list):
                         j["log"].append("   " + line)
                 proc.wait()
             finally:
-                _watchdog.cancel()
+                watchdog.cancel()
                 try:
                     proc.stdout.close()
                 except Exception:
                     pass
+            return killed["v"], proc.returncode
 
-            if _killed["v"]:
+        attempts = install_attempts(project_id)
+        for i, pkg in enumerate(packages):
+            j["current"] = pkg
+            j["log"].append(f"📦 Đang cài {pkg}...")
+            for k, (tool, cmd, env) in enumerate(attempts):
+                killed, code = _run_one(cmd + [pkg], env)
+                if code == 0 or killed or k + 1 == len(attempts):
+                    break
+                # uv lỗi → thử lại bằng pip (pip đọc được proxy/index trong pip.ini)
+                j["log"].append(f"⚠ {tool} cài không được {pkg} — thử lại bằng pip...")
+
+            if killed:
                 j["log"].append(f"❌ Quá {PIP_INSTALL_TIMEOUT_SEC}s chưa cài xong {pkg} — đã huỷ (kiểm tra mạng/proxy tới PyPI)")
                 j["error"] = f"Cài {pkg} quá thời gian cho phép"
-            elif proc.returncode != 0:
+            elif code != 0:
                 j["log"].append(f"❌ Lỗi cài {pkg}")
                 j["error"] = f"Một số gói cài lỗi (vd: {pkg})"
             else:

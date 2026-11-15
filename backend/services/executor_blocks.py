@@ -242,29 +242,16 @@ def _set_workflow_listener_flag(workflow_id: str, on: bool):
 
 
 def create_venv_sync(project_id: str) -> dict:
-    proj_dir = get_project_dir(project_id)
-    proj_dir.mkdir(parents=True, exist_ok=True)
-    venv_path = get_venv_dir(project_id)
-    venv_path.mkdir(parents=True, exist_ok=True)
-    # KHÔNG dùng sys.executable: ở bản đóng gói nó là pyflow-backend.exe, gọi
-    # "pyflow-backend.exe -m venv ..." không tạo được venv mà khởi động thêm một
-    # backend nữa. get_system_python() chọn đúng python.exe theo từng chế độ.
-    result = subprocess.run(
-        venv_manager.venv_create_cmd(venv_manager.get_system_python(), project_id),
-        capture_output=True, text=True, timeout=120
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Không tạo được venv: {result.stderr}")
-    return {"path": str(venv_path), "python": get_python_path(project_id)}
+    get_project_dir(project_id).mkdir(parents=True, exist_ok=True)
+    # Một nguồn duy nhất: venv_manager.create_venv_blocking (uv hoặc python -m venv,
+    # Python đóng gói sẵn ở bản phát hành).
+    return venv_manager.create_venv_blocking(project_id)
 
 
 def install_pkg_sync(project_id: str, package: str) -> dict:
     if not venv_exists(project_id):
         create_venv_sync(project_id)
-    pip = get_pip_cmd(project_id)
-    result = subprocess.run(pip + ["install", package, "--quiet"], capture_output=True, text=True, timeout=300)
-    if result.returncode != 0:
-        raise RuntimeError(f"Cài thất bại: {result.stderr[:500]}")
+    venv_manager.install_blocking(project_id, [package])
     return {"package": package, "status": "installed"}
 
 
@@ -293,51 +280,56 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
             log_fn(bid, "info", tr(language, "ensure_packages_installing", label=label, packages=', '.join(missing)))
         
         import time
-        res = subprocess.Popen(
-            pip + ["install"] + missing,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-            text=True,
-            encoding="utf-8",
-            errors="replace"
-        )
-        
-        # Stream output với kiểm tra stop và timeout
-        last_check = time.time()
-        while True:
-            # Check stop event
-            if stop_event and stop_event.is_set():
-                res.kill()
-                if log_fn:
-                    log_fn(bid, "warning", tr(language, "ensure_packages_stopped"))
-                raise RuntimeError("Installation stopped by user")
-            
-            # Non-blocking read with timeout
-            line = res.stdout.readline()
-            if line:
-                line = line.strip()
-                if line and log_fn:
-                    log_fn(bid, "info", f"      [pip] {line}")
-                last_check = time.time()
-            else:
-                # No more output, check if process ended
-                if res.poll() is not None:
-                    break
-                # Small sleep to avoid busy loop
-                time.sleep(0.1)
-                
-                # Check timeout (5 minutes max for installation)
-                if time.time() - last_check > 300:
+
+        def _stream(tool, cmd, env):
+            """Chạy lệnh cài, đẩy từng dòng ra log; trả returncode."""
+            res = subprocess.Popen(
+                cmd + missing,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
+            last_check = time.time()
+            while True:
+                if stop_event and stop_event.is_set():
                     res.kill()
                     if log_fn:
-                        log_fn(bid, "error", tr(language, "ensure_packages_timeout"))
-                    raise RuntimeError(f"Cài đặt {missing} timeout")
-        
-        if res.returncode != 0:
-            if log_fn:
-                log_fn(bid, "error", tr(language, "ensure_packages_failed", code=res.returncode))
-            raise RuntimeError(f"Không thể cài đặt {missing}")
+                        log_fn(bid, "warning", tr(language, "ensure_packages_stopped"))
+                    raise RuntimeError("Installation stopped by user")
+
+                line = res.stdout.readline()
+                if line:
+                    line = line.strip()
+                    if line and log_fn:
+                        log_fn(bid, "info", f"      [{tool}] {line}")
+                    last_check = time.time()
+                else:
+                    if res.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                    # Tối đa 5 phút không có dòng output mới
+                    if time.time() - last_check > 300:
+                        res.kill()
+                        if log_fn:
+                            log_fn(bid, "error", tr(language, "ensure_packages_timeout"))
+                        raise RuntimeError(f"Cài đặt {missing} timeout")
+            return res.returncode
+
+        attempts = venv_manager.install_attempts(project_id)
+        for i, (tool, cmd, env) in enumerate(attempts):
+            code = _stream(tool, cmd, env)
+            if code == 0:
+                return
+            if i + 1 < len(attempts) and log_fn:
+                # uv lỗi → thử lại bằng pip (pip đọc được proxy/index trong pip.ini)
+                log_fn(bid, "warning", tr(language, "ensure_packages_retry_pip", tool=tool))
+        if log_fn:
+            log_fn(bid, "error", tr(language, "ensure_packages_failed", code=code))
+        raise RuntimeError(f"Không thể cài đặt {missing}")
+
 
 def list_pkgs_sync(project_id: str) -> list:
     if not venv_exists(project_id):

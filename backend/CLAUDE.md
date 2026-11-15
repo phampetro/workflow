@@ -67,9 +67,16 @@ Có license + tự cập nhật, tức app chạy trên máy người khác. Cá
 
 Chỉ **1 user `is_active=True`** tại một thời điểm; **chỉ schedule/listener của user active mới chạy** — design có chủ đích, đừng "fix". Xem README §Multi-user.
 
+## Venv của project (Python đóng gói + uv)
+
+- Bản phát hành kèm `runtime/python/` (CPython độc lập) + `runtime/uv.exe` cạnh `backend/`. `venv_manager.get_system_python()` dùng Python này; bản build cũ thiếu `runtime/` mới tìm Python cài trên máy. Bản dev dùng Python + uv của `backend/.venv`.
+- Tạo venv qua **`venv_manager.create_venv_blocking()`** (nguồn duy nhất): `uv venv --seed --clear` (kèm pip để code người dùng và `pip list` vẫn chạy), uv lỗi thì lùi về `python -m venv`.
+- Cài gói qua **`venv_manager.install_attempts()`**: uv trước, **pip làm đường lùi** — máy khách có thể cấu hình proxy/index nội bộ trong `pip.ini` mà uv không đọc. uv chạy với `UV_NATIVE_TLS=1` (CA của mạng công ty chỉ nằm trong Windows store).
+- ⚠ Tên thư mục `runtime/python` **cố định**: venv ghi đường dẫn Python gốc vào `pyvenv.cfg`; đổi tên/vị trí = mọi venv bị coi là hỏng (`venv_is_stale`) và phải dựng lại.
+
 ## Phát hành
 
-- `backend\.venv\Scripts\python.exe tools\build_release.py [--bump patch|minor|major]` (tự chạy lại bằng Python của `backend\.venv`, kiểm khoá ký trước khi build).
+- `backend\.venv\Scripts\python.exe tools\build_release.py [--bump patch|minor|major] [--no-upload]` (tự chạy lại bằng Python của `backend\.venv`, kiểm khoá ký trước khi build). `--no-upload` = build thử: không upload, không gắn tag, trả lại `release_version.json`.
 - Version theo **git tag `vX.Y.Z`**: HEAD đúng tại tag → build lại số đó; không thì lấy bản lớn nhất (tag, `release_version.json`) rồi tăng. Upload GitHub Releases xong tự gắn tag + push. Không bao giờ ra số nhỏ hơn bản trước.
 - Bản dev: `/api/system/info` hiện "tag gần nhất + số commit sau đó" (VD `2.4.164+3`).
 

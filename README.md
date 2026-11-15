@@ -659,12 +659,13 @@ backend\.venv\Scripts\python.exe tools\build_release.py --bump minor  # 2.4.x �
 ```
 
 - Version theo **git tag `vX.Y.Z`**: HEAD đúng tại tag thì build lại số đó; không thì tăng từ bản lớn nhất (tag, `release_version.json`). Không bao giờ ra số nhỏ hơn bản trước.
-- Script: build FE → PyInstaller (kèm `services/block_scripts/`) → ghi manifest dọn file cũ → ký `update.zip` (Ed25519, cần `secrets/license_private.txt`) → upload GitHub Releases (`GITHUB_TOKEN` trong `.env`) → gắn tag + push.
+- Script: build FE → PyInstaller (kèm `services/block_scripts/`) → đóng gói `runtime/` (Python 3.13 độc lập + `uv.exe`) → ghi manifest dọn file cũ → ký `update.zip` (Ed25519, cần `secrets/license_private.txt`) → upload GitHub Releases (`GITHUB_TOKEN` trong `.env`) → gắn tag + push.
+- Build thử không phát hành: thêm `--no-upload` (không upload, không gắn tag, giữ nguyên `release_version.json`).
 - Máy khách bấm "Cập nhật" → tải `update.zip` + `.sig`, verify chữ ký rồi mới cài; thiếu/sai chữ ký là từ chối.
 
 ## 🖥 Yêu cầu hệ thống
 
-- **Python** 3.13 cho `backend/.venv` (bản dev). Venv của từng project dùng Python hệ thống (`py` launcher ưu tiên).
+- **Python** 3.13 cho `backend/.venv` (bản dev). Máy khách **không cần cài Python**: bản phát hành kèm `runtime/python` + `uv`, venv của từng project dựng từ đó (bản build cũ thiếu `runtime/` mới dùng Python cài trên máy).
 - **Node.js** 22+ (Vite 8)
 - **OS**: Windows 10/11 — **chỉ hỗ trợ Windows**, không có bản macOS/Linux
 - **RAM**: 2 GB+ (Playwright + Chromium chiếm nhiều nếu chạy khối Browser)

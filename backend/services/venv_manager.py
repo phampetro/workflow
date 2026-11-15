@@ -111,19 +111,96 @@ def venv_exists(project_id: str) -> bool:
     return _venv_base_python_ok(get_venv_path(project_id))
 
 
+# ── Python đóng gói sẵn + uv ────────────────────────────────────────────────
+# Bản phát hành kèm thư mục runtime/ cạnh backend/:
+#   runtime/python/python.exe  — CPython độc lập (python-build-standalone)
+#   runtime/uv.exe             — tạo venv + cài gói nhanh
+# Trước đây venv của project dựng từ Python CÀI SẴN trên máy khách: gỡ Python, đổi
+# user Windows, chỉ có stub WindowsApps, hay khác phiên bản đều làm venv hỏng — nhóm
+# lỗi lặp lại nhiều nhất. Tên thư mục "python" CỐ ĐỊNH (không kèm số phiên bản): venv
+# ghi đường dẫn này vào pyvenv.cfg, đổi tên là mọi venv thành "hỏng" phải dựng lại.
+RUNTIME_DIRNAME = "runtime"
+
+
+def runtime_dir():
+    """Thư mục runtime/ của bản đóng gói; None ở bản dev (dùng Python của backend/.venv)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent.parent / RUNTIME_DIRNAME
+    return None
+
+
+def bundled_python():
+    rt = runtime_dir()
+    exe = rt / "python" / "python.exe" if rt else None
+    return str(exe) if exe and exe.is_file() else None
+
+
+def get_uv():
+    """uv.exe nếu có: runtime/uv.exe (đóng gói) hoặc uv trong backend/.venv (dev)."""
+    rt = runtime_dir()
+    candidates = [rt / "uv.exe"] if rt else [Path(sys.executable).parent / "uv.exe"]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
+def tool_env():
+    """Biến môi trường cho uv: dùng kho chứng chỉ của Windows (native TLS).
+
+    Mạng công ty soi SSL bằng CA nội bộ chỉ nằm trong Windows store — chính lỗi đó
+    từng làm khối Telegram gửi tin thất bại. pip đọc thêm được pip.ini; uv thì không,
+    nên cài gói luôn có đường lùi về pip (xem install_attempts).
+    """
+    env = dict(os.environ)
+    env.setdefault("UV_NATIVE_TLS", "1")
+    env.setdefault("UV_NO_PROGRESS", "1")
+    return env
+
+
+def _uv_usable_with(python_cmd: str) -> bool:
+    # py.exe là launcher, không phải trình thông dịch: uv --python cần python.exe thật.
+    return bool(get_uv()) and os.path.basename(python_cmd).lower() != "py.exe"
+
+
 def venv_create_cmd(python_cmd: str, project_id: str) -> list:
-    """Lệnh tạo venv; thêm ``--clear`` khi venv cũ hỏng để dựng lại sạch."""
-    cmd = [python_cmd, "-m", "venv", str(get_venv_path(project_id))]
+    """Lệnh tạo venv. Có uv → `uv venv --seed` (kèm pip để code người dùng/pip list
+    vẫn chạy); không thì `python -m venv`. Thêm ``--clear`` khi venv cũ hỏng."""
+    venv = str(get_venv_path(project_id))
+    if _uv_usable_with(python_cmd):
+        # uv: luôn --clear — thư mục có thể đã được mkdir sẵn (create_venv_sync).
+        return [get_uv(), "venv", "--seed", "--clear", "--python", python_cmd, venv]
+    cmd = [python_cmd, "-m", "venv", venv]
     if venv_is_stale(project_id):
         cmd.insert(3, "--clear")
     return cmd
 
 
+def install_attempts(project_id: str) -> list:
+    """Các cách cài gói theo thứ tự thử: [(tên, lệnh_đầu, env)].
+
+    uv trước (nhanh), pip sau làm đường lùi: máy khách có thể cấu hình proxy/index
+    nội bộ trong pip.ini mà uv không đọc. Không có uv → chỉ pip.
+    """
+    pip = ("pip", get_pip_cmd(project_id) + ["install"], None)
+    uv = get_uv()
+    if not uv:
+        return [pip]
+    return [("uv", [uv, "pip", "install", "--python", get_python_path(project_id)], tool_env()), pip]
+
+
 def get_system_python() -> str:
-    """Lấy lệnh Python của hệ thống để dùng khi phần mềm bị đóng gói thành EXE"""
+    """Python dùng để TẠO venv cho project.
+
+    Bản dev: Python của backend/.venv. Bản đóng gói: runtime/python đi kèm; thiếu
+    (bản build cũ) mới tìm Python cài trên máy.
+    """
     if not getattr(sys, 'frozen', False):
         return sys.executable
-    
+    bundled = bundled_python()
+    if bundled:
+        return bundled
+
     import shutil
     # Ưu tiên py launcher (cài kèm bộ cài python.org): luôn trỏ tới Python thật.
     # Bỏ qua python.exe trong WindowsApps — đó là stub "App execution alias" của
@@ -135,51 +212,49 @@ def get_system_python() -> str:
             return path
     raise RuntimeError("Hệ thống không tìm thấy Python. Vui lòng cài đặt Python trên máy tính này.")
 
-async def create_venv(project_id: str) -> dict:
-    """Tạo virtual environment mới cho project"""
+def create_venv_blocking(project_id: str) -> dict:
+    """Tạo venv cho project (CHẶN vài giây — gọi trong thread). Nguồn duy nhất.
+
+    KHÔNG dùng sys.executable ở bản đóng gói: đó là pyflow-backend.exe, gọi
+    "pyflow-backend.exe -m venv ..." là khởi động thêm một backend. get_system_python()
+    chọn đúng python.exe theo từng chế độ.
+    """
     venv_path = get_venv_path(project_id)
     venv_path.mkdir(parents=True, exist_ok=True)
-
-    # Khi đóng gói EXE, sys.executable là pyflow-backend.exe chứ không phải python.exe
-    # Nên phải gọi python của hệ điều hành.
     python_cmd = get_system_python()
-
-    # subprocess.run chặn (blocking) - chạy trong thread riêng để không đứng hình
-    # toàn bộ event loop (mọi request khác của app) trong lúc tạo venv (vài giây).
-    result = await asyncio.to_thread(
-        subprocess.run,
-        venv_create_cmd(python_cmd, project_id),
-        capture_output=True,
-        text=True,
-        timeout=120
-    )
-
+    cmd = venv_create_cmd(python_cmd, project_id)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=tool_env())
+    if result.returncode != 0 and cmd[0] == get_uv():
+        # uv lỗi (hiếm) → dựng lại bằng venv chuẩn của Python, không bỏ cuộc.
+        result = subprocess.run([python_cmd, "-m", "venv", "--clear", str(venv_path)],
+                                capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
         raise RuntimeError(f"Không thể tạo venv: {result.stderr}")
+    return {"path": str(venv_path), "python": get_python_path(project_id)}
 
-    return {
-        "path": str(venv_path),
-        "python": get_python_path(project_id),
-    }
+
+async def create_venv(project_id: str) -> dict:
+    """Tạo virtual environment mới cho project (không chặn event loop)."""
+    return await asyncio.to_thread(create_venv_blocking, project_id)
+
+
+def install_blocking(project_id: str, packages: list, timeout=300) -> None:
+    """Cài gói (chặn), thử uv rồi tới pip. Lỗi cả hai → RuntimeError kèm stderr."""
+    err = ""
+    for _name, cmd, env in install_attempts(project_id):
+        result = subprocess.run(cmd + list(packages) + ["--quiet"], capture_output=True,
+                                text=True, timeout=timeout, env=env)
+        if result.returncode == 0:
+            return
+        err = result.stderr
+    raise RuntimeError(f"Không thể cài {', '.join(packages)}: {err[:500]}")
 
 
 async def install_package(project_id: str, package: str) -> dict:
     """Cài đặt package vào venv của project"""
     if not venv_exists(project_id):
         await create_venv(project_id)
-
-    pip = get_pip_cmd(project_id)
-    result = await asyncio.to_thread(
-        subprocess.run,
-        pip + ["install", package, "--quiet"],
-        capture_output=True,
-        text=True,
-        timeout=300
-    )
-
-    if result.returncode != 0:
-        raise RuntimeError(f"Không thể cài {package}: {result.stderr}")
-
+    await asyncio.to_thread(install_blocking, project_id, [package])
     return {"package": package, "status": "installed"}
 
 

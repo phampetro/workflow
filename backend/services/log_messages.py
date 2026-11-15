@@ -130,6 +130,10 @@ MESSAGES = {
         "vi": "❌ Cài đặt thất bại mã {code}",
         "en": "❌ Installation failed with code {code}",
     },
+    "ensure_packages_retry_pip": {
+        "vi": "⚠ {tool} cài không được — thử lại bằng pip...",
+        "en": "⚠ {tool} could not install — retrying with pip...",
+    },
 
     # ── Telegram Listener (bật/tắt, không phải nội dung tin nhắn) ──────
     "listener_stop_error": {
