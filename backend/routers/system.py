@@ -43,6 +43,50 @@ def _set_update_error(code: str | None, detail: str = "") -> None:
     _update_error = {"code": code, "detail": detail} if code else None
 
 
+# Script áp dụng bản cập nhật — đóng gói qua --add-data (tools/build_release.py).
+_UPDATE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "services", "update_scripts", "apply_update.ps1")
+
+# updater.bat ghi ra cạnh thư mục cài đặt. "%~dp0." thay vì "%~dp0" vì đường dẫn kết
+# thúc bằng "\" ngay trước dấu " sẽ nuốt mất dấu " khi truyền tham số.
+_UPDATER_BAT = r'''@echo off
+echo DANG CAP NHAT PHIEN BAN MOI... Xin vui long cho, khong dong cua so nay.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_update.ps1" -Install "%~dp0." -Zip "%~dp0update.zip"
+set RC=%errorlevel%
+if "%RC%"=="0" goto done
+if "%RC%"=="10" goto done
+echo Khong chay duoc trinh cap nhat moi (ma %RC%) - dung cach cu...
+ping 127.0.0.1 -n 3 > nul
+powershell -NoProfile -command "Expand-Archive -Force -Path '%~dp0update.zip' -DestinationPath '%~dp0.'"
+del "%~dp0update.zip"
+start "" "%~dp0backend\start.vbs"
+:done
+del "%~dp0apply_update.ps1"
+del "%~f0"
+'''
+
+
+def _load_rolled_back_marker() -> None:
+    """apply_update.ps1 quay về bản cũ thì để lại data/.update_failed — báo cho giao diện.
+
+    Không có bước này, trang thấy backend sống lại sau cập nhật là báo "thành công"
+    trong khi đang chạy lại bản CŨ.
+    """
+    from services.venv_manager import DATA_DIR
+    marker = DATA_DIR / ".update_failed"
+    try:
+        if marker.is_file():
+            detail = marker.read_text(encoding="utf-8-sig", errors="replace").strip()
+            marker.unlink()
+            _set_update_error("update_rolled_back", detail)
+            logger.warning("Bản cập nhật trước đã bị hoàn tác: %s", detail)
+    except OSError as e:
+        logger.warning("Không đọc được %s: %s", marker, e)
+
+
+_load_rolled_back_marker()
+
+
 # Thư mục gốc repo (chứa .git) — chỉ dùng ở bản dev (không frozen).
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -364,20 +408,15 @@ def execute_update():
                 # build trên Windows. Nhánh POSIX cũ (sinh updater.sh chạy `unzip` rồi
                 # `./start_mac.command`) là code chết — nó chỉ chạy khi sys.frozen, mà
                 # không có bản frozen nào cho macOS/Linux.
+                # Đổi chỗ có HOÀN TÁC (services/update_scripts/apply_update.ps1): giải
+                # nén ra thư mục tạm, đổi backend/frontend/runtime, mang data sang, chờ
+                # /health — không lên thì tự quay về bản cũ + ghi data/.update_failed.
+                # Cách cũ (giải nén ĐÈ) chỉ còn là đường lùi khi PowerShell không chạy
+                # được script (mã thoát khác 0/10, VD chính sách công ty chặn .ps1).
+                shutil.copy2(_UPDATE_SCRIPT, os.path.join(parent_dir, "apply_update.ps1"))
                 bat_path = os.path.join(parent_dir, "updater.bat")
                 with open(bat_path, "w", encoding="utf-8") as f:
-                    f.write('''@echo off
-echo DANG TAI VA CAP NHAT PHIEN BAN MOI...
-echo Xin vui long cho, khong dong cua so nay.
-ping 127.0.0.1 -n 3 > nul
-echo Giai nen file update.zip...
-powershell -command "Expand-Archive -Force -Path update.zip -DestinationPath ."
-echo Hoan tat giai nen. Xoa file tam...
-del update.zip
-echo Khoi dong lai phan mem...
-start backend\\start.vbs
-del "%~f0"
-''')
+                    f.write(_UPDATER_BAT)
                 subprocess.Popen(["cmd.exe", "/c", bat_path], cwd=parent_dir, creationflags=0x00000010)
                 os._exit(0)
             

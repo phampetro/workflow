@@ -157,6 +157,16 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
           // dùng không bị kẹt ở màn "đang cập nhật".
           if (sawDown || waited >= MAX_WAIT_MS) {
             clearInterval(pingInterval)
+            // Backend sống lại chưa chắc là bản MỚI: apply_update.ps1 tự quay về bản
+            // cũ khi bản mới không khởi động được, và để lại cờ cho backend báo ở đây.
+            try {
+              const st = await systemApi.getUpdateStatus()
+              if (st?.error?.code === 'update_rolled_back') {
+                setUpdateStatus('error')
+                setUpdateMsg(t('about.updateRolledBack', { detail: st.error.detail }))
+                return
+              }
+            } catch { /* bản cũ chưa có endpoint — coi như thành công như trước */ }
             message.success(t('about.updateSuccessToast'))
             window.location.reload()
           }

@@ -109,6 +109,7 @@
     "checkUpdateError": "Không thể kiểm tra bản cập nhật.",
     "updatingMessage": "Hệ thống đang tải code mới và sẽ tự động khởi động lại trong giây lát...",
     "updateSuccessToast": "Cập nhật thành công!",
+    "updateRolledBack": "Bản mới không khởi động được nên đã tự quay về bản đang dùng. Dữ liệu vẫn nguyên vẹn. Chi tiết: {{detail}}",
     "updateSendError": "Lỗi khi gửi lệnh cập nhật.",
     "updateAvailable": "Có bản cập nhật mới (v{{version}})",
     "updateAvailableGeneric": "Có bản cập nhật mới",

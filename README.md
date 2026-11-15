@@ -662,6 +662,7 @@ backend\.venv\Scripts\python.exe tools\build_release.py --bump minor  # 2.4.x �
 - Script: build FE → PyInstaller (kèm `services/block_scripts/`) → đóng gói `runtime/` (Python 3.13 độc lập + `uv.exe`) → ghi manifest dọn file cũ → ký `update.zip` (Ed25519, cần `secrets/license_private.txt`) → upload GitHub Releases (`GITHUB_TOKEN` trong `.env`) → gắn tag + push.
 - Build thử không phát hành: thêm `--no-upload` (không upload, không gắn tag, giữ nguyên `release_version.json`).
 - Máy khách bấm "Cập nhật" → tải `update.zip` + `.sig`, verify chữ ký rồi mới cài; thiếu/sai chữ ký là từ chối.
+- Cài kiểu **đổi chỗ có hoàn tác** ([apply_update.ps1](backend/services/update_scripts/apply_update.ps1)): giải nén ra thư mục tạm, đổi `backend/frontend/runtime`, mang thư mục dữ liệu sang, chờ `/health`; bản mới không lên trong 120 giây thì tự quay về bản cũ (dữ liệu nguyên vẹn) và giao diện báo lại. Nhật ký ở `update.log` cạnh thư mục cài đặt.
 
 ## 🖥 Yêu cầu hệ thống
 

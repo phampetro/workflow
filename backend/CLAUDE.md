@@ -74,6 +74,14 @@ Chỉ **1 user `is_active=True`** tại một thời điểm; **chỉ schedule/l
 - Cài gói qua **`venv_manager.install_attempts()`**: uv trước, **pip làm đường lùi** — máy khách có thể cấu hình proxy/index nội bộ trong `pip.ini` mà uv không đọc. uv chạy với `UV_NATIVE_TLS=1` (CA của mạng công ty chỉ nằm trong Windows store).
 - ⚠ Tên thư mục `runtime/python` **cố định**: venv ghi đường dẫn Python gốc vào `pyvenv.cfg`; đổi tên/vị trí = mọi venv bị coi là hỏng (`venv_is_stale`) và phải dựng lại.
 
+## Cập nhật trên máy khách (đổi chỗ có hoàn tác)
+
+- `routers/system.py` tải `update.zip` + `.sig`, **verify chữ ký**, rồi chép [services/update_scripts/apply_update.ps1](services/update_scripts/apply_update.ps1) + ghi `updater.bat` ra cạnh thư mục cài đặt và thoát.
+- `apply_update.ps1`: giải nén vào `_update_stage\` → chuyển `backend\ frontend\ runtime\` cũ vào `_update_backup\` → đưa bản mới vào → **mang `backend\_internal\data` sang** → khởi động, chờ `/health` (120s). Không lên → tắt, **trả mọi thứ về như cũ kể cả dữ liệu**, chạy lại bản cũ, ghi `data\.update_failed` → lần khởi động sau backend báo `update_rolled_back` cho giao diện.
+- Mã thoát 0/10 = script đã xử lý; mã khác (PowerShell bị chặn chạy `.ps1`) → `updater.bat` lùi về cách cũ (giải nén đè).
+- ⚠ **Không bao giờ `Remove-Item` thư mục còn chứa dữ liệu khách** — mọi chỗ xoá trong script đều kiểm điều này. File phải lưu **UTF-8 có BOM** và code chỉ ASCII (PS 5.1 đọc file không BOM theo ANSI, `—` thành `”` và vỡ cú pháp) — `tests/test_apply_update.py` kiểm cả điều này lẫn 3 đường chạy thật.
+- Lần cập nhật **đầu tiên** lên bản có cơ chế này vẫn do `updater.bat` của bản CŨ trên máy khách thực hiện (giải nén đè + dọn file theo manifest trong `start.vbs`); cơ chế mới có hiệu lực từ lần cập nhật kế tiếp.
+
 ## Phát hành
 
 - `backend\.venv\Scripts\python.exe tools\build_release.py [--bump patch|minor|major] [--no-upload]` (tự chạy lại bằng Python của `backend\.venv`, kiểm khoá ký trước khi build). `--no-upload` = build thử: không upload, không gắn tag, trả lại `release_version.json`.

@@ -191,6 +191,8 @@ def main():
         # Script cố định của khối SQL/Excel — handler ĐỌC dạng text (không import)
         # nên PyInstaller không tự gom; thiếu là mọi khối SQL/Excel lỗi trên máy khách.
         "--add-data", "services/block_scripts;services/block_scripts",
+        # Script áp dụng bản cập nhật (đổi chỗ có hoàn tác) — system.py chép ra khi cập nhật.
+        "--add-data", "services/update_scripts;services/update_scripts",
         "--hidden-import=uvicorn.logging",
         "--hidden-import=uvicorn.loops",
         "--hidden-import=uvicorn.loops.auto",
@@ -208,11 +210,13 @@ def main():
     ]
     subprocess.run(pyinstaller_cmd, cwd=backend_src, check=True)
 
-    # Chặn phát hành bản thiếu script khối (lỗi chỉ lộ ra khi khách chạy workflow).
-    _scripts_built = os.path.join(backend_src, "dist", "pyflow-backend", "_internal", "services", "block_scripts")
-    for _name in os.listdir(os.path.join(backend_src, "services", "block_scripts")):
-        if _name.endswith(".py") and not os.path.isfile(os.path.join(_scripts_built, _name)):
-            sys.exit(f"!! Bản build thiếu services/block_scripts/{_name} — kiểm tra --add-data")
+    # Chặn phát hành bản thiếu file đọc dạng text (lỗi chỉ lộ ra trên máy khách: khối
+    # SQL/Excel không chạy được, hoặc nút Cập nhật hỏng).
+    for _sub in ("block_scripts", "update_scripts"):
+        _built = os.path.join(backend_src, "dist", "pyflow-backend", "_internal", "services", _sub)
+        for _name in os.listdir(os.path.join(backend_src, "services", _sub)):
+            if _name.endswith((".py", ".ps1")) and not os.path.isfile(os.path.join(_built, _name)):
+                sys.exit(f"!! Bản build thiếu services/{_sub}/{_name} — kiểm tra --add-data")
 
     print("Copy Backend...")
     backend_dist_src = os.path.join(backend_src, "dist", "pyflow-backend")

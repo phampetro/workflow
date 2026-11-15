@@ -109,6 +109,7 @@
     "checkUpdateError": "Could not check for updates.",
     "updatingMessage": "The system is downloading new code and will restart shortly...",
     "updateSuccessToast": "Update successful!",
+    "updateRolledBack": "The new version failed to start, so the app rolled back to the current version. Your data is intact. Details: {{detail}}",
     "updateSendError": "Failed to send update command.",
     "updateAvailable": "A new version is available (v{{version}})",
     "updateAvailableGeneric": "A new version is available",
