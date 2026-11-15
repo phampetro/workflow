@@ -13,7 +13,7 @@ Nền tảng tự động hóa workflow chạy **local** trên máy người dù
 
 | Khía cạnh | Sự thật |
 |---|---|
-| Ngôn ngữ | Backend Python 3.8+ (test 3.14), Frontend Node 18+ |
+| Ngôn ngữ | Backend Python 3.13 (`backend/.venv`, cũng là Python của bản đóng gói), Frontend Node 22+ (Vite 8) |
 | Server model | Single-process, single-loop uvicorn — KHÔNG multi-worker |
 | Auth | Header `X-User-Id` từ localStorage, không session/token — dùng cho local, không public |
 | DB | SQLite `backend/data/pyflow.db` — dev tự migrate cột mới ở startup ([database.py:30](backend/database.py:30)) |
@@ -55,11 +55,13 @@ wscript start_hide.vbs
 
 Cả 2 script đều: giải phóng port 7000 + 9000 → khởi BE → khởi FE → mở trình duyệt tới `http://localhost:9000`.
 
-### Cập nhật (git pull + reinstall + restart)
+### Cập nhật bản dev (git pull + restart)
 
 ```bash
 update_and_restart.bat
 ```
+
+Bản dev bấm "Cập nhật" trong màn Thông tin cũng chạy file này. Bản đóng gói của khách cập nhật bằng `update.zip` đã ký từ GitHub Releases (xem §Phát triển & phát hành).
 
 ---
 
@@ -70,18 +72,29 @@ workflow/
 ├── setup.bat                         ← Cài venv + pip + npm install lần đầu
 ├── start.bat                         ← Khởi động BE + FE (kèm giải phóng port)
 ├── start_hide.vbs                    ← Chạy ẩn trên Windows (background)
-├── update_and_restart.bat            ← git pull + reinstall + restart
+├── update_and_restart.bat            ← git pull + restart (nút Cập nhật của bản dev)
+├── CLAUDE.md                         ← Quy tắc cho Claude (+ backend/CLAUDE.md, frontend/CLAUDE.md)
+├── .github/workflows/ci.yml          ← CI: ruff + pytest + oxlint + vite build mỗi lần push
 ├── .claude/
-│   └── launch.json                   ← Cấu hình dev-server cho Claude Code preview
+│   ├── launch.json                   ← Cấu hình dev-server cho Claude Code preview
+│   ├── settings.json                 ← Hook dự án (kiểm JSON locale sau khi sửa)
+│   └── hooks/check-locale.js
+├── tools/
+│   ├── build_release.py              ← Build bản đóng gói + ký + upload GitHub Releases + gắn tag
+│   ├── keygen.py                     ← Cấp license
+│   └── generate_icon.py
 │
 ├── backend/                          ← FastAPI backend (Python)
 │   ├── main.py                       ← Entry: lifespan (init_db, cleanup_stuck_runs,
 │   │                                     reload_schedules, reload_telegram_listeners),
 │   │                                     CORS, mount routers, uvicorn on 7000
 │   ├── database.py                   ← Async engine + auto-migration (thêm cột thiếu)
-│   ├── models.py                     ← SQLAlchemy models: User, Project, Workflow,
-│   │                                     Schedule, WorkflowRun, Setting, DbConnection
-│   ├── requirements.txt
+│   ├── models.py                     ← SQLAlchemy models: User, Project, Workflow, Schedule,
+│   │                                     WorkflowRun, Setting, DbConnection, CloudConnection
+│   │                                     (cột secret dùng EncryptedText — DPAPI)
+│   ├── requirements.txt              ← (+ requirements-dev.txt: pytest, ruff)
+│   ├── ruff.toml                     ← Cấu hình lint Python
+│   ├── tests/                        ← pytest; test_conventions.py kiểm quy ước CLAUDE.md
 │   ├── .venv/                        ← Virtual env của chính backend (không phải per-project)
 │   │
 │   ├── routers/                      ← HTTP endpoints (theo tài nguyên)
@@ -94,7 +107,8 @@ workflow/
 │   │   ├── schedule_endpoints.py     ← Schedule CRUD + toggle (bật/tắt)
 │   │   ├── dashboard.py              ← Thống kê tổng hợp
 │   │   ├── ai_codegen.py             ← Stream code Python từ LLM (OpenAI-compatible)
-│   │   ├── system.py                 ← Info app + check update + auto-update
+│   │   ├── system.py                 ← Info app + check update + auto-update + Kiểm tra môi trường
+│   │   ├── cloud.py                  ← Kết nối Google Drive/OneDrive (OAuth PKCE) cho khối Tải lên đám mây
 │   │   ├── license.py                ← Endpoint kích hoạt/xem trạng thái license
 │   │   └── ownership.py              ← Kiểm chủ sở hữu theo X-User-Id (hàng rào chống nhầm
 │   │                                    chéo workspace — KHÔNG phải xác thực)
@@ -108,14 +122,21 @@ workflow/
 │   │   │   ├── runner.py             ← Vòng lặp điều phối: queue, rẽ nhánh, workflow_env
 │   │   │   ├── context.py            ← RunContext/BlockStep, nội suy {{var}} 1 lượt,
 │   │   │   │                            tín hiệu SKIP/BREAK/ABORT, xử lý Bắt Lỗi
-│   │   │   └── basic/flow/sql/excel/read_data/telegram/email_block/browser/python_block.py
+│   │   │   ├── common.py             ← run_script, script_code (truyền PARAMS cho script cố định)
+│   │   │   └── basic/flow/sql/excel/read_data/telegram/email_block/browser/cloud/python_block.py
+│   │   ├── block_scripts/            ← Script CỐ ĐỊNH chạy trong venv project (SQL→Excel, Excel→SQL,
+│   │   │                                EXEC, ghép Excel, Pivot) — nhận cấu hình qua biến PARAMS
+│   │   ├── secret_store.py           ← Mã hoá DPAPI (phạm vi máy) cho mật khẩu DB + token đám mây
+│   │   ├── cloud_storage.py          ← OAuth + upload Google Drive / OneDrive
+│   │   ├── net.py                    ← SSL context dùng chung (certifi + Windows cert store)
 │   │   ├── env_check.py              ← Kiểm Python/ODBC/Chromium/venv (màn Kiểm tra môi trường)
 │   │   ├── browser_executor.py       ← Playwright: chạy các step Browser
 │   │   ├── telegram_listener.py      ← httpx long-polling getUpdates + trigger workflow
 │   │   ├── scheduler.py              ← APScheduler (AsyncIOScheduler) + build_cron_trigger
 │   │   ├── venv_manager.py           ← Tạo/xóa/rename thư mục pj_{slug}/wf_{slug}/.venv
 │   │   ├── export_import.py          ← Zip in/out project & workflow (kèm remap DbConnection).
-│   │   │                                Mặc định KHÔNG kèm mật khẩu DB trong file export.
+│   │   │                                KÈM mật khẩu DB chữ thường (có chủ đích, để khôi phục);
+│   │   │                                KHÔNG kèm token đám mây.
 │   │   ├── licensing.py              ← Kích hoạt/kiểm license OFFLINE (Ed25519). ENFORCE bật
 │   │   │                                CỨNG khi sys.frozen; env chỉ dùng cho bản dev
 │   │   ├── license_pubkey.py         ← Public key nhúng sẵn để verify chữ ký license
@@ -155,7 +176,7 @@ workflow/
         ├── components/
         │   ├── BlockNode.jsx         ← Node hiển thị trên canvas (22 loại khối chạy được)
         │   ├── NoteNode.jsx          ← Khối "Ghi chú" (giấy dán, không cổng nối, không chạy)
-        │   ├── BlockEditorModal.jsx  ← 2000+ dòng: form cấu hình từng loại khối
+        │   ├── BlockEditorModal.jsx  ← ~3000 dòng: form cấu hình từng loại khối
         │   ├── LogViewer.jsx         ← Drawer SSE log (auto-scroll, download log)
         │   ├── SchedulerPanel.jsx    ← Drawer quản lý cron schedule + banner user-active
         │   ├── WorkflowHistoryPanel.jsx  ← Bảng lịch sử run + tag trạng thái
@@ -396,6 +417,12 @@ Treo workflow lại, mở popup trên giao diện cho người dùng điền gi�
 
 Có `inputTimeout` (giây): hết giờ mà không ai nhập thì khối tự thất bại. Vì khối này **chờ người**, [`block_rules.py`](backend/services/block_rules.py) cấm nó dùng chung workflow với `telegram_listener` và **chặn đặt lịch cron** cho workflow chứa nó (`disables_feature: scheduler`) — cron chạy lúc không có ai ngồi máy thì popup không bao giờ được trả lời.
 
+### 17b. `cloud_upload` — Tải lên đám mây (Google Drive / OneDrive)
+```json
+{ "cloud_link": "link file (nhiều file: mỗi dòng 'tên: link')", "cloud_count": 2 }
+```
+Chọn 1 hoặc nhiều file trong `input/`/`output/` (giống khối Email; tên file qua `safe_filename`) và một kết nối đã đăng nhập ở **"Dữ liệu Workflow" → tab Lưu trữ đám mây**. 2 field đặt tên biến: mặc định `cloud_link` / `cloud_count`. Đăng nhập bằng OAuth (PKCE); refresh token lưu mã hoá DPAPI, không trả ra API, không đi theo file export. Cấu hình Client ID: [docs/cloud-upload-setup.md](docs/cloud-upload-setup.md).
+
 ### 18. `queue` — Xếp hàng
 Chờ các nhánh song song phía trước xong rồi mới chạy tiếp **một lần duy nhất**, tránh khối sau bị kích hoạt nhiều lần khi có nhiều đường dẫn vào.
 
@@ -447,6 +474,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 | `telegram` | Lưu sent_message_id / chat_id | `sent_message_id` / `chat_id` |
 | `telegram_listener` | Lưu chat_id / message_id / text / sender_name | `chat_id` / `message_id` / `text` / `sender_name` |
 | `google_sheets_read`, `excel_read` | Tên biến mảng / Lưu số dòng | `sheets_data` / `sheets_rows` |
+| `cloud_upload` | Lưu link / Lưu số file | `cloud_link` / `cloud_count` |
 
 - Khai báo tập trung ở **`BLOCK_OUTPUT_VARS`** + hàm `rename_output_keys()` trong [executor_blocks.py](backend/services/executor_blocks.py) — thêm khối mới thì khai vào bảng này, không rải logic từng chỗ.
 - Sau mỗi khối như vậy, log in ra **tên thật** của biến vừa tạo (`describe_output_vars()`):
@@ -469,6 +497,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 - Quản lý ở **"Dữ liệu Workflow" → tab Database**: thêm/sửa/xóa nhiều kết nối, có "Test kết nối" trước khi lưu.
 - Lưu ở bảng `db_connection` (SQLite) — không lưu trong `input.json` để tránh lẫn với gợi ý `{{...}}`.
 - 3 khối `sql_to_excel`, `excel_to_sql`, `run_sql_exec` đều có field bắt buộc **"Kết nối Database"** — chọn từ danh sách đã lưu, mỗi khối kết nối độc lập.
+- **Mật khẩu lưu mã hoá** bằng Windows DPAPI phạm vi máy ([secret_store.py](backend/services/secret_store.py)): trong `pyflow.db` là `dpapi:<base64>`, không đọc được nếu chép DB sang máy khác (khi đó coi như chưa có mật khẩu — nhập lại hoặc dùng file export). DB cũ còn chữ thường được tự mã hoá khi khởi động. Không bao giờ trả mật khẩu ra API (chỉ `has_password`).
 - **Scope theo từng workflow** (`db_connection.workflow_id`). Đánh đổi: nhiều workflow trong 1 project dùng chung 1 DB phải khai riêng cho từng workflow. Đổi lại, **Export/Import** tự động mang theo đúng kết nối của từng workflow và **remap `savedConnectionId`** sang id mới khi import — không cần cấu hình lại tay khi chuyển máy/project (xem [export_import.py](backend/services/export_import.py)).
 
 ---
@@ -553,9 +582,10 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 | GET/PUT | `/api/ai/settings` | Cấu hình LLM |
 | POST | `/api/ai/test` | Test kết nối LLM |
 | POST | `/api/ai/generate` | **Stream** SSE token code Python |
-| GET | `/api/system/info` | Version + last-updated (từ `git log`) |
-| GET | `/api/system/check-update` | So local vs remote |
-| POST | `/api/system/update` | git pull + reinstall + restart |
+| GET | `/api/system/info` | Version + ngày cập nhật. Bản đóng gói: `release_version.json`; bản dev: tag gần nhất + số commit sau đó (VD `2.4.164+3`) |
+| GET | `/api/system/check-update` | Bản đóng gói: so với GitHub Releases; bản dev: `git fetch` + so nhánh |
+| POST | `/api/system/update` | Bản đóng gói: tải `update.zip` + verify chữ ký + cài; bản dev: `update_and_restart.bat` |
+| GET | `/api/system/env-check` | Kiểm tra môi trường (Python, ODBC, Chromium, venv project) |
 
 ---
 
@@ -592,7 +622,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 - Autosave workflow debounce 1.5s, gửi `expected_updated_at` (ETag). BE trả 409 nếu lệch → FE popup "Tải lại / Ghi đè".
 - SSE `createLogStream` **không dùng auto-reconnect gốc** của EventSource — tự reconnect sau 3s với `offset += received` để không mất log ở khoảng đứt.
 - `BroadcastChannel('pyflow_active_runs')` đồng bộ set/clear `activeRuns` giữa các tab cùng origin — 1 tab bấm Dừng, tab kia cập nhật nút ngay dù không mở Drawer Logs.
-- Match log kết thúc trong LogViewer phải khớp CHÍNH XÁC chuỗi BE phát ở cuối `execute_workflow_thread`: `"✅ Workflow hoàn thành"` (không phải "Hoàn thành workflow"), `"❌ Lỗi hệ thống khi chạy workflow"`, `"⏹ Đã dừng"`. Đổi 1 chuỗi phải đổi cả 2 phía.
+- Nút Chạy/Dừng theo **trạng thái run trong DB** (poll), không theo dòng log cuối — cách cũ (LogViewer bắt chuỗi "✅ Workflow hoàn thành") dễ lỡ khi lỗi đi nhánh return sớm, log đã nằm trong cache trước khi SSE nối, hoặc user đóng panel log.
 
 ### Về khối cụ thể
 - **`end` KHÔNG bắt buộc** — queue rỗng tự nhiên cũng kết thúc + `_finish_run` bình thường. `end` chỉ hữu ích khi cần cắt sớm giữa chừng (đặc biệt nó `break` toàn bộ vòng lặp → cắt luôn các nhánh song song đã enqueue).
@@ -605,10 +635,37 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
 
 ---
 
+## 🛠 Phát triển & phát hành
+
+### Kiểm tra code
+
+```bash
+cd backend
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt   # lần đầu
+.venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe -m ruff check . ../tools
+cd ..\frontend
+npx oxlint src
+npm run build
+```
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy đủ các bước trên với mỗi lần push/PR lên `main`. [`tests/test_conventions.py`](backend/tests/test_conventions.py) biến các quy ước dễ quên thành test (ô tên biến phải không nội suy, cấm `sqlite3.connect` trần, vi/en cùng bộ key…).
+
+### Phát hành bản cho khách
+
+```bash
+backend\.venv\Scripts\python.exe tools\build_release.py            # tăng patch: 2.4.164 → 2.4.165
+backend\.venv\Scripts\python.exe tools\build_release.py --bump minor  # 2.4.x → 2.5.0
+```
+
+- Version theo **git tag `vX.Y.Z`**: HEAD đúng tại tag thì build lại số đó; không thì tăng từ bản lớn nhất (tag, `release_version.json`). Không bao giờ ra số nhỏ hơn bản trước.
+- Script: build FE → PyInstaller (kèm `services/block_scripts/`) → ghi manifest dọn file cũ → ký `update.zip` (Ed25519, cần `secrets/license_private.txt`) → upload GitHub Releases (`GITHUB_TOKEN` trong `.env`) → gắn tag + push.
+- Máy khách bấm "Cập nhật" → tải `update.zip` + `.sig`, verify chữ ký rồi mới cài; thiếu/sai chữ ký là từ chối.
+
 ## 🖥 Yêu cầu hệ thống
 
-- **Python** 3.8+ (đã test 3.14)
-- **Node.js** 18+
+- **Python** 3.13 cho `backend/.venv` (bản dev). Venv của từng project dùng Python hệ thống (`py` launcher ưu tiên).
+- **Node.js** 22+ (Vite 8)
 - **OS**: Windows 10/11 — **chỉ hỗ trợ Windows**, không có bản macOS/Linux
 - **RAM**: 2 GB+ (Playwright + Chromium chiếm nhiều nếu chạy khối Browser)
 - **Disk**: 500 MB cho venv + node_modules + Chromium; thêm dung lượng cho `backend/data/pj_*/` tuỳ workflow
