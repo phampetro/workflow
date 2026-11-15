@@ -6,7 +6,10 @@ if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 cd /d "%ROOT%"
 
 echo [1/3] Dang cap nhat ma nguon tu Github...
-git pull origin main
+rem -c safe.directory: thu muc repo thuoc user Windows cu (SID khac) thi git chan
+rem moi lenh ("dubious ownership") -> nut Cap nhat ban dev khong lam gi ca.
+set "ROOT_FWD=%ROOT:\=/%"
+git -c "safe.directory=%ROOT_FWD%" pull origin main
 
 echo [2/3] Doi he thong cu tat hoan toan...
 timeout /t 2 /nobreak >nul

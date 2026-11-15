@@ -48,3 +48,9 @@ frontend/fix_alert.cjs
 
 # Cấu hình quyền Claude Code riêng từng máy — không commit
 .claude/settings.local.json
+
+# PyInstaller tự sinh lại mỗi lần build (build_release.py gọi bằng tham số dòng lệnh)
+*.spec
+# Cache của công cụ lint/test
+.ruff_cache/
+.pytest_cache/
