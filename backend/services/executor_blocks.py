@@ -260,75 +260,114 @@ def uninstall_pkg_sync(project_id: str, package: str) -> dict:
     subprocess.run(pip + ["uninstall", package, "-y"], capture_output=True, text=True, timeout=60)
     return {"package": package, "status": "uninstalled"}
 
+# project_id → (mtime thư mục site-packages, tập gói đã xác nhận có). Trước đây MỖI lần
+# chạy khối SQL/Excel đều gọi `pip freeze` (tiến trình con, 1-2 giây) dù venv không đổi.
+# Cài/gỡ gói làm đổi mtime site-packages (thư mục gói được tạo/xoá) → tự kiểm lại.
+_pkg_ok_cache: dict = {}
+_pkg_ok_lock = threading.Lock()
+
+
+def _site_packages_mtime(project_id: str):
+    sp = venv_manager.get_venv_path(project_id) / "Lib" / "site-packages"
+    try:
+        return sp.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def _pkg_key(pkg: str) -> str:
+    return pkg.lower().split('==')[0].split('>')[0].split('<')[0].strip()
+
+
+def _stream_install(cmd, missing, log_fn, bid, tool, stop_event, language, idle_timeout=300):
+    """Chạy lệnh cài, đẩy từng dòng ra log; trả returncode.
+
+    Đọc output bằng luồng riêng: trước đây `readline()` chặn ngay trong vòng lặp nên
+    khi pip/uv treo mà không in gì (mạng công ty chặn PyPI giữa chừng) thì cả kiểm
+    tra nút Dừng lẫn giới hạn 5 phút đều không bao giờ tới lượt chạy.
+    """
+    import queue as _queue
+    import time
+    proc = subprocess.Popen(cmd + missing, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", env=None if tool == "pip" else venv_manager.tool_env())
+    lines: _queue.Queue = _queue.Queue()
+
+    def _reader():
+        for ln in proc.stdout:
+            lines.put(ln)
+        lines.put(None)
+
+    threading.Thread(target=_reader, daemon=True).start()
+    last_output = time.time()
+    while True:
+        if stop_event and stop_event.is_set():
+            proc.kill()
+            if log_fn:
+                log_fn(bid, "warning", tr(language, "ensure_packages_stopped"))
+            raise RuntimeError("Installation stopped by user")
+        try:
+            ln = lines.get(timeout=0.5)
+        except _queue.Empty:
+            if time.time() - last_output > idle_timeout:
+                proc.kill()
+                if log_fn:
+                    log_fn(bid, "error", tr(language, "ensure_packages_timeout"))
+                raise RuntimeError(f"Cài đặt {missing} timeout")
+            continue
+        if ln is None:                      # hết output
+            break
+        last_output = time.time()
+        ln = ln.strip()
+        if ln and log_fn:
+            log_fn(bid, "info", f"      [{tool}] {ln}")
+    return proc.wait()
+
+
 def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, label="", stop_event=None, language="vi"):
-    if not packages: return
+    if not packages:
+        return
     if not venv_exists(project_id):
         create_venv_sync(project_id)
-    
+
+    wanted = {_pkg_key(p) for p in packages}
+    mtime = _site_packages_mtime(project_id)
+    with _pkg_ok_lock:
+        cached = _pkg_ok_cache.get(project_id)
+    if mtime is not None and cached and cached[0] == mtime and wanted <= cached[1]:
+        return                              # venv không đổi, các gói này đã xác nhận có
+
     pip = get_pip_cmd(project_id)
     result = subprocess.run(pip + ["freeze"], capture_output=True, text=True, timeout=30)
     installed = result.stdout.lower()
-    
+
     missing = []
     for pkg in packages:
-        pkg_name = pkg.lower().split('==')[0].split('>')[0].split('<')[0]
+        pkg_name = _pkg_key(pkg)
         if f"{pkg_name}==" not in installed and f"{pkg_name} @" not in installed:
             missing.append(pkg)
-            
+
     if missing:
         if log_fn:
             log_fn(bid, "info", tr(language, "ensure_packages_installing", label=label, packages=', '.join(missing)))
-        
-        import time
-
-        def _stream(tool, cmd, env):
-            """Chạy lệnh cài, đẩy từng dòng ra log; trả returncode."""
-            res = subprocess.Popen(
-                cmd + missing,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=env,
-            )
-            last_check = time.time()
-            while True:
-                if stop_event and stop_event.is_set():
-                    res.kill()
-                    if log_fn:
-                        log_fn(bid, "warning", tr(language, "ensure_packages_stopped"))
-                    raise RuntimeError("Installation stopped by user")
-
-                line = res.stdout.readline()
-                if line:
-                    line = line.strip()
-                    if line and log_fn:
-                        log_fn(bid, "info", f"      [{tool}] {line}")
-                    last_check = time.time()
-                else:
-                    if res.poll() is not None:
-                        break
-                    time.sleep(0.1)
-                    # Tối đa 5 phút không có dòng output mới
-                    if time.time() - last_check > 300:
-                        res.kill()
-                        if log_fn:
-                            log_fn(bid, "error", tr(language, "ensure_packages_timeout"))
-                        raise RuntimeError(f"Cài đặt {missing} timeout")
-            return res.returncode
-
         attempts = venv_manager.install_attempts(project_id)
-        for i, (tool, cmd, env) in enumerate(attempts):
-            code = _stream(tool, cmd, env)
+        for i, (tool, cmd, _env) in enumerate(attempts):
+            code = _stream_install(cmd, missing, log_fn, bid, tool, stop_event, language)
             if code == 0:
-                return
+                break
             if i + 1 < len(attempts) and log_fn:
                 # uv lỗi → thử lại bằng pip (pip đọc được proxy/index trong pip.ini)
                 log_fn(bid, "warning", tr(language, "ensure_packages_retry_pip", tool=tool))
-        if log_fn:
-            log_fn(bid, "error", tr(language, "ensure_packages_failed", code=code))
-        raise RuntimeError(f"Không thể cài đặt {missing}")
+        else:
+            if log_fn:
+                log_fn(bid, "error", tr(language, "ensure_packages_failed", code=code))
+            raise RuntimeError(f"Không thể cài đặt {missing}")
+
+    # Ghi nhớ SAU khi chắc mọi gói đã có (mtime đọc lại vì vừa cài có thể đã đổi).
+    with _pkg_ok_lock:
+        prev = _pkg_ok_cache.get(project_id)
+        new_mtime = _site_packages_mtime(project_id)
+        base = prev[1] if prev and prev[0] == new_mtime else set()
+        _pkg_ok_cache[project_id] = (new_mtime, base | wanted)
 
 
 def list_pkgs_sync(project_id: str) -> list:
