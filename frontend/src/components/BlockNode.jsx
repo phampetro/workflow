@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef, useContext, createContext } from 'react'
+import React, { memo, useEffect, useRef, useContext, createContext } from 'react'
 import { Handle, useUpdateNodeInternals } from '@xyflow/react'
 import './BlockNode.css'
 import { Code2, GitBranch, Flag, Zap, Settings, Trash2, CheckCircle, XCircle, Loader, Timer, Send, Table, Files, Mail, TableProperties, Globe, Radio, Copy, Repeat, AlertTriangle, Terminal, FileSpreadsheet, Hourglass, FormInput, ListFilter, StickyNote, UploadCloud } from 'lucide-react'
@@ -232,9 +232,6 @@ const BlockNode = memo(({ id, data, selected }) => {
   const outPos = data.outPosition || 'right'
   const loopPos = data.loopPosition || 'right'
   const donePos = data.donePosition || 'right'
-  const isOutVertical = outPos === 'top' || outPos === 'bottom'
-  const isLoopVertical = loopPos === 'top' || loopPos === 'bottom'
-  const isDoneVertical = donePos === 'top' || donePos === 'bottom'
 
   // React Flow cache vị trí handle theo lần đo đầu tiên; khi số lượng/vị trí
   // handle đổi (đổi cổng IN/OUT, đổi loại block) phải báo lại để nó đo lại,

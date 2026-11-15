@@ -136,7 +136,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
     }
   }
 
-  const toggleSchedule = async (id, checked) => {
+  const toggleSchedule = async (id) => {
     try {
       const res = await apiToggleSchedule(id)
       setSchedules(schedules.map(s =>

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database import get_session
-from models import Workflow, Schedule, Project
+from models import Workflow, Schedule
 from services.scheduler import scheduler, build_cron_trigger, get_next_run_time, trigger_workflow_job
 
 router = APIRouter(tags=["schedules"])

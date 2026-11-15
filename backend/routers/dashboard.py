@@ -1,10 +1,10 @@
-from datetime import datetime, date
+from datetime import date
 from fastapi import APIRouter, Request, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database import get_session
-from models import Project, Workflow, Schedule, WorkflowRun
+from models import Project, Workflow, WorkflowRun
 from routers.workflows import _workflow_run_ids
 from services.scheduler import scheduler
 

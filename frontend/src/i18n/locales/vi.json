@@ -172,6 +172,8 @@
     "viewList": "Danh sách"
   },
   "projectDetail": {
+    "hardwareLoading": "Đang tải thông số...",
+    "hardwareLoadFailed": "Chưa có dữ liệu phần cứng",
     "loadWorkflowsError": "Lỗi tải workflows: {{message}}",
     "loadPackagesError": "Lỗi tải packages: {{message}}",
     "loadHistoryError": "Lỗi tải lịch sử: {{message}}",

@@ -186,7 +186,7 @@ async def install_package(project_id: str, package: str) -> dict:
 async def uninstall_package(project_id: str, package: str) -> dict:
     """Gỡ cài đặt package"""
     pip = get_pip_cmd(project_id)
-    result = await asyncio.to_thread(
+    await asyncio.to_thread(
         subprocess.run,
         pip + ["uninstall", package, "-y"],
         capture_output=True,
@@ -262,7 +262,6 @@ def delete_workflow_dir(workflow_id: str, wf_name: str = None, pj_name: str = No
             return
     # Fallback: query DB (chỉ khi chưa xóa)
     from database import connect_sqlite
-    db_path = DATA_DIR / "pyflow.db"
     conn = connect_sqlite()
     try:
         row = conn.execute(

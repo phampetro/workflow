@@ -183,13 +183,13 @@ export const createLogStream = (runId, onBatch, onError, offset = 0) => {
           pending.push(data)
           if (!flushTimer) flushTimer = setTimeout(flush, LOG_FLUSH_MS)
         }
-      } catch (_) {}
+      } catch {}
     }
     es.onerror = (err) => {
       if (onError) onError(err)
       // Đóng kết nối hiện tại và tự reconnect sau 3s với offset đã dịch đúng bằng
       // số log đã nhận (backend trả history theo offset đó nên không trùng log cũ).
-      try { es.close() } catch (_) {}
+      try { es.close() } catch {}
       es = null
       if (stopped) return
       if (retryTimer) clearTimeout(retryTimer)
@@ -207,7 +207,7 @@ export const createLogStream = (runId, onBatch, onError, offset = 0) => {
     // nên các dòng này sẽ được backend gửi lại, không mất.
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
     pending = []
-    if (es) { try { es.close() } catch (_) {} es = null }
+    if (es) { try { es.close() } catch {} es = null }
   }
 }
 
@@ -245,7 +245,7 @@ export const streamAiCodegen = (payload, { onToken, onDone, onError } = {}) => {
       })
       if (!res.ok) {
         let msg = `HTTP ${res.status}`
-        try { const j = await res.json(); msg = j.detail || msg } catch (_) {}
+        try { const j = await res.json(); msg = j.detail || msg } catch {}
         onError?.(new Error(msg))
         return
       }
@@ -268,7 +268,7 @@ export const streamAiCodegen = (payload, { onToken, onDone, onError } = {}) => {
             if (data.token) onToken?.(data.token)
             else if (data.error) { onError?.(new Error(data.error)); return }
             else if (data.done) { onDone?.(); return }
-          } catch (_) {}
+          } catch {}
         }
       }
       onDone?.()
@@ -295,9 +295,9 @@ export const createRecordingStream = (workflowId, { onStep, onReplaceLast, onDon
       const d = JSON.parse(e.data)
       if (d.type === 'step') onStep?.(d.step)
       else if (d.type === 'replace_last') onReplaceLast?.(d.step)
-      else if (d.type === 'done') { onDone?.(d.steps || []); try { es.close() } catch (_) {} }
+      else if (d.type === 'done') { onDone?.(d.steps || []); try { es.close() } catch {} }
       else if (d.type === 'error') onError?.(new Error(d.message || 'Lỗi ghi'))
-    } catch (_) {}
+    } catch {}
   }
   // Khác createLogStream (ở đó reconnect là CỐ Ý và có lý do ghi trong README):
   // ở đây backend trả 404 khi không còn phiên ghi. Bản cũ để onerror rỗng nên
@@ -310,11 +310,11 @@ export const createRecordingStream = (workflowId, { onStep, onReplaceLast, onDon
   es.onerror = () => {
     errorStreak += 1
     if (errorStreak >= 3) {
-      try { es.close() } catch (_) {}
+      try { es.close() } catch {}
       onError?.(new Error('Mất kết nối tới phiên ghi thao tác (phiên có thể đã đóng).'))
     }
   }
-  return () => { try { es.close() } catch (_) {} }
+  return () => { try { es.close() } catch {} }
 }
 
 // ── Health ────────────────────────────────────────────────

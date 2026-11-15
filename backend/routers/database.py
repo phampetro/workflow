@@ -3,7 +3,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import urllib.parse
 import subprocess
 import json
 from services.executor_blocks import get_python_path

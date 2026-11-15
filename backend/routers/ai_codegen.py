@@ -45,7 +45,7 @@ async def get_ai_settings(session: AsyncSession = Depends(get_session)):
 
 @router.put("/api/ai/settings")
 async def update_ai_settings(body: AiSettingsUpdate, session: AsyncSession = Depends(get_session)):
-    s_dict = await get_settings_dict(session)
+    await get_settings_dict(session)   # đảm bảo bản ghi cài đặt mặc định đã tồn tại
     
     updates = {
         "ai_base_url": body.ai_base_url,
@@ -111,7 +111,7 @@ async def generate_ai_code(body: AiGenerateRequest, session: AsyncSession = Depe
     if not enabled or not base_url or not model or not api_key:
         raise HTTPException(400, "AI chưa được cấu hình hoặc đã bị tắt")
         
-    system_prompt = f"""Bạn là trợ lý lập trình Python cho người dùng trên hệ thống PyFlow Studio (một nền tảng tạo workflow kéo thả).
+    system_prompt = """Bạn là trợ lý lập trình Python cho người dùng trên hệ thống PyFlow Studio (một nền tảng tạo workflow kéo thả).
 Bạn đang giúp họ sửa đổi code cho một node Python. Người dùng sẽ cung cấp hướng dẫn (instruction) bằng tiếng Việt.
 Code của người dùng chạy trên Python 3. Có một số biến đặc biệt được cung cấp sẵn:
 - input_data: Chứa dữ liệu đầu vào (từ block trước)

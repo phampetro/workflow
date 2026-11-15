@@ -67,7 +67,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
   const [saveStatus, setSaveStatus] = useState('saved')
   const historyPanelRef = useRef(null)
 
-  const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo()
+  const { takeSnapshot, undo, redo } = useUndoRedo()
 
   const currentRunId = useStore((s) => s.activeRuns[workflow?.id] || null)
   const isRunning = !!currentRunId
@@ -584,14 +584,6 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     }
   }
 
-  const handleRunFinished = useCallback((finishedRunId) => {
-    const currentActiveRun = useStore.getState().activeRuns[wfData?.id];
-    if (wfData?.id && currentActiveRun === finishedRunId) {
-      useStore.getState().clearActiveRun(wfData.id)
-      message.success(t('workflowEditor.runFinished'))
-    }
-  }, [wfData?.id])
-
   // Nút Dừng/Chạy phải theo TRẠNG THÁI THẬT của run (đọc từ DB), không chỉ dựa vào
   // LogViewer bắt được dòng log kết thúc — cơ chế đó dễ lỡ: lỗi qua nhánh return sớm
   // không phát log cuối, log đã nằm trong cache trước khi SSE nối, hoặc user đóng panel log.
@@ -943,7 +935,6 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
             // (run cũ, hoặc run song song do lệnh Telegram sinh ra) phải tự stream.
             streamedRunId={currentRunId}
             onClose={() => setShowLogs(false)}
-            onFinished={handleRunFinished}
           />
         )}
       </div>

@@ -93,7 +93,6 @@ export default function App() {
 
   // Bootstrap state
   const [bootstrapDone, setBootstrapDone] = useState(false)
-  const [backendOnline, setBackendOnline] = useState(true)
   const [showUserPicker, setShowUserPicker] = useState(false)
   const [noUsersExist, setNoUsersExist] = useState(false)
   // License: mặc định coi như không cần kích hoạt (enforce tắt) → không đổi UX bản dev.
@@ -169,9 +168,7 @@ export default function App() {
     const bootstrap = async () => {
       try {
         await checkHealth()
-        setBackendOnline(true)
       } catch {
-        setBackendOnline(false)
         setBootstrapDone(true)
         return
       }
@@ -445,6 +442,7 @@ export default function App() {
                   onRefresh={handleNavRefresh}
                   onCreateProject={() => setOpenCreateModal(true)}
                   onImport={handleImportClick}
+                  importing={importing}
                   onSwitchUser={() => setShowUserPicker(true)}
                   onOpenAiSettings={() => setOpenAiSettings(true)}
                   onOpenAbout={() => setOpenAbout(true)}

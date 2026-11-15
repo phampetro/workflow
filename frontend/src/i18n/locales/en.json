@@ -172,6 +172,8 @@
     "viewList": "List"
   },
   "projectDetail": {
+    "hardwareLoading": "Loading system stats...",
+    "hardwareLoadFailed": "No hardware data yet",
     "loadWorkflowsError": "Error loading workflows: {{message}}",
     "loadPackagesError": "Error loading packages: {{message}}",
     "loadHistoryError": "Error loading history: {{message}}",

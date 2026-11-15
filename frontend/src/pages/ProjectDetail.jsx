@@ -19,15 +19,6 @@ import SidePanel from '../components/SidePanel'
 
 const COLORS = ['#6c63ff','#00d4aa','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
 
-const STATUS_CONFIG = {
-  running:   { label: 'Đang chạy', color: 'processing' },
-  success:   { label: 'Thành công', color: 'success' },
-  scheduled: { label: 'Lên lịch',  color: 'warning' },
-  error:     { label: 'Lỗi',       color: 'error' },
-  idle:      { label: 'Chờ',       color: 'default' },
-  pending:   { label: 'Chờ',       color: 'default' },
-  stopped:   { label: 'Đã dừng',   color: 'default' },
-}
 
 export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProjectUpdate, panelVisible, isSmallScreen }) {
   // Modal.confirm TĨNH không đọc được context của ConfigProvider: dialog xác nhận
@@ -58,7 +49,6 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
   const [selectedWfColor, setSelectedWfColor] = useState('#6c63ff')
   const [editingWf, setEditingWf] = useState(null)
   
-  const [deletingWf, setDeletingWf] = useState(null)
   // Lịch sử/Lịch chạy mở trực tiếp từ menu "..." ngoài danh sách workflow — cùng
   // component với bên trong canvas (WorkflowHistoryPanel/SchedulerPanel/LogViewer),
   // để người dùng không cần mở hẳn editor chỉ để xem lại lịch sử hay đặt lịch.
@@ -232,15 +222,12 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
       okType: 'danger',
       cancelText: t('common.cancel'),
       onOk: async () => {
-        setDeletingWf(id)
         try {
           await deleteWorkflow(id)
           setWorkflows((prev) => prev.filter((w) => w.id !== id))
           toast.success(t('projectDetail.deleteWorkflowSuccess'))
         } catch (e) {
           toast.error(t('projectDetail.deleteWorkflowError', { message: e.message }))
-        } finally {
-          setDeletingWf(null)
         }
       }
     })
@@ -1039,7 +1026,6 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
           isRunning={false}
           streamedRunId={null}
           onClose={() => setViewingLogRunId(null)}
-          onFinished={() => {}}
         />
       )}
     </div>
@@ -1185,7 +1171,7 @@ function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit,
             size="small"
             type={isRunning ? 'default' : 'primary'}
             icon={isRunning ? <Loader size="0.8rem" className="spinning"/> : <Play size="0.8rem" />}
-            onClick={(e) => { e.stopPropagation(); isRunning ? onStop(e) : onRun(e); }}
+            onClick={(e) => { e.stopPropagation(); if (isRunning) onStop(e); else onRun(e) }}
             danger={isRunning}
             style={{ borderRadius: 6, fontWeight: 500, flexShrink: 0 }}
           >
@@ -1257,7 +1243,7 @@ function WorkflowCard({ workflow, color, listView, dragDisabled, onOpen, onEdit,
           <Button
             type={isRunning ? 'default' : 'primary'}
             icon={isRunning ? <Loader size="0.875rem" className="spinning"/> : <Play size="0.875rem" />}
-            onClick={(e) => { e.stopPropagation(); isRunning ? onStop(e) : onRun(e); }}
+            onClick={(e) => { e.stopPropagation(); if (isRunning) onStop(e); else onRun(e) }}
             danger={isRunning}
             style={{ borderRadius: 6, fontWeight: 500 }}
           >

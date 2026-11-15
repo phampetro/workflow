@@ -20,7 +20,7 @@ const _runsChannel = typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel('pyflow_active_runs')
   : null
 
-const useStore = create((set, get) => ({
+const useStore = create((set) => ({
   // --- Users ---
   currentUser: _savedUser,   // { id, name, created_at, language, workflow_view_mode } | null
   setCurrentUser: (user) => {

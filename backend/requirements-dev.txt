@@ -3,3 +3,4 @@
 # Chạy test: .venv\Scripts\python.exe -m pytest
 -r requirements.txt
 pytest==8.4.2
+ruff==0.14.5

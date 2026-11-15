@@ -8,7 +8,7 @@ import uuid
 from services import executor_blocks as eb
 from services.net import https_context
 
-from .context import BREAK, SKIP
+from .context import BREAK
 
 
 # ── Gửi tin ──────────────────────────────────────────────────────────

@@ -196,8 +196,8 @@ export default function SidePanel({ active }) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
               <Spin size="small" spinning={hwLoading} />
-              <span style={{ fontSize: '0.75rem', color: hwError ? '#ef4444' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hwError || ''}>
-                {hwError ? hwError : (hwLoading ? t('projectDetail.hardwareLoading', { defaultValue: 'Đang tải thông số...' }) : t('projectDetail.hardwareLoadFailed', { defaultValue: 'Chưa có dữ liệu phần cứng' }))}
+              <span style={{ fontSize: '0.75rem', color: hwError ? 'var(--accent-danger)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hwError || ''}>
+                {hwError ? hwError : (hwLoading ? t('projectDetail.hardwareLoading') : t('projectDetail.hardwareLoadFailed'))}
               </span>
             </div>
             <Button size="small" type="text" icon={<RefreshCw size="0.75rem" className={hwLoading ? 'spinning' : ''} />} onClick={() => loadHardware(true)}>

@@ -141,7 +141,6 @@ def now_iso() -> str:
 def slugify(text: str) -> str:
     if not text:
         return "untitled"
-    import unicodedata
     import re
     text = unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
     text = re.sub(r'[^\w\s-]', '', text).strip().lower()
@@ -304,7 +303,6 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
         
         # Stream output với kiểm tra stop và timeout
         last_check = time.time()
-        check_interval = 1.0  # Check mỗi giây
         while True:
             # Check stop event
             if stop_event and stop_event.is_set():
@@ -353,7 +351,6 @@ def list_pkgs_sync(project_id: str) -> list:
 
 
 def delete_venv_sync(project_id: str):
-    import shutil
     venv_path = get_venv_dir(project_id)
     if venv_path.exists():
         shutil.rmtree(venv_path, ignore_errors=True)
@@ -706,7 +703,6 @@ def run_python_block_sync(project_id, block_id, workflow_id, code, input_data, t
 
             # Kiểm tra stop_event
             if stop_event and stop_event.is_set():
-                import signal
                 try:
                     proc.kill()
                 except Exception:

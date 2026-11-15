@@ -7,9 +7,7 @@ import json
 import logging
 import os
 import re
-import sys
 import threading
-import traceback
 import time
 from typing import Optional, Callable
 
@@ -1185,7 +1183,6 @@ def run_browser_block(
         }
 
     except Exception as e:
-        err = traceback.format_exc()
         log("error", tr(language, "browser_block_internal_error", error=e))
         return {
             "success": False,

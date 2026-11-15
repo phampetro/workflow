@@ -25,7 +25,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import uvicorn
-import os
 
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler, set_run_callback
@@ -51,7 +50,7 @@ except Exception:
     pass
 
 from database import AsyncSessionLocal
-from sqlalchemy import select, update
+from sqlalchemy import select
 from models import User, Schedule, Workflow, Project, WorkflowRun, RunStatus
 import asyncio
 

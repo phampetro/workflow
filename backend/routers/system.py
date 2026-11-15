@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 import logging
 import subprocess
 import os
@@ -381,7 +381,7 @@ def execute_update():
                 # không có bản frozen nào cho macOS/Linux.
                 bat_path = os.path.join(parent_dir, "updater.bat")
                 with open(bat_path, "w", encoding="utf-8") as f:
-                    f.write(f'''@echo off
+                    f.write('''@echo off
 echo DANG TAI VA CAP NHAT PHIEN BAN MOI...
 echo Xin vui long cho, khong dong cua so nay.
 ping 127.0.0.1 -n 3 > nul

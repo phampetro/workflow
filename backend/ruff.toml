@@ -1,0 +1,12 @@
+# Lint backend — chạy: .venv\Scripts\python.exe -m ruff check .
+# CI chạy đúng lệnh này (xem .github/workflows/ci.yml).
+target-version = "py313"   # khớp Python của backend/.venv (bản build PyInstaller)
+extend-exclude = [".venv", "data", "build", "dist"]
+
+[lint]
+# E9: lỗi cú pháp; F: pyflakes (biến/import thừa, tên chưa định nghĩa); B: bugbear.
+select = ["E9", "F", "B"]
+ignore = [
+    "B008",  # Depends(...) trong default argument là chuẩn FastAPI
+    "B904",  # raise HTTPException trong except — chưa cần nối chuỗi nguyên nhân
+]

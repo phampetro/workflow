@@ -2,11 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Terminal, Download, ArrowDown } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 import { createLogStream } from '../api/client'
-import { Drawer, Button, Typography, Tag, Empty, Space } from 'antd'
+import { Drawer, Button, Tag, Empty, Space } from 'antd'
 import { useTranslation } from 'react-i18next'
 import useStore from '../store/useStore'
 
-const { Text } = Typography
 
 // Bảng màu tham chiếu CSS variables trong index.css (--log-*). Mỗi variable đã có
 // biến thể riêng cho light/dark - khi user đổi theme, log tự cập nhật màu, không cần
@@ -74,7 +73,7 @@ function LogRow({ log }) {
   )
 }
 
-export default function LogViewer({ runId, isRunning, streamedRunId, onClose, onFinished }) {
+export default function LogViewer({ runId, isRunning, streamedRunId, onClose }) {
   const { t } = useTranslation()
   const logs = useStore(state => state.runLogs[runId] || EMPTY_LOGS)
   const [autoScroll, setAutoScroll] = useState(true)

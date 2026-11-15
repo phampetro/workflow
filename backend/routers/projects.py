@@ -2,15 +2,14 @@ import uuid
 import asyncio
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 
 from database import get_session
 from models import Project, Workflow, WorkflowRun
-from services.venv_manager import create_venv, delete_venv, install_package, uninstall_package, list_packages, delete_project_dir, rename_project_dir, slugify
+from services.venv_manager import create_venv, install_package, uninstall_package, list_packages, delete_project_dir, rename_project_dir, slugify
 from routers.ownership import ensure_project_owner
 
 logger = logging.getLogger("pyflow.projects")
@@ -340,9 +339,9 @@ _pkg_jobs = {}  # project_id -> {status, log, current, total, done, error}
 
 
 def _install_worker(project_id: str, packages: list):
-    import subprocess, sqlite3, time
+    import subprocess, time
     from services.executor_blocks import create_venv_sync
-    from services.venv_manager import venv_exists, get_pip_cmd, DATA_DIR
+    from services.venv_manager import venv_exists, get_pip_cmd
     from database import connect_sqlite
     j = _pkg_jobs[project_id]
     try:
@@ -383,7 +382,7 @@ def _install_worker(project_id: str, packages: list):
             import threading as _th_pip
             _killed = {"v": False}
 
-            def _kill_if_stuck():
+            def _kill_if_stuck(proc=proc, _killed=_killed):   # gắn biến của đúng vòng lặp này
                 _killed["v"] = True
                 try:
                     proc.kill()

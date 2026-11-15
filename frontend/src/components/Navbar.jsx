@@ -53,6 +53,7 @@ export default function Navbar({
   onRefresh,
   onCreateProject,
   onImport,
+  importing = false,
   isDashboard,
   onSwitchUser,
   onOpenAiSettings,
@@ -171,6 +172,8 @@ export default function Navbar({
                 <Button
                   type="default"
                   onClick={onImport}
+                  loading={importing}
+                  disabled={importing}
                   icon={<Upload size="0.875rem" />}
                   style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
                 >

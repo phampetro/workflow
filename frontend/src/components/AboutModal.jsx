@@ -108,7 +108,7 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
         setUpdateStatus('latest')
         setUpdateMsg(translateUpdateResult(res))
       }
-    } catch (err) {
+    } catch {
       message.error(t('about.checkUpdateError'))
     } finally {
       setCheckingUpdate(false)
@@ -160,11 +160,11 @@ export default function AboutModal({ open, onClose, licenseStatus }) {
             message.success(t('about.updateSuccessToast'))
             window.location.reload()
           }
-        } catch (e) {
+        } catch {
           sawDown = true // backend cũ đã tắt, giờ chờ backend mới
         }
       }, 2000)
-    } catch (err) {
+    } catch {
       message.error(t('about.updateSendError'))
       setUpdateStatus(null)
     }
