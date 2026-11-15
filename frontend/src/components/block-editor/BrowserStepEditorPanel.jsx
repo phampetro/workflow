@@ -152,6 +152,7 @@ export default function BrowserStepEditorPanel({ steps, onChange, workflowId }) 
       if (stopStreamRef.current) { try { stopStreamRef.current() } catch {} }
       if (workflowId) stopBrowserRecording(workflowId).catch(() => {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dọn khi unmount với workflowId của panel (không đổi trong vòng đời panel)
   }, [])
 
   const addStep = () => {

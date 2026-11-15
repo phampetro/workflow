@@ -113,6 +113,20 @@ def test_main_flow(page, server):
     pg.wait_for_timeout(3000)
     assert pg.writes[writes_before:] == [], pg.writes[writes_before:]
 
+    # 4b. Kéo-thả thêm 1 khối từ bảng khối → có khối mới VÀ autosave ghi (thay đổi thật)
+    before_nodes = pg.locator(".react-flow__node").count()
+    pg.evaluate("""() => {
+        const pane = document.querySelector('.react-flow__pane');
+        const r = pane.getBoundingClientRect(), dt = new DataTransfer();
+        dt.setData('application/reactflow', 'delay');
+        for (const t of ['dragover', 'drop'])
+            pane.dispatchEvent(new DragEvent(t, {dataTransfer: dt, clientX: r.x + r.width / 2,
+                clientY: r.y + r.height * 0.8, bubbles: true, cancelable: true}));
+    }""")
+    pg.wait_for_timeout(2500)
+    assert pg.locator(".react-flow__node").count() == before_nodes + 1
+    assert any(w.startswith("PUT") for w in pg.writes[writes_before:]), pg.writes[writes_before:]
+
     # 5. Mở form cấu hình khối (BlockEditorModal) rồi đóng
     pg.locator(".react-flow__node").first.dblclick()
     drawer = pg.locator(".ant-drawer-open")

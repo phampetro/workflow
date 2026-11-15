@@ -212,6 +212,7 @@ export default function App() {
       setBootstrapDone(true)
     }
     bootstrap()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy một lần lúc khởi động app
   }, [])
 
   const loadStats = useCallback(async () => {
@@ -241,6 +242,7 @@ export default function App() {
     }, 10000)
 
     return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi mở/đổi id; hàm load được tạo lại mỗi render, thêm vào là chạy lặp
   }, [currentUser, refreshTick])
 
   const handleUserSelected = (user) => {

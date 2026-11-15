@@ -108,6 +108,7 @@ export default function InputJsonModal({ open, onClose, workflowId, projectId, i
       // Kiểm đúng dạng: backend bản cũ chưa có route này → không được tin dữ liệu lạ.
       getCloudProviders().then(res => setCloudProviders(res.data && typeof res.data === 'object' ? res.data : {})).catch(() => {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi mở/đổi id; hàm load được tạo lại mỗi render, thêm vào là chạy lặp
   }, [open, initialData])
 
   const loadCloudConnections = async () => {

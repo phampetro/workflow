@@ -44,7 +44,9 @@ const WorkflowHistoryPanel = forwardRef(({ workflowId, onViewLog }, ref) => {
   useEffect(() => {
     loadHistory()
     // Huỷ hiệu lực request đang bay khi đổi workflow hoặc unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reqIdRef là bộ đếm request (không phải DOM ref), đọc giá trị mới nhất lúc dọn là đúng ý
     return () => { reqIdRef.current++ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reqIdRef là bộ đếm request (không phải DOM ref); loadHistory chạy lại theo workflowId
   }, [workflowId])
 
   useImperativeHandle(ref, () => ({

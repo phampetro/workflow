@@ -186,6 +186,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
         useStore.getState().clearActiveRun(workflow.id)
       }
     }).catch(() => {}).finally(() => setCheckingStatus(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tải graph khi đổi workflow; setter của React Flow ổn định, t chỉ dùng cho graph mặc định
   }, [workflow?.id])
 
   // Auto-fit khi vào workflow: chạy đúng khoảnh khắc React Flow đã đo xong TẤT CẢ node
@@ -304,6 +305,10 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     saveTimer.current = setTimeout(() => {
       saveGraph(nodesRef.current, edgesRef.current)
     }, 1500)
+    // saveGraph khai báo PHÍA DƯỚI: đưa vào mảng phụ thuộc là truy cập biến trước khi
+    // khởi tạo (TDZ) → sập khi render. Đổi ngôn ngữ giữa chừng chỉ làm hộp thoại xung đột
+    // 409 dùng ngôn ngữ cũ tới lần mở workflow sau — chấp nhận được.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wfData?.id])
 
   // Huỷ autosave đang chờ khi rời màn hình. App.jsx render WorkflowEditor có điều
@@ -418,7 +423,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       }
       return { ok: false }
     }
-  }, [wfData?.id, modal])
+  }, [wfData?.id, modal, t])
 
   const handleNodesChange = useCallback((changes) => {
     // Xóa bằng phím Delete/Backspace cũng phải vào lịch sử undo
@@ -452,7 +457,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
     takeSnapshot(nodesRef.current, edgesRef.current)
     setEdges(eds => eds.filter(e => e.id !== edgeId))
     triggerAutoSave()
-  }, [triggerAutoSave, takeSnapshot])
+  }, [triggerAutoSave, takeSnapshot, setEdges])
 
   // Thêm/kéo/xóa điểm uốn (waypoint) của 1 cạnh — lưu vào edge.data.waypoints (autosave lo phần lưu)
   const handleEdgeWaypoints = useCallback((edgeId, waypoints) => {
@@ -472,7 +477,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       }, eds))
       triggerAutoSave()
     },
-    [triggerAutoSave, takeSnapshot]
+    [triggerAutoSave, takeSnapshot, setEdges]
   )
 
   // useCallback để 3 handler này giữ reference ổn định giữa các render —
@@ -720,7 +725,7 @@ function WorkflowEditorInner({ workflow, project, onBack }) {
       setNodes(nds => [...nds, newNode])
       triggerAutoSave()
     },
-    [screenToFlowPosition, triggerAutoSave, t]
+    [screenToFlowPosition, triggerAutoSave, t, setNodes]
   )
 
   // Cấp 3 handler qua Context với value ổn định (chỉ đổi khi handler đổi — mà chúng

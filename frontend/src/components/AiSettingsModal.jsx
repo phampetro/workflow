@@ -72,6 +72,7 @@ export default function AiSettingsModal({ open, onClose }) {
         })
         .finally(() => setLoading(false));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t chỉ dùng cho thông báo lỗi; đổi ngôn ngữ không cần chạy lại effect
   }, [open, form]);
 
   const handlePresetChange = (presetKey) => {

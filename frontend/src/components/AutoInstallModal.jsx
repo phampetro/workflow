@@ -41,6 +41,7 @@ export default function AutoInstallModal({ projectId, open, onClose, onDone }) {
       })
       .catch(err => { toast.error(t('autoInstall.scanError', { message: err.message })); setPhase('review'); setItems([]); setSelected([]) })
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t chỉ dùng cho thông báo lỗi; đổi ngôn ngữ không cần chạy lại effect
   }, [open, projectId])
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ block: 'end' }) }, [log])

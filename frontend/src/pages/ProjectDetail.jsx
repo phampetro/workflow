@@ -99,7 +99,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     } finally {
       setLoading(false)
     }
-  }, [proj.id])
+  }, [proj.id, t])
 
   // Auto-refresh khi có wf đang chạy (theo Zustand hoặc server)
   useEffect(() => {
@@ -122,7 +122,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     } finally {
       setPkgLoading(false)
     }
-  }, [proj.id])
+  }, [proj.id, t])
 
   const loadHistory = useCallback(async () => {
     if (!proj.id || workflows.length === 0) return
@@ -138,7 +138,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     } finally {
       setHistLoading(false)
     }
-  }, [proj.id, workflows])
+  }, [proj.id, workflows, t])
 
   useEffect(() => { loadWorkflows() }, [loadWorkflows])
 
@@ -390,6 +390,7 @@ export default function ProjectDetail({ project, onBack, onOpenWorkflow, onProje
     poll()
     const t = setInterval(poll, 2500)
     return () => { cancelled = true; clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi mở/đổi id; hàm load được tạo lại mỗi render, thêm vào là chạy lặp
   }, [proj?.id, proj?.venv_ready])
 
   const dateLocale = i18n.language === 'en' ? 'en-US' : 'vi-VN'

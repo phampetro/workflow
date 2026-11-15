@@ -95,6 +95,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
       if (online) loadData()
       else setLoading(false)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi mở/đổi id; hàm load được tạo lại mỗi render, thêm vào là chạy lặp
   }, [])
 
   // Reload khi đổi user (bỏ qua lần mount đầu)
@@ -106,6 +107,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     if (backendOnline && currentUser) {
       loadData()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi mở/đổi id; hàm load được tạo lại mỗi render, thêm vào là chạy lặp
   }, [currentUser])
 
   // Reload on refreshTick from Navbar
@@ -113,6 +115,7 @@ export default function Dashboard({ onOpenProject, refreshTick, openCreateModal,
     if (refreshTick > 0 && backendOnline) {
       loadData()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi mở/đổi id; hàm load được tạo lại mỗi render, thêm vào là chạy lặp
   }, [refreshTick])
 
   // Auto-refresh khi có project đang chạy

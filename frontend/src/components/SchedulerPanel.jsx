@@ -72,6 +72,7 @@ export default function SchedulerPanel({ workflow, onClose }) {
     getUsers()
       .then(res => setTotalUsers((res.data || []).length))
       .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t chỉ dùng cho thông báo lỗi; đổi ngôn ngữ không cần chạy lại effect
   }, [workflow?.id])
 
   const openEdit = (schedule) => {

@@ -28,6 +28,7 @@ export default function InputVarsModal({ runId, spec, onDone }) {
       else init[f.name] = f.defaultValue ?? ''
     }
     setValues(init)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- khởi tạo theo block_id; fields tạo mới mỗi render, thêm vào là reset ô đang nhập
   }, [spec?.block_id])
 
   // Đồng bộ đếm ngược theo backend mỗi lần spec cập nhật (poll ~1.5s)

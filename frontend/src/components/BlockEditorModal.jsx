@@ -393,6 +393,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       setExcelReadCols(node.data.excelReadCols || [])
       setExcelReadMappings(node.data.columnMappings || {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form antd ổn định; node.data chỉ đọc lúc mở form, không đồng bộ ngược khi đang sửa
   }, [open, node.id])
 
   // Fetch output files cho Telegram attachment
@@ -424,6 +425,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
         editorRef.current.setValue(isPython ? initialCode : initialSql)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form antd ổn định; node.data chỉ đọc lúc mở form, không đồng bộ ngược khi đang sửa
   }, [open, node.id, isPython])
 
   // Fetch + poll listener status mỗi 5s
@@ -493,6 +495,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
       setAvailableColumns([])
       setColumnError('')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form antd ổn định; node.data chỉ đọc lúc mở form, không đồng bộ ngược khi đang sửa
   }, [isPivotExcel, open, workflowId, pivotInputFile, pivotHeaderRow])
 
   useEffect(() => {
@@ -520,6 +523,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, inputKey
     } else {
       setCustomSortValues([])
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form antd ổn định; node.data chỉ đọc lúc mở form, không đồng bộ ngược khi đang sửa
   }, [isPivotExcel, open, workflowId, pivotEnableSort, pivotSortColumn, pivotSortOrder, pivotInputFile, pivotHeaderRow])
 
 
