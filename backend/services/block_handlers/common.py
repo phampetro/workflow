@@ -1,5 +1,24 @@
 """Tiện ích dùng chung cho handler: chạy script con, cài package, tìm file."""
+import json
+from pathlib import Path
+
 from services import executor_blocks as eb
+
+# Script cố định của các khối sinh sẵn (SQL...) — file .py thật, có lint/test.
+# Bản build PyInstaller phải đóng gói thư mục này (--add-data trong build_release).
+BLOCK_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "block_scripts"
+
+
+def script_code(name, params):
+    """Mã chạy cho script cố định ``block_scripts/<name>.py`` với cấu hình ``params``.
+
+    Cấu hình đi vào DUY NHẤT một biến ``PARAMS`` qua json.dumps + repr — không còn
+    ghép từng giá trị vào giữa mã nguồn (cách cũ: phải nhớ ``!r`` cho MỌI giá trị,
+    quên một chỗ là ô cấu hình chứa {{text}} Telegram thành mã chạy được).
+    """
+    body = (BLOCK_SCRIPTS_DIR / f"{name}.py").read_text(encoding="utf-8")
+    header = f"import json as _json\nPARAMS = _json.loads({json.dumps(params, ensure_ascii=False)!r})\n"
+    return header + body
 
 
 def run_script(ctx, step, code, timeout=7200, workflow_env=None):

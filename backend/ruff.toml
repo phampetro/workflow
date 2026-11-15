@@ -10,3 +10,8 @@ ignore = [
     "B008",  # Depends(...) trong default argument là chuẩn FastAPI
     "B904",  # raise HTTPException trong except — chưa cần nối chuỗi nguyên nhân
 ]
+
+[lint.per-file-ignores]
+# Script chạy trong venv project: PARAMS/INPUT_DIR/OUTPUT_DIR do RUNNER_TEMPLATE
+# và common.script_code tiêm vào lúc chạy (xem docstring đầu mỗi file).
+"services/block_scripts/*.py" = ["F821"]

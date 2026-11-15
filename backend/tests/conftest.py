@@ -116,6 +116,19 @@ class Engine:
         return "\n".join(m for _, _, m, _ in self.logs)
 
 
+def script_params(code):
+    """PARAMS mà handler truyền cho script cố định (services/block_scripts/*.py).
+
+    Chỉ chạy 2 dòng đầu do common.script_code sinh ra — chính là cách script con nhận
+    cấu hình, nên kiểm ở đây là kiểm đúng giá trị script thật sẽ thấy.
+    """
+    head = "\n".join(code.split("\n", 2)[:2])
+    assert head.startswith("import json as _json\nPARAMS = _json.loads("), head
+    ns = {}
+    exec(head, ns)
+    return ns["PARAMS"]
+
+
 def graph(nodes, edges):
     """nodes: [(id, type, data)], edges: [(src, tgt)] hoặc [(src, tgt, sourceHandle)]."""
     return {

@@ -6,7 +6,7 @@ và block_handlers). Đổi hành vi nào ở đây là đổi kết quả workf
 import threading
 import time
 
-from conftest import graph
+from conftest import graph, script_params
 from services import executor_blocks as eb
 
 
@@ -246,8 +246,7 @@ def test_excel_to_sql_renames_output_vars(engine):
     inp = engine.called("py")[0][1]
     assert inp["so_dong"] == 5 and "rows_inserted" not in inp
     assert inp["table"] == "dbo.t"
-    # script sinh ra nhúng tên bảng qua !r
-    assert "table_name = 'dbo.t'" in engine.called("imp")[0][3]
+    assert script_params(engine.called("imp")[0][3])["table_name"] == "dbo.t"
 
 
 def test_excel_to_sql_rejects_injected_table_name(engine):
@@ -277,8 +276,12 @@ def test_sql_to_excel_embeds_query_safely(engine):
     assert status == "success"
     code = engine.called("sq")[0][3]
     expected = "SELECT 'x\"\"\"; import os; z=\"\"\"'"
-    assert f"sql_query = {expected!r}" in code       # nhúng qua !r, không thoát chuỗi được
-    assert "out_file = 'pyflow.db'" in code          # safe_filename bỏ ../
+    params = script_params(code)
+    # Câu SQL là DỮ LIỆU trong PARAMS, không còn bị ghép vào mã nguồn → chuỗi
+    # x"""; import os; ... không thể thoát ra thành lệnh Python.
+    assert params["sql_query"] == expected
+    assert params["excel_filename"] == "pyflow.db"   # safe_filename bỏ ../
+    compile(code, "<script>", "exec")
     assert engine.called("py")[0][1]["f"] == "out.xlsx"
 
 

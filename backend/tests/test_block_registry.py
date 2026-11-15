@@ -63,4 +63,5 @@ def test_excel_to_sql_input_file_is_plain_name(engine):
                                   "excelToSqlSavedConnectionId": conn})],
         [("s", "imp")],
     ))
-    assert "input_file = 'pyflow.db'" in engine.called("imp")[0][3]
+    from conftest import script_params
+    assert script_params(engine.called("imp")[0][3])["input_file"] == "pyflow.db"
