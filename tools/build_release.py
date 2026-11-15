@@ -79,6 +79,21 @@ UV_VERSION = "0.13.5"          # khớp requirements-dev.txt
 BUNDLED_PYTHON = "3.13"        # Python cho venv của project trên máy khách
 
 
+def _zip_dir(src_dir, dest, skip_top=(), only_top=None):
+    """Nén src_dir (đường dẫn trong zip tương đối với src_dir), lọc theo thư mục cấp 1."""
+    import zipfile
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+        for dirpath, _dirs, files in os.walk(src_dir):
+            rel_dir = os.path.relpath(dirpath, src_dir)
+            top = rel_dir.split(os.sep)[0] if rel_dir != "." else ""
+            for name in files:
+                t = top or name
+                if t in skip_top or (only_top is not None and t not in only_top):
+                    continue
+                full = os.path.join(dirpath, name)
+                z.write(full, os.path.relpath(full, src_dir))
+
+
 def prepare_runtime(release_dir, python_exe, backend_src):
     """Đóng gói runtime/python (CPython độc lập) + runtime/uv.exe vào bản phát hành.
 
@@ -103,7 +118,12 @@ def prepare_runtime(release_dir, python_exe, backend_src):
                          capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"[LOI] Python dong goi khong chay duoc: {out.stderr}")
-    print(f"Runtime: Python {out.stdout.strip()} ({found[-1]}) + uv {UV_VERSION}")
+    runtime_id = f"{out.stdout.strip()}-uv{UV_VERSION}"
+    # Máy khách so file này với tên gói runtime-<id>.pyrt trên release để biết có cần tải lại.
+    with open(os.path.join(runtime, "VERSION"), "w", encoding="utf-8") as f:
+        f.write(runtime_id)
+    print(f"Runtime: Python {out.stdout.strip()} ({found[-1]}) + uv {UV_VERSION} -> {runtime_id}")
+    return runtime_id
 
 
 MANIFEST_NAME = "release_files.txt"
@@ -229,7 +249,7 @@ def main():
     shutil.copytree(os.path.join(frontend_dir, "dist"), os.path.join(frontend_dest, "dist"))
 
     print("Dong goi runtime Python + uv...")
-    prepare_runtime(release_dir, python_exe, backend_src)
+    runtime_id = prepare_runtime(release_dir, python_exe, backend_src)
 
     # Icon nam TRONG backend/ (an voi nguoi dung) — start.vbs cung chuyen vao day
     # (xem bên dưới), chỉ để lộ 1 shortcut .lnk có icon riêng ở thư mục gốc release
@@ -418,8 +438,14 @@ End Function
     print("Dang tao file update.zip...")
     
     zip_path = os.path.join(root_dir, "Releases", "update")
-    shutil.make_archive(zip_path, 'zip', release_dir)
+    # update.zip KHÔNG kèm runtime/ (~32MB): máy khách chỉ tải gói runtime riêng khi thiếu
+    # hoặc khác phiên bản. Thư mục release (cài mới) vẫn đủ runtime/.
+    _zip_dir(release_dir, zip_path + ".zip", skip_top={"runtime"})
     print(f"Da tao {zip_path}.zip")
+    # Đuôi .pyrt (không phải .zip): code cập nhật CŨ trên máy khách lấy ".zip" đầu tiên.
+    runtime_pkg = os.path.join(root_dir, "Releases", f"runtime-{runtime_id}.pyrt")
+    _zip_dir(release_dir, runtime_pkg, only_top={"runtime"})
+    print(f"Da tao {runtime_pkg}")
 
     # ── Ky ban cap nhat ──────────────────────────────────────────────────────
     # update.zip duoc giai nen DE LEN thu muc cai dat roi chay lai app -> day la
@@ -443,6 +469,9 @@ End Function
     with open(sig_path, "w", encoding="utf-8") as f:
         f.write(sig_text)
     print(f"Da tao {sig_path}")
+    with open(runtime_pkg + ".sig", "w", encoding="utf-8") as f:
+        f.write(sign_update(runtime_pkg, priv_b64))
+    print(f"Da tao {runtime_pkg}.sig")
 
     
     env_file = os.path.join(root_dir, ".env")
@@ -501,6 +530,8 @@ End Function
                 uploads = [
                     ("update.zip", zip_path + ".zip", "application/zip"),
                     ("update.zip.sig", zip_path + ".zip.sig", "application/json"),
+                    (os.path.basename(runtime_pkg), runtime_pkg, "application/octet-stream"),
+                    (os.path.basename(runtime_pkg) + ".sig", runtime_pkg + ".sig", "application/json"),
                 ]
                 wanted = {name for name, _, _ in uploads}
 

@@ -205,3 +205,72 @@ def test_backend_reports_rolled_back_marker_once(tmp_path, monkeypatch):
         "code": "update_rolled_back", "detail": "health: ban moi khong khoi dong duoc"}
     assert not (tmp_path / ".update_failed").exists()
     system._set_update_error(None)
+
+
+def test_update_without_runtime_keeps_existing_runtime_even_on_rollback(install):
+    rt = install / "runtime" / "python"
+    rt.mkdir(parents=True)
+    (rt / "python.exe").write_text("RT-CU")
+    with zipfile.ZipFile(install / "update.zip", "w") as f:          # KHÔNG kèm runtime/
+        f.writestr("backend/pyflow-backend.exe", "new")
+        f.writestr("backend/version.txt", "new")
+        f.writestr("backend/start.vbs", _vbs_mark("new_started.txt"))
+    r = _run(install, install / "update.zip", _free_port(), 5)      # bản mới không lên → hoàn tác
+    assert r.returncode == 10
+    assert (install / "backend" / "version.txt").read_text() == "old"
+    assert (rt / "python.exe").read_text() == "RT-CU"                 # hoàn tác KHÔNG gỡ runtime đang có
+
+
+def test_separate_runtime_package_is_installed(install, tmp_path):
+    port, pidfile = _free_port(), tmp_path / "server.pid"
+    with zipfile.ZipFile(install / "update.zip", "w") as f:
+        f.writestr("backend/pyflow-backend.exe", "new")
+        f.writestr("backend/version.txt", "new")
+        f.writestr("backend/start.vbs", _vbs_server(port, pidfile))
+        f.writestr("backend/server.py", SERVER)
+    with zipfile.ZipFile(install / "runtime.zip", "w") as f:
+        f.writestr("runtime/python/python.exe", "RT-MOI")
+        f.writestr("runtime/VERSION", "3.13.17-uv0.13.5")
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(SCRIPT),
+             "-Install", str(install), "-Zip", str(install / "update.zip"),
+             "-RuntimeZip", str(install / "runtime.zip"),
+             "-HealthUrl", f"http://127.0.0.1:{port}/health", "-HealthTimeoutSec", "60", "-WaitOldExitSec", "0"],
+            capture_output=True, text=True, timeout=180)
+        assert r.returncode == 0, (install / "update.log").read_text(encoding="utf-8-sig")
+        assert (install / "runtime" / "python" / "python.exe").read_text() == "RT-MOI"
+        assert (install / "runtime" / "VERSION").read_text() == "3.13.17-uv0.13.5"
+        assert not (install / "runtime.zip").exists()
+    finally:
+        if pidfile.exists():
+            subprocess.run(["taskkill", "/F", "/PID", pidfile.read_text().strip()], capture_output=True)
+
+
+def test_pick_assets_by_name_runtime_never_mistaken_for_update():
+    from routers import system
+    assets = [{"name": n, "browser_download_url": "u/" + n} for n in
+              ("runtime-3.13.17-uv0.13.5.pyrt", "runtime-3.13.17-uv0.13.5.pyrt.sig", "update.zip.sig", "update.zip")]
+    a = system._pick_assets(assets)
+    assert a["update"] == "u/update.zip" and a["update_sig"] == "u/update.zip.sig"
+    assert a["runtime"].endswith(".pyrt") and a["runtime_sig"].endswith(".pyrt.sig")
+    assert a["runtime_id"] == "3.13.17-uv0.13.5"
+    # Code cập nhật CŨ trên máy khách lấy ".zip" đầu tiên — không được trúng gói runtime.
+    first_zip = next(x["name"] for x in assets if x["name"].endswith(".zip"))
+    assert first_zip == "update.zip"
+    assert system._pick_assets([])["runtime"] is None
+
+
+def test_zip_dir_filters_top_level(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("br", Path(__file__).resolve().parents[2] / "tools" / "build_release.py")
+    br = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(br)
+    src = tmp_path / "rel"
+    for f in ("backend/a.exe", "frontend/i.html", "runtime/python/python.exe", "readme.txt"):
+        (src / f).parent.mkdir(parents=True, exist_ok=True)
+        (src / f).write_text("x")
+    br._zip_dir(str(src), str(tmp_path / "u.zip"), skip_top={"runtime"})
+    br._zip_dir(str(src), str(tmp_path / "r.zip"), only_top={"runtime"})
+    assert sorted(zipfile.ZipFile(tmp_path / "u.zip").namelist()) == ["backend/a.exe", "frontend/i.html", "readme.txt"]
+    assert zipfile.ZipFile(tmp_path / "r.zip").namelist() == ["runtime/python/python.exe"]

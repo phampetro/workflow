@@ -51,14 +51,16 @@ _UPDATE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__
 # thúc bằng "\" ngay trước dấu " sẽ nuốt mất dấu " khi truyền tham số.
 _UPDATER_BAT = r'''@echo off
 echo DANG CAP NHAT PHIEN BAN MOI... Xin vui long cho, khong dong cua so nay.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_update.ps1" -Install "%~dp0." -Zip "%~dp0update.zip"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_update.ps1" -Install "%~dp0." -Zip "%~dp0update.zip" -RuntimeZip "%~dp0runtime.zip"
 set RC=%errorlevel%
 if "%RC%"=="0" goto done
 if "%RC%"=="10" goto done
 echo Khong chay duoc trinh cap nhat moi (ma %RC%) - dung cach cu...
 ping 127.0.0.1 -n 3 > nul
 powershell -NoProfile -command "Expand-Archive -Force -Path '%~dp0update.zip' -DestinationPath '%~dp0.'"
+if exist "%~dp0runtime.zip" powershell -NoProfile -command "Expand-Archive -Force -Path '%~dp0runtime.zip' -DestinationPath '%~dp0.'"
 del "%~dp0update.zip"
+if exist "%~dp0runtime.zip" del "%~dp0runtime.zip"
 start "" "%~dp0backend\start.vbs"
 :done
 del "%~dp0apply_update.ps1"
@@ -85,6 +87,56 @@ def _load_rolled_back_marker() -> None:
 
 
 _load_rolled_back_marker()
+
+
+RUNTIME_ASSET_PREFIX, RUNTIME_ASSET_SUFFIX = "runtime-", ".pyrt"
+
+
+def _pick_assets(assets: list) -> dict:
+    """Chọn asset của release theo TÊN.
+
+    Gói runtime đặt đuôi .pyrt (không phải .zip) có chủ đích: code cập nhật CŨ trên máy
+    khách lấy file ".zip" ĐẦU TIÊN — gặp runtime-*.zip là cài nhầm gói Python làm bản cập nhật.
+    """
+    by_name = {a["name"]: a["browser_download_url"] for a in assets}
+    update = by_name.get("update.zip") or next((u for n, u in by_name.items() if n.endswith(".zip")), None)
+    runtime_name = next((n for n in by_name if n.startswith(RUNTIME_ASSET_PREFIX) and n.endswith(RUNTIME_ASSET_SUFFIX)), None)
+    return {
+        "update": update,
+        "update_sig": by_name.get("update.zip.sig"),
+        "runtime": by_name.get(runtime_name) if runtime_name else None,
+        "runtime_sig": by_name.get(runtime_name + ".sig") if runtime_name else None,
+        "runtime_id": runtime_name[len(RUNTIME_ASSET_PREFIX):-len(RUNTIME_ASSET_SUFFIX)] if runtime_name else None,
+    }
+
+
+def _local_runtime_id(install_dir: str):
+    try:
+        with open(os.path.join(install_dir, "runtime", "VERSION"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def _download_verified(url: str, sig_url: str, dest: str) -> None:
+    """Tải file + chữ ký, verify Ed25519; sai/thiếu chữ ký thì xoá file và raise."""
+    from services.update_signing import verify_update
+    from services.license_pubkey import PUBLIC_KEY_B64
+    if not sig_url:
+        raise Exception(f"{os.path.basename(dest)}: thiếu chữ ký số")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "PyFlow-Studio-Updater"})
+        with urllib.request.urlopen(req, timeout=120, context=_github_ssl_context()) as r, open(dest, "wb") as out:
+            shutil.copyfileobj(r, out)
+        sreq = urllib.request.Request(sig_url, headers={"User-Agent": "PyFlow-Studio-Updater"})
+        with urllib.request.urlopen(sreq, timeout=30, context=_github_ssl_context()) as r:
+            verify_update(dest, r.read().decode("utf-8"), PUBLIC_KEY_B64)
+    except Exception:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        raise
 
 
 # Thư mục gốc repo (chứa .git) — chỉ dùng ở bản dev (không frozen).
@@ -344,14 +396,8 @@ def execute_update():
             req.add_header("User-Agent", "PyFlow-Studio-Updater")
             with urllib.request.urlopen(req, timeout=10, context=_github_ssl_context()) as response:
                 release_data = json.loads(response.read().decode())
-                download_url = None
-                sig_url = None
-                for asset in release_data.get("assets", []):
-                    name = asset["name"]
-                    if name.endswith(".zip.sig"):
-                        sig_url = asset["browser_download_url"]
-                    elif name.endswith(".zip") and download_url is None:
-                        download_url = asset["browser_download_url"]
+                assets = _pick_assets(release_data.get("assets", []))
+                download_url, sig_url = assets["update"], assets["update_sig"]
 
             if not download_url:
                 # KHÔNG fallback về zipball_url của GitHub nữa: đó là snapshot mã
@@ -370,6 +416,20 @@ def execute_update():
                 parent_dir = os.path.dirname(root_dir)
                 zip_path = os.path.join(parent_dir, "update.zip")
                 
+                # Gói runtime (Python + uv) tách riêng: chỉ tải khi máy này thiếu hoặc khác
+                # phiên bản → mỗi lần cập nhật nhẹ hơn ~32MB. Cũng phải verify chữ ký.
+                runtime_zip = os.path.join(parent_dir, "runtime.zip")
+                # File sót từ lần cập nhật hỏng trước: updater.bat thấy file là cài → xoá trước.
+                if os.path.exists(runtime_zip):
+                    os.remove(runtime_zip)
+                if assets["runtime"] and assets["runtime_id"] != _local_runtime_id(parent_dir):
+                    try:
+                        _download_verified(assets["runtime"], assets["runtime_sig"], runtime_zip)
+                    except Exception as e:
+                        logger.error(f"Từ chối gói runtime — tải/xác minh thất bại: {e}")
+                        _set_update_error("invalid_update", str(e))
+                        return
+
                 req = urllib.request.Request(download_url)
                 req.add_header("User-Agent", "PyFlow-Studio-Updater")
                 # timeout BẮT BUỘC: không có thì mạng chập chờn làm thread Timer treo

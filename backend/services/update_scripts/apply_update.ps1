@@ -23,7 +23,9 @@ param(
     [Parameter(Mandatory = $true)][string]$Zip,
     [string]$HealthUrl = "http://127.0.0.1:8000/health",
     [int]$HealthTimeoutSec = 120,
-    [int]$WaitOldExitSec = 3
+    [int]$WaitOldExitSec = 3,
+    # Gói runtime (Python + uv) tải riêng — chỉ có khi máy khách thiếu/khác phiên bản.
+    [string]$RuntimeZip = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,6 +35,9 @@ $backup = Join-Path $Install "_update_backup"
 $parts = @("backend", "frontend", "runtime")
 $dataRel = "backend\_internal\data"
 $logFile = Join-Path $Install "update.log"
+# Phần đã thực sự đổi chỗ — Restore CHỈ đụng tới những phần này. Bản cập nhật không
+# kèm runtime\ thì runtime đang có giữ nguyên, hoàn tác cũng không được gỡ nó.
+$script:swapped = @()
 
 function Log([string]$msg) {
     "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg" | Out-File -FilePath $logFile -Append -Encoding utf8
@@ -100,7 +105,7 @@ function Restore {
         (Test-Path -LiteralPath (Join-Path $backup "backend\_internal"))) {
         Move-Item -LiteralPath $curData -Destination $bakData
     }
-    foreach ($p in $parts) {
+    foreach ($p in $script:swapped) {
         $b = Join-Path $backup $p
         $i = Join-Path $Install $p
         if (-not (Test-Path -LiteralPath $b)) {
@@ -129,6 +134,12 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $stage "backend\pyflow-backend.exe"))) {
         throw "ban cap nhat thieu backend\pyflow-backend.exe"
     }
+    if ($RuntimeZip -and (Test-Path -LiteralPath $RuntimeZip)) {
+        Expand-Archive -LiteralPath $RuntimeZip -DestinationPath $stage -Force
+        if (-not (Test-Path -LiteralPath (Join-Path $stage "runtime\python\python.exe"))) {
+            throw "goi runtime thieu runtime\python\python.exe"
+        }
+    }
 } catch {
     Log "LOI giai nen: $_ - giu nguyen ban cu"
     Remove-Safe $stage
@@ -143,12 +154,12 @@ try {
     if (Test-Path -LiteralPath $backup) { throw "_update_backup cu con du lieu - dung lai de khong de len" }
     New-Item -ItemType Directory -Path $backup | Out-Null
     foreach ($p in $parts) {
+        $s = Join-Path $stage $p
+        if (-not (Test-Path -LiteralPath $s)) { continue }      # bản mới không kèm phần này → giữ phần đang có
+        $script:swapped += $p
         $src = Join-Path $Install $p
         if (Test-Path -LiteralPath $src) { Move-Item -LiteralPath $src -Destination (Join-Path $backup $p) }
-    }
-    foreach ($p in $parts) {
-        $s = Join-Path $stage $p
-        if (Test-Path -LiteralPath $s) { Move-Item -LiteralPath $s -Destination (Join-Path $Install $p) }
+        Move-Item -LiteralPath $s -Destination (Join-Path $Install $p)
     }
     $newData = Join-Path $Install $dataRel
     if (Test-Path -LiteralPath $newData) {
@@ -156,7 +167,10 @@ try {
         Move-Item -LiteralPath $newData -Destination ($newData + ".from_zip")
     }
     $oldData = Join-Path $backup $dataRel
-    if (Test-Path -LiteralPath $oldData) { Move-Item -LiteralPath $oldData -Destination $newData }
+    if (Test-Path -LiteralPath $oldData) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $newData) | Out-Null
+        Move-Item -LiteralPath $oldData -Destination $newData
+    }
     Get-ChildItem -LiteralPath $stage -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $Install -Force }
     Log "Da doi cho ban moi, dang khoi dong..."
 } catch {
@@ -175,6 +189,7 @@ if (Wait-Healthy) {
     Remove-Safe $backup
     Remove-Safe $stage
     Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue
+    if ($RuntimeZip) { Remove-Item -LiteralPath $RuntimeZip -Force -ErrorAction SilentlyContinue }
     exit 0
 }
 
