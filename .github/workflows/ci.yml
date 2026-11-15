@@ -20,6 +20,8 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # cần tag vX.Y.Z cho /api/system/info bản dev
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -28,7 +30,7 @@ jobs:
       - name: Cài thư viện
         run: python -m pip install -r requirements-dev.txt
       - name: Lint (ruff)
-        run: python -m ruff check .
+        run: python -m ruff check . ../tools
       - name: Test (pytest)
         run: python -m pytest
 

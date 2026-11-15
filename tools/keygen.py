@@ -31,7 +31,6 @@ CÁCH DÙNG (chạy bằng python của venv backend cho chắc có cryptography
 import argparse
 import base64
 import json
-import os
 import secrets
 import sys
 from datetime import date, datetime, timedelta

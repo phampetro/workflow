@@ -13,35 +13,66 @@ def _version_tuple(v):
         return (0,)
 
 
-def compute_version(root_dir, backend_src):
-    """Tính version từ số commit. Lỗi là DỪNG HẲN — không được đoán.
+def _git(root_dir):
+    """git kèm `-c safe.directory` cho đúng repo này: đổi user Windows làm git báo
+    "dubious ownership" thì vẫn chạy được (không sửa cấu hình git global)."""
+    return ["git", "-c", f"safe.directory={root_dir.replace(os.sep, '/')}"]
 
-    Trước đây git lỗi thì âm thầm rơi về "1.0.0" rồi vẫn build + upload: đổi user
-    Windows làm git báo "dubious ownership" là phát hành ra bản v1.0.0 trong khi khách
-    đang ở v2.2.x. Kèm `-c safe.directory` cho đúng repo này để lỗi đó không chặn build.
+
+def _bump(version, part):
+    major, minor, patch = (list(_version_tuple(version)) + [0, 0, 0])[:3]
+    if part == "major":
+        return f"{major + 1}.0.0"
+    if part == "minor":
+        return f"{major}.{minor + 1}.0"
+    return f"{major}.{minor}.{patch + 1}"
+
+
+def compute_version(root_dir, backend_src, bump="patch"):
+    """Version theo git tag semver `vX.Y.Z`. Lỗi là DỪNG HẲN — không được đoán.
+
+    Trước đây số patch = số commit và minor tự nhảy mỗi 10 commit: viết lại lịch sử
+    git (đợt thu nhỏ .git) là đổi số, và con số không nói lên gì. Giờ:
+    - HEAD đúng tại tag vX.Y.Z → build lại đúng X.Y.Z.
+    - Không thì lấy bản lớn nhất trong (các tag v*, release_version.json) rồi tăng
+      theo `--bump` (mặc định patch). Upload xong mới gắn tag (xem _tag_release).
+    Không bao giờ ra số NHỎ HƠN bản trước: client thấy version khác là coi như bản mới.
     """
-    git = ["git", "-c", f"safe.directory={root_dir.replace(os.sep, '/')}"]
+    git = _git(root_dir)
     try:
-        count = int(subprocess.check_output(git + ["rev-list", "--count", "HEAD"], text=True, cwd=root_dir).strip())
+        tags = subprocess.check_output(git + ["tag", "--list", "v[0-9]*"], text=True, cwd=root_dir).split()
+        exact = subprocess.run(git + ["describe", "--tags", "--exact-match", "--match", "v[0-9]*", "HEAD"],
+                               capture_output=True, text=True, cwd=root_dir).stdout.strip()
         date_out = subprocess.check_output(
             git + ["log", "-1", "--format=%cd", "--date=format:%d/%m/%Y %H:%M:%S"], text=True, cwd=root_dir).strip()
     except Exception as e:
-        sys.exit(f"[LOI] Khong doc duoc lich su git de tinh version: {e}\n"
-                 f"      Kiem tra: git -C \"{root_dir}\" rev-list --count HEAD")
+        sys.exit(f"[LOI] Khong doc duoc git de tinh version: {e}\n"
+                 f"      Kiem tra: git -C \"{root_dir}\" tag --list")
 
-    base_count = 24
-    increment = max(0, count - base_count) // 10
-    version = f"{1 + increment // 10}.{increment % 10}.{count}"
-
-    # Không bao giờ phát hành bản có số NHỎ HƠN bản đang commit trong repo: client so
-    # version khác nhau là coi như "có bản mới", nên bản lùi số vẫn bị cài như nâng cấp.
+    known = [t[1:] for t in tags]
     version_file = os.path.join(backend_src, "release_version.json")
     if os.path.exists(version_file):
         with open(version_file, "r", encoding="utf-8") as f:
-            prev = json.load(f).get("version", "0")
-        if _version_tuple(version) < _version_tuple(prev):
-            sys.exit(f"[LOI] Version moi {version} NHO HON ban truoc {prev} — dung build.")
-    return version, date_out, count
+            known.append(json.load(f).get("version", "0"))
+    latest = max(known, key=_version_tuple, default="0.0.0")
+
+    if exact and _version_tuple(exact[1:]) >= _version_tuple(latest):
+        version = exact[1:]
+    else:
+        version = _bump(latest, bump)
+    if _version_tuple(version) < _version_tuple(latest):
+        sys.exit(f"[LOI] Version moi {version} NHO HON ban truoc {latest} — dung build.")
+    return version, date_out
+
+
+def _tag_release(root_dir, version):
+    """Gắn tag vX.Y.Z vào commit vừa phát hành và đẩy lên origin (mốc cho lần sau)."""
+    git, tag = _git(root_dir), f"v{version}"
+    existing = subprocess.run(git + ["tag", "--list", tag], capture_output=True, text=True, cwd=root_dir).stdout.strip()
+    if not existing:
+        subprocess.run(git + ["tag", "-a", tag, "-m", f"Release {tag}"], check=True, cwd=root_dir)
+    if subprocess.run(git + ["push", "origin", tag], cwd=root_dir).returncode != 0:
+        print(f"!! Chua day duoc tag {tag} len origin — chay tay: git push origin {tag}")
 
 
 MANIFEST_NAME = "release_files.txt"
@@ -61,7 +92,7 @@ def write_release_manifest(backend_dest, version):
     """
     internal = os.path.join(backend_dest, "_internal")
     files = []
-    for dirpath, dirnames, filenames in os.walk(internal):
+    for dirpath, _dirnames, filenames in os.walk(internal):
         rel_dir = os.path.relpath(dirpath, internal)
         if rel_dir == "data" or rel_dir.startswith("data" + os.sep):
             continue
@@ -79,8 +110,8 @@ def main():
     backend_src = os.path.join(root_dir, "backend")
 
     # Tính version TRƯỚC khi xoá/build gì: sai thì dừng ngay, không phí 10 phút build.
-    version, date_out, count = compute_version(root_dir, backend_src)
-    print(f"Version se phat hanh: v{version} ({count} commit)")
+    version, date_out = compute_version(root_dir, backend_src, _bump_arg())
+    print(f"Version se phat hanh: v{version}")
 
     release_dir = os.path.join(root_dir, "Releases", "pyflow-studio")
     
@@ -101,7 +132,7 @@ def main():
     print("Tao file release_version.json...")
     version_file = os.path.join(backend_src, "release_version.json")
     with open(version_file, "w") as f:
-        json.dump({"version": version, "updatedAt": date_out, "commitCount": count}, f)
+        json.dump({"version": version, "updatedAt": date_out}, f)
         
     # GHIM phiên bản: trước đây cài "pyinstaller" mới nhất mỗi lần build nên bootloader
     # / cấu trúc _internal đổi ngầm giữa các bản — một nguyên nhân khiến giải nén đè lên
@@ -454,6 +485,7 @@ End Function
                     with urllib.request.urlopen(upload_req):
                         print(f"   {name}: OK")
                 print("Upload GitHub thanh cong!")
+                _tag_release(root_dir, version)
                     
         except urllib.error.HTTPError as e:
             err_msg = e.read().decode()
@@ -462,6 +494,18 @@ End Function
             print(f"Loi khi upload GitHub: {e}")
     else:
         print("Khong tim thay GITHUB_TOKEN trong file .env, bo qua upload.")
+
+def _bump_arg():
+    """`--bump patch|minor|major` (mặc định patch). VD: python tools\build_release.py --bump minor"""
+    args = sys.argv[1:]
+    if "--bump" in args:
+        i = args.index("--bump")
+        part = args[i + 1] if i + 1 < len(args) else ""
+        if part not in ("patch", "minor", "major"):
+            sys.exit("[LOI] --bump phai la patch | minor | major")
+        return part
+    return "patch"
+
 
 def _ensure_backend_venv():
     """Luôn chạy build bằng Python của backend\\.venv, dù gọi bằng lệnh nào.

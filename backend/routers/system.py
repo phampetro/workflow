@@ -228,38 +228,23 @@ def get_system_info():
             with open(version_file, "r") as f:
                 return json.load(f)
         except Exception as e:
-            return {"version": "Unknown", "updatedAt": "Unknown", "commitCount": 0, "error": str(e)}
+            return {"version": "Unknown", "updatedAt": "Unknown", "error": str(e)}
 
     try:
-        # Get total commits
-        count_out = subprocess.check_output(_git_cmd("rev-list", "--count", "HEAD"), text=True, cwd=_REPO_ROOT).strip()
-        count = int(count_out)
-        
-        # Calculate version
-        base_count = 24
-        adjusted = max(0, count - base_count)
-        increment = adjusted // 10
-        major = 1 + (increment // 10)
-        minor = increment % 10
-        version = f"{major}.{minor}.{count}"
+        # Bản dev: version = tag phát hành gần nhất (tools/build_release.py gắn tag
+        # vX.Y.Z sau mỗi lần upload) + số commit sau tag đó. VD "2.4.164+3".
+        desc = subprocess.check_output(
+            _git_cmd("describe", "--tags", "--match", "v[0-9]*", "--long"), text=True, cwd=_REPO_ROOT
+        ).strip()                                    # v2.4.164-3-g894c7b0
+        tag, ahead, _sha = desc.rsplit("-", 2)
+        version = tag[1:] + (f"+{ahead}" if ahead != "0" else "")
 
-        # Get last commit date
         date_out = subprocess.check_output(
             _git_cmd("log", "-1", "--format=%cd", "--date=format:%d/%m/%Y %H:%M:%S"), text=True, cwd=_REPO_ROOT
         ).strip()
-
-        return {
-            "version": version,
-            "updatedAt": date_out,
-            "commitCount": count
-        }
+        return {"version": version, "updatedAt": date_out}
     except Exception as e:
-        return {
-            "version": "1.0",
-            "updatedAt": "Unknown",
-            "commitCount": 0,
-            "error": str(e)
-        }
+        return {"version": "dev", "updatedAt": "Unknown", "error": str(e)}
 
 @router.get("/check-update")
 def check_update():
