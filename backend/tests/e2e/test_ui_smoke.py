@@ -134,6 +134,25 @@ def test_main_flow(page, server):
     assert "blockEditor." not in drawer.inner_text()           # không lộ key dịch thô
     drawer.locator(".ant-drawer-close").click()
 
+    # 5b. Form 2 khối Telegram: bảng cú pháp (block-editor/TelegramSyntaxTables.jsx) hiện đủ
+    for btype, expect, fx in (("telegram_listener", "<tg-spoiler>text</tg-spoiler>", 0.25),
+                              ("telegram", "<b><i>text</i></b>", 0.7)):
+        pg.evaluate("""([t, fx]) => {
+            const pane = document.querySelector('.react-flow__pane');
+            const r = pane.getBoundingClientRect(), dt = new DataTransfer();
+            dt.setData('application/reactflow', t);
+            for (const ev of ['dragover', 'drop'])
+                pane.dispatchEvent(new DragEvent(ev, {dataTransfer: dt, clientX: r.x + r.width * fx,
+                    clientY: r.y + r.height * 0.3, bubbles: true, cancelable: true}));
+        }""", [btype, fx])
+        node = pg.locator(f'.react-flow__node[data-id^="{btype}-"]').last
+        node.wait_for()
+        node.dblclick()
+        drawer = pg.locator(".ant-drawer-open")
+        drawer.get_by_text(expect, exact=True).wait_for()
+        drawer.locator(".ant-drawer-close").click()
+        drawer.wait_for(state="detached")
+
     # 6. Quay lại danh sách
     pg.get_by_role("button", name="Quay lại").first.click()
     pg.get_by_role("button", name="Mở workflow WF E2E").wait_for()
