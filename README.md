@@ -604,6 +604,7 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
   > Trước tháng 09/2026 mục này ghi "WAL mode giúp không lock" nhưng **thực tế chưa hề có dòng `journal_mode` nào** trong backend; DB chạy ở `journal_mode=delete` với busy_timeout mặc định 5s. Đó là lý do `_finish_run` thỉnh thoảng ném lỗi ra ngoài `execute_workflow_thread` và để lại run kẹt RUNNING tới lần restart.
 - Vẫn phải cẩn thận: **đừng long-open async session** trong khi executor thread đang UPDATE cùng row. `run_workflow_internal` đã tách thành 3 đoạn session ngắn, `execute_workflow()` chạy NGOÀI mọi session (workflow có Telegram Listener sống hàng tuần).
 - **Auto-migration** khi startup: [database.py:_sqlite_apply_schema_updates](backend/database.py:30) chỉ thêm cột thiếu, không xóa/đổi kiểu. Muốn đổi schema breaking → tự viết migration.
+- **Bảo trì tự động** ([maintenance.py](backend/services/maintenance.py)): log chi tiết của run cũ hơn 30 ngày (trừ 20 lần gần nhất mỗi workflow) được dọn, dòng run giữ nguyên; backup DB mỗi ngày vào `backend/data/backups/`, giữ 7 bản. Khôi phục: tắt app, chép bản backup đè lên `pyflow.db`.
 - Cột `graph_json` là **TEXT chứa JSON** — luôn `json.loads`/`json.dumps` trước khi đọc/ghi.
 
 ### Về folder trên đĩa

@@ -183,9 +183,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not reload telegram listeners on startup: {e}")
 
+    # Bảo trì DB (dọn log cũ + backup hằng ngày) — services/maintenance.py. Giữ tham
+    # chiếu task ở app.state để không bị GC giữa chừng.
+    from services.maintenance import maintenance_loop
+    app.state.maintenance_task = asyncio.create_task(maintenance_loop())
+
     yield
     
     # Shutdown gracefully
+    app.state.maintenance_task.cancel()
     stop_scheduler()
     logger.info("APScheduler stopped")
 

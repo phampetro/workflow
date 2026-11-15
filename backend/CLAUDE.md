@@ -63,6 +63,8 @@ Có license + tự cập nhật, tức app chạy trên máy người khác. Cá
 - `database.py` bật WAL + `busy_timeout=15000` qua `apply_sqlite_pragmas()` cho **cả 2 engine**. Thread executor phải dùng **`connect_sqlite()`** — một kết nối quên bật là đủ gây `database is locked`, run kẹt RUNNING. *(test_conventions cấm `sqlite3.connect(` ngoài `database.py`.)*
 - Không bọc `execute_workflow()` trong `async with AsyncSessionLocal()`.
 
+- **Bảo trì tự động** ([services/maintenance.py](services/maintenance.py), chạy lúc khởi động + mỗi 24h): log run cũ hơn 30 ngày (trừ 20 lần gần nhất mỗi workflow) thay bằng 1 dòng thông báo — **giữ dòng run** cho thống kê; `VACUUM` khi trống ≥ 5MB; backup `data/backups/pyflow-YYYYMMDD.db` bằng `VACUUM INTO`, giữ 7 bản.
+
 ## Multi-user
 
 Chỉ **1 user `is_active=True`** tại một thời điểm; **chỉ schedule/listener của user active mới chạy** — design có chủ đích, đừng "fix". Xem README §Multi-user.
