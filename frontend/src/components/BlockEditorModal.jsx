@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getCloudConnections, getGoogleSheetsColumns, startBrowserRecording, stopBrowserRecording, createRecordingStream } from '../api/client'
-import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, Circle, Video, ShieldAlert, ArrowUp, ArrowDown, UploadCloud } from 'lucide-react'
+import { getWorkflowFiles, getWorkflowOutputFiles, getFileColumns, getFileColumnValues, getListenerStatus, streamAiCodegen, getDatabaseTables, getDatabaseColumns, getDbConnections, getCloudConnections, getGoogleSheetsColumns } from '../api/client'
+import { Code2, Info, Box, Mail, TableProperties, Database, MessageCircle, Globe, Plus, Trash2, GripVertical, Paperclip, Radio as RadioIcon, Sparkles, Send, Check, X, Square, Terminal, RefreshCw, FileSpreadsheet, UploadCloud } from 'lucide-react'
 import { Drawer, Form, Input, InputNumber, Button, Space, Typography, Tag, Divider, Select, AutoComplete, Radio, Switch, Table, Tooltip, Alert, Row, Col } from 'antd'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -10,658 +10,20 @@ import { BLOCK_TYPES } from './BlockNode'
 
 const { Text, Title } = Typography
 
-const FileSelectionTable = ({ value = [], onChange, files = [], loading = false }) => {
-  const { t } = useTranslation()
-  return (
-    <Table
-      size="small"
-      rowKey="name"
-      columns={[{ title: t('blockEditor.fileSelectTableCol'), dataIndex: 'name' }]}
-      dataSource={files}
-      pagination={false}
-      loading={loading}
-      scroll={{ y: 200 }}
-      rowSelection={{
-        selectedRowKeys: value,
-        onChange: (selectedRowKeys) => onChange(selectedRowKeys),
-        preserveSelectedRowKeys: true,
-      }}
-      onRow={(record) => ({
-        onClick: () => {
-          const isSelected = value.includes(record.name)
-          const newKeys = isSelected 
-            ? value.filter(k => k !== record.name)
-            : [...value, record.name]
-          onChange(newKeys)
-        },
-        style: { cursor: 'pointer' }
-      })}
-      style={{ border: '1px solid var(--border-default)', borderRadius: 6, width: '100%' }}
-    />
-  )
-}
+import BrowserStepEditorPanel from './block-editor/BrowserStepEditorPanel'
+import PositionSelector from './block-editor/PositionSelector'
+import ExcelEditStepsEditor from './block-editor/ExcelEditStepsEditor'
+import InputFieldsEditor from './block-editor/InputFieldsEditor'
+import { DEFAULT_PYTHON_CODE, DEFAULT_SQL_QUERY, getVarNameRule, getVarNameHint } from './block-editor/constants'
 
-const BLOCK_TEMPLATES = {
-  python: {
-    default: `# Block: Python Script
-# Biến 'input_data' chứa output từ block trước
-# Gán kết quả vào biến 'output_data'
-
-import json
-
-# === Code của bạn ===
-output_data = input_data
-print("Block hoàn thành!")
-`,
-    http: `import requests
-
-url = "https://api.example.com/data"
-response = requests.get(url, timeout=30)
-response.raise_for_status()
-
-output_data = response.json()
-print(f"✓ Fetched {len(output_data)} items")
-`,
-    pandas: `import pandas as pd
-
-df = pd.DataFrame(input_data)
-df = df.dropna()
-df = df.reset_index(drop=True)
-
-output_data = df.to_dict(orient='records')
-print(f"✓ Processed {len(output_data)} rows")
-`,
-    sql: `import sqlite3
-import json
-
-conn = sqlite3.connect("data.db")
-cursor = conn.cursor()
-
-cursor.execute("SELECT * FROM table_name LIMIT 100")
-rows = cursor.fetchall()
-columns = [desc[0] for desc in cursor.description]
-
-output_data = [dict(zip(columns, row)) for row in rows]
-conn.close()
-print(f"✓ Queried {len(output_data)} rows")
-`,
-  }
-}
-
-const getTemplateOptions = (t) => [
-  { key: 'default', label: t('blockEditor.templateDefault') },
-  { key: 'http', label: 'HTTP Request' },
-  { key: 'pandas', label: 'Pandas DataFrame' },
-  { key: 'sql', label: 'SQLite Query' },
-]
-
-const DEFAULT_SQL_QUERY = `-- Nhập câu lệnh SQL của bạn tại đây
--- Kết quả trả về: {"file_name": "tên file Excel đã xuất"}
-SELECT * FROM my_table;
-`
-
-// Tên biến phải khớp cú pháp {{ten_bien}} của backend (regex \w+) và dùng được
-// làm key trong code Python (input_data['ten_bien']) → không cho khoảng trắng,
-// dấu câu, chữ có dấu, và không bắt đầu bằng số.
-const VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
-const getVarNameRule = (t) => ({
-  validator: (_, value) => {
-    if (!value) return Promise.resolve()
-    if (VAR_NAME_PATTERN.test(String(value))) return Promise.resolve()
-    return Promise.reject(new Error(t('blockEditor.varNameInvalid')))
-  },
-})
-
-// Câu giải thích dùng chung cho mọi ô đặt tên biến output
-const getVarNameHint = (t) =>
-  `${t('blockEditor.varNameHintPrefix')} {{ten_bien}} ${t('blockEditor.varNameHintMiddle')} input_data['ten_bien'] ${t('blockEditor.varNameHintSuffix')}`
-
-// ─── Action definitions ──────────────────────────────────────────────────────
-
-const getBrowserActions = (t) => [
-  { group: t('browserStep.groupNav'), actions: [
-    { value: 'navigate',      label: t('browserStep.actionNavigate'),     params: ['url'], needsSelector: false },
-    { value: 'go_back',       label: t('browserStep.actionGoBack'),       params: [], needsSelector: false },
-    { value: 'go_forward',    label: t('browserStep.actionGoForward'),    params: [], needsSelector: false },
-    { value: 'reload',        label: t('browserStep.actionReload'),       params: [], needsSelector: false },
-    { value: 'wait_for_load', label: t('browserStep.actionWaitForLoad'),  params: [], needsSelector: false },
-  ]},
-  { group: t('browserStep.groupInteract'), actions: [
-    { value: 'click',         label: t('browserStep.actionClick'),        params: [], needsSelector: true },
-    { value: 'double_click',  label: t('browserStep.actionDoubleClick'),  params: [], needsSelector: true },
-    { value: 'right_click',   label: t('browserStep.actionRightClick'),   params: [], needsSelector: true },
-    { value: 'hover',         label: t('browserStep.actionHover'),        params: [], needsSelector: true },
-    { value: 'scroll_to',     label: t('browserStep.actionScrollTo'),     params: [], needsSelector: true },
-    { value: 'scroll_page',   label: t('browserStep.actionScrollPage'),   params: ['direction'], needsSelector: false },
-  ]},
-  { group: t('browserStep.groupInput'), actions: [
-    { value: 'fill',          label: t('browserStep.actionFill'),         params: ['text'], needsSelector: true },
-    { value: 'type_slowly',   label: t('browserStep.actionTypeSlowly'),   params: ['text'], needsSelector: true },
-    { value: 'clear',         label: t('browserStep.actionClear'),        params: [], needsSelector: true },
-    { value: 'press_key',     label: t('browserStep.actionPressKey'),     params: ['key'], needsSelector: true },
-  ]},
-  { group: t('browserStep.groupFormSelect'), actions: [
-    { value: 'select_option', label: t('browserStep.actionSelectOption'), params: ['option'], needsSelector: true },
-    { value: 'check',         label: t('browserStep.actionCheck'),        params: [], needsSelector: true },
-    { value: 'uncheck',       label: t('browserStep.actionUncheck'),      params: [], needsSelector: true },
-  ]},
-  { group: t('browserStep.groupDownload'), actions: [
-    { value: 'click_and_download', label: t('browserStep.actionClickAndDownload'), params: ['key_name'], needsSelector: true },
-    { value: 'click_and_upload',   label: t('browserStep.actionClickAndUpload'),   params: ['file'], needsSelector: true },
-  ]},
-  { group: t('browserStep.groupModalDialog'), actions: [
-    { value: 'wait_for_selector', label: t('browserStep.actionWaitForSelector'), params: [], needsSelector: true },
-    { value: 'accept_dialog', label: t('browserStep.actionAcceptDialog'), params: [], needsSelector: false },
-    { value: 'dismiss_dialog',label: t('browserStep.actionDismissDialog'), params: [], needsSelector: false },
-  ]},
-  { group: t('browserStep.groupGetData'), actions: [
-    { value: 'get_text',      label: t('browserStep.actionGetText'),      params: ['key_name'], needsSelector: true },
-    { value: 'get_attribute', label: t('browserStep.actionGetAttribute'), params: ['attribute', 'key_name'], needsSelector: true },
-    { value: 'get_all_text',  label: t('browserStep.actionGetAllText'),   params: ['key_name'], needsSelector: true },
-    { value: 'get_url',       label: t('browserStep.actionGetUrl'),       params: ['key_name'], needsSelector: false },
-    { value: 'screenshot',    label: t('browserStep.actionScreenshot'),   params: ['key_name'], needsSelector: false },
-    { value: 'evaluate_js',   label: t('browserStep.actionEvaluateJs'),   params: ['js_code', 'key_name'], needsSelector: false },
-  ]},
-  { group: t('browserStep.groupWait'), actions: [
-    { value: 'wait',          label: t('browserStep.actionWait'),         params: ['seconds'], needsSelector: false },
-    { value: 'wait_for_url',  label: t('browserStep.actionWaitForUrl'),   params: ['url_pattern'], needsSelector: false },
-  ]},
-]
-
-const SCROLL_DIR_OPTIONS = ['down', 'up', 'bottom', 'top']
-// Chỉ là GỢI Ý — ô nhập tự do, backend đưa thẳng vào Playwright press() nên gõ tổ hợp bất kỳ
-// (VD: Control+A, Shift+End) đều chạy được.
-const KEY_OPTIONS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'Delete', 'Control+A', 'Home', 'End', 'Shift+Home', 'Shift+End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F2', 'F5']
-
-const STEP_COLORS = {
-  navigate: '#0ea5e9', go_back: '#0ea5e9', go_forward: '#0ea5e9', reload: '#0ea5e9', wait_for_load: '#0ea5e9',
-  click: '#8b5cf6', double_click: '#8b5cf6', right_click: '#8b5cf6', hover: '#8b5cf6', scroll_to: '#8b5cf6', scroll_page: '#8b5cf6',
-  fill: '#10b981', type_slowly: '#10b981', clear: '#10b981', press_key: '#10b981',
-  select_option: '#f59e0b', check: '#f59e0b', uncheck: '#f59e0b',
-  click_and_download: '#0ea5e9', click_and_upload: '#0ea5e9',
-  wait_for_selector: '#ec4899', accept_dialog: '#ec4899', dismiss_dialog: '#ec4899',
-  get_text: '#06b6d4', get_attribute: '#06b6d4', get_all_text: '#06b6d4', get_url: '#06b6d4', screenshot: '#06b6d4', evaluate_js: '#06b6d4',
-  wait: '#f97316', wait_for_url: '#f97316',
-}
-
-const BrowserStepEditorPanel = ({ steps, onChange, workflowId }) => {
-  const { t } = useTranslation()
-  const BROWSER_ACTIONS = getBrowserActions(t)
-  const ACTION_MAP = {}
-  BROWSER_ACTIONS.forEach(g => g.actions.forEach(a => { ACTION_MAP[a.value] = a }))
-  const [expandedIdx, setExpandedIdx] = useState(null)
-
-  const dragItem = React.useRef(null)
-  const dragOverItem = React.useRef(null)
-
-  // ── Ghi thao tác (Recorder) ──
-  const [recording, setRecording] = useState(false)
-  const [starting, setStarting] = useState(false)
-  const [showUrlPrompt, setShowUrlPrompt] = useState(false)
-  const [recUrl, setRecUrl] = useState('')
-  const [recCount, setRecCount] = useState(0)
-  const stepsBeforeRef = React.useRef([])
-  const liveRef = React.useRef([])
-  const stopStreamRef = React.useRef(null)
-  const recordingRef = React.useRef(false)
-
-  const finishRecordingUI = () => {
-    recordingRef.current = false
-    setRecording(false)
-    setStarting(false)
-    if (stopStreamRef.current) { stopStreamRef.current(); stopStreamRef.current = null }
-  }
-
-  const applyLive = () => onChange([...stepsBeforeRef.current, ...liveRef.current])
-
-  const beginRecording = async () => {
-    if (!workflowId) { toast.error(t('browserStep.saveBeforeRecord')); return }
-    let url = recUrl.trim()
-    if (!url) { toast.error(t('browserStep.enterUrlToRecord')); return }
-    if (!/^https?:\/\//i.test(url)) url = 'https://' + url
-
-    setStarting(true)
-    try {
-      // Tạo phiên ghi trước (mở trình duyệt), rồi mới mở SSE để nhận step.
-      await startBrowserRecording(workflowId, url)
-      stepsBeforeRef.current = Array.isArray(steps) ? steps : []
-      liveRef.current = []
-      recordingRef.current = true
-      setRecCount(0)
-      setRecording(true)
-      setShowUrlPrompt(false)
-      stopStreamRef.current = createRecordingStream(workflowId, {
-        onStep: (s) => { liveRef.current = [...liveRef.current, s]; setRecCount(liveRef.current.length); applyLive() },
-        onReplaceLast: (s) => { liveRef.current = [...liveRef.current.slice(0, -1), s]; setRecCount(liveRef.current.length); applyLive() },
-        onDone: (finalSteps) => {
-          if (Array.isArray(finalSteps)) onChange([...stepsBeforeRef.current, ...finalSteps])
-          finishRecordingUI()
-          toast.success(t('browserStep.recordStoppedToast'))
-        },
-        onError: (e) => { toast.error(t('browserStep.recordErrorToast', { message: e.message })); finishRecordingUI() },
-      })
-      toast.success(t('browserStep.recordOpenedToast'))
-    } catch (e) {
-      toast.error(e.response?.data?.detail || e.message || t('browserStep.recordOpenFailedToast'))
-      finishRecordingUI()
-    } finally {
-      setStarting(false)
-    }
-  }
-
-  const stopRecording = async () => {
-    try { await stopBrowserRecording(workflowId) } catch (_) {}
-    // onDone từ SSE sẽ dọn UI; phòng khi SSE lỗi, dọn sau 2s.
-    setTimeout(() => { if (recordingRef.current) finishRecordingUI() }, 2500)
-  }
-
-  // Dọn dẹp khi đóng panel/modal: dừng phiên ghi nếu còn.
-  useEffect(() => () => {
-    if (recordingRef.current) {
-      if (stopStreamRef.current) { try { stopStreamRef.current() } catch (_) {} }
-      if (workflowId) stopBrowserRecording(workflowId).catch(() => {})
-    }
-  }, [])
-
-  const addStep = () => {
-    const newStep = { action: 'navigate', selector: '', value: '', key_name: 'result', note: '', continue_on_error: false }
-    onChange([...steps, newStep])
-    setExpandedIdx(steps.length)
-  }
-
-  const removeStep = (i) => {
-    const newSteps = steps.filter((_, idx) => idx !== i)
-    onChange(newSteps)
-    if (expandedIdx === i) setExpandedIdx(null)
-  }
-
-  const updateStep = (i, field, val) => {
-    const newSteps = steps.map((s, idx) => {
-      if (idx !== i) return s
-      const next = { ...s, [field]: val }
-      // Sửa tay sang selector khác các selector dự phòng do recorder ghi (selectors[])
-      // thì chuỗi dự phòng cũ không còn hợp lệ nữa — xoá để backend dùng đúng giá trị
-      // vừa sửa (khớp với điều kiện ở browser_executor.py: chỉ dùng fallback nếu
-      // selector hiện tại vẫn nằm trong danh sách đã ghi).
-      if (field === 'selector' && Array.isArray(s.selectors) && !s.selectors.includes(val)) {
-        delete next.selectors
-      }
-      return next
-    })
-    onChange(newSteps)
-  }
-
-  const handleDragStart = (e, index) => {
-    dragItem.current = index
-    e.dataTransfer.effectAllowed = 'move'
-    // Ẩn nội dung khi đang kéo cho gọn
-    if (expandedIdx === index) setExpandedIdx(null)
-  }
-
-  const handleDragEnter = (e, index) => {
-    e.preventDefault()
-    dragOverItem.current = index
-  }
-
-  const handleDragEnd = () => {
-    if (dragItem.current === null || dragOverItem.current === null) return
-    if (dragItem.current !== dragOverItem.current) {
-      const newSteps = [...steps]
-      const draggedContent = newSteps[dragItem.current]
-      newSteps.splice(dragItem.current, 1)
-      newSteps.splice(dragOverItem.current, 0, draggedContent)
-      onChange(newSteps)
-      setExpandedIdx(null)
-    }
-    dragItem.current = null
-    dragOverItem.current = null
-  }
-
-  const inputStyle = { width: '100%', fontSize: '0.8rem', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-default)', background: 'var(--bg-base)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'var(--font-mono)' }
-  const labelStyle = { fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2, display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }
-
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)', overflow: 'hidden', minHeight: 0 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Globe size={16} color="#0ea5e9" />
-          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-            {t('browserStep.stepListTitle', { count: steps.length })}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {!recording ? (
-            <button
-              type="button"
-              onClick={() => setShowUrlPrompt(v => !v)}
-              disabled={starting}
-              aria-label={t('browserStep.recordAria')}
-              title={t('browserStep.recordTooltip')}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: showUrlPrompt ? 'var(--bg-hover)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.82rem', cursor: starting ? 'wait' : 'pointer', opacity: starting ? 0.6 : 1 }}
-            >
-              <Circle size={13} fill="#ef4444" color="#ef4444" /> {t('browserStep.recordBtn')}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={stopRecording}
-              aria-label={t('browserStep.stopRecordAria')}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
-            >
-              <Square size={13} fill="#fff" /> {t('browserStep.stopRecordBtn')}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={addStep}
-            aria-label={t('browserStep.addStepAria')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
-          >
-            <Plus size={14} /> {t('browserStep.addStepBtn')}
-          </button>
-        </div>
-      </div>
-
-      {/* Ô nhập URL để bắt đầu ghi */}
-      {showUrlPrompt && !recording && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
-          <input
-            style={{ ...inputStyle, flex: 1 }}
-            placeholder={t('browserStep.urlPromptPlaceholder')}
-            value={recUrl}
-            autoFocus
-            onChange={e => setRecUrl(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') beginRecording() }}
-          />
-          <button
-            type="button"
-            onClick={beginRecording}
-            disabled={starting}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: starting ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: starting ? 0.7 : 1 }}
-          >
-            <Video size={14} /> {starting ? t('browserStep.startingRecord') : t('browserStep.startRecordBtn')}
-          </button>
-        </div>
-      )}
-
-      {/* Banner khi đang ghi */}
-      {recording && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'color-mix(in srgb, #ef4444 12%, transparent)', borderBottom: '1px solid #ef444455', flexShrink: 0 }}>
-          <span className="pyflow-rec-dot" style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
-          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {t('browserStep.recordingBanner', { count: recCount })}
-          </span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-            {t('browserStep.recordingHint')}
-          </span>
-        </div>
-      )}
-
-      {/* Steps list */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {steps.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-muted)' }}>
-            <Globe size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <div style={{ fontSize: '0.9rem', marginBottom: 6 }}>{t('browserStep.noStepsTitle')}</div>
-            <div style={{ fontSize: '0.8rem' }}>{t('browserStep.noStepsHintPrefix')} <strong>+ {t('browserStep.addStepBtn')}</strong> {t('browserStep.noStepsHintSuffix')}</div>
-          </div>
-        )}
-
-        {steps.map((step, i) => {
-          const actionDef = ACTION_MAP[step.action] || {}
-          const isExpanded = expandedIdx === i
-          const accentColor = STEP_COLORS[step.action] || '#6c63ff'
-          const actionLabel = actionDef.label || step.action
-
-          return (
-            <div
-              key={i}
-              // Thu gọn: kéo cả thẻ. Đang mở: CHỈ thanh tiêu đề kéo được (xem header bên
-              // dưới) — để cả thẻ draggable thì bôi đen chữ / bấm đúp trong ô nhập bị
-              // trình duyệt hiểu thành kéo thẻ, bước nhảy chỗ khác.
-              draggable={!isExpanded}
-              onDragStart={(e) => handleDragStart(e, i)}
-              onDragEnter={(e) => handleDragEnter(e, i)}
-              onDragOver={(e) => e.preventDefault()}
-              onDragEnd={handleDragEnd}
-              style={{ flexShrink: 0, borderRadius: 10, border: `1px solid ${isExpanded ? accentColor : 'var(--border-default)'}`, background: 'var(--bg-surface)', overflow: 'hidden', transition: 'border-color 0.2s', boxShadow: isExpanded ? `0 0 0 2px ${accentColor}22` : 'none', cursor: isExpanded ? 'default' : 'grab' }}
-            >
-              {/* Step header — lúc thẻ đang mở, đây là chỗ DUY NHẤT kéo được */}
-              <div
-                draggable={isExpanded}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: isExpanded ? `color-mix(in srgb, ${accentColor} 8%, transparent)` : 'transparent', userSelect: 'none' }}
-                onClick={() => setExpandedIdx(isExpanded ? null : i)}
-              >
-                <div style={{ width: 20, height: 20, borderRadius: '50%', background: accentColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: accentColor }}>{actionLabel}</span>
-                    {step.selector && <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.72rem', background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{step.selector}</span>}
-                    {(step.value || (step.action === 'press_key' ? 'Enter' : '')) && <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>= "{step.value || (step.action === 'press_key' ? 'Enter' : '')}"</span>}
-                  </div>
-                  {step.note && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 1 }}>{step.note}</div>}
-                </div>
-                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStep(i) }} style={{ width: 22, height: 22, border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }} title={t('browserStep.deleteStepAria')}><Trash2 size={12} /></button>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, cursor: 'grab', color: 'var(--text-muted)' }} title={t('browserStep.dragToReorder')}><GripVertical size={14} /></div>
-                </div>
-              </div>
-
-              {/* Step body */}
-              {isExpanded && (
-                <div style={{ padding: '12px', borderTop: `1px solid ${accentColor}33`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {/* Action type */}
-                  <div>
-                    <label style={labelStyle}>{t('browserStep.actionTypeLabel')}</label>
-                    <select value={step.action} onChange={e => updateStep(i, 'action', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                      {BROWSER_ACTIONS.map(g => (
-                        <optgroup key={g.group} label={g.group}>
-                          {g.actions.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Selector */}
-                  {actionDef.needsSelector && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.selectorLabel')}</label>
-                      <input style={inputStyle} placeholder={t('browserStep.selectorPlaceholder')} value={step.selector || ''} onChange={e => updateStep(i, 'selector', e.target.value)} />
-                      {Array.isArray(step.selectors) && step.selectors.length > 1 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: '0.7rem', color: 'var(--accent-success)' }} title={step.selectors.join('\n')}>
-                          <ShieldAlert size={12} /> {t('browserStep.fallbackSelectors', { count: step.selectors.length })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Value / URL / Text */}
-                  {['navigate', 'go_to', 'wait_for_url'].includes(step.action) && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.urlLabel')}</label>
-                      <input style={inputStyle} placeholder="https://example.com" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
-                    </div>
-                  )}
-
-                  {['fill', 'type_slowly'].includes(step.action) && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.fillContentLabel')} {'{{key}}'})</label>
-                      <input style={inputStyle} placeholder={`${t('browserStep.fillPlaceholderPrefix')} {{username}}`} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
-                      {step.is_password && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: '0.7rem', color: 'var(--accent-warning)' }}>
-                          <ShieldAlert size={12} /> {t('browserStep.passwordFieldHint')} {'{{biến}}'}.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {step.action === 'press_key' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.keyLabel')}</label>
-                      <input list={`pw-keys-${i}`} style={inputStyle} placeholder="Enter" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
-                      <datalist id={`pw-keys-${i}`}>
-                        {KEY_OPTIONS.map(k => <option key={k} value={k} />)}
-                      </datalist>
-                      <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('browserStep.keyHint')}</div>
-                    </div>
-                  )}
-
-                  {step.action === 'select_option' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.optionValueLabel')}</label>
-                      <input style={inputStyle} placeholder={t('browserStep.optionValuePlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
-                    </div>
-                  )}
-
-                  {step.action === 'scroll_page' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.scrollDirLabel')}</label>
-                      <select value={step.value || 'down'} onChange={e => updateStep(i, 'value', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        {SCROLL_DIR_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
-                        <option value="500">500px</option>
-                        <option value="1000">1000px</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {step.action === 'wait' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.waitSecondsLabel')}</label>
-                      <input type="number" style={inputStyle} placeholder="VD: 2" value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} min="0.1" step="0.5" />
-                    </div>
-                  )}
-
-                  {step.action === 'wait_for_selector' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.waitForLabel')}</label>
-                      <select value={step.state || 'visible'} onChange={e => updateStep(i, 'state', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        <option value="visible">{t('browserStep.stateVisible')}</option>
-                        <option value="hidden">{t('browserStep.stateHidden')}</option>
-                        <option value="attached">{t('browserStep.stateAttached')}</option>
-                        <option value="detached">{t('browserStep.stateDetached')}</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {step.action === 'get_attribute' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.attributeNameLabel')}</label>
-                      <input style={inputStyle} placeholder={t('browserStep.attributePlaceholder')} value={step.attribute || ''} onChange={e => updateStep(i, 'attribute', e.target.value)} />
-                    </div>
-                  )}
-
-                  {step.action === 'evaluate_js' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.jsExprLabel')}</label>
-                      <textarea style={{ ...inputStyle, height: 64, resize: 'vertical', fontFamily: 'monospace' }} placeholder={t('browserStep.jsExprPlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
-                    </div>
-                  )}
-
-                  {step.action === 'click_and_upload' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.uploadFileNameLabel')}</label>
-                      <input style={inputStyle} placeholder={t('browserStep.uploadFileNamePlaceholder')} value={step.value || ''} onChange={e => updateStep(i, 'value', e.target.value)} />
-                      <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('browserStep.uploadFileHint')}</div>
-                    </div>
-                  )}
-
-                  {step.action === 'click_and_download' && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.downloadFileNameLabel')}</label>
-                      <input style={inputStyle} placeholder={t('browserStep.downloadFileNamePlaceholder')} value={step.file_name || ''} onChange={e => updateStep(i, 'file_name', e.target.value)} />
-                    </div>
-                  )}
-
-                  {/* Key name for data collection */}
-                  {['get_text', 'get_attribute', 'get_all_text', 'get_url', 'screenshot', 'evaluate_js', 'click_and_download'].includes(step.action) && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.keyNameLabel')}</label>
-                      <input style={inputStyle} placeholder={t('browserStep.keyNamePlaceholder')} value={step.key_name || 'result'} onChange={e => updateStep(i, 'key_name', e.target.value)} />
-                    </div>
-                  )}
-
-                  {/* Timeout */}
-                  {actionDef.needsSelector && (
-                    <div>
-                      <label style={labelStyle}>{t('browserStep.timeoutLabel')}</label>
-                      <input type="number" style={inputStyle} placeholder="20000" value={step.timeout || ''} onChange={e => updateStep(i, 'timeout', e.target.value)} min="1000" step="1000" />
-                    </div>
-                  )}
-
-                  {/* Note */}
-                  <div>
-                    <label style={labelStyle}>{t('browserStep.noteLabel')}</label>
-                    <input style={inputStyle} placeholder={t('browserStep.notePlaceholder')} value={step.note || ''} onChange={e => updateStep(i, 'note', e.target.value)} />
-                  </div>
-
-                  {/* Continue on error */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input type="checkbox" id={`coe-${i}`} checked={step.continue_on_error || false} onChange={e => updateStep(i, 'continue_on_error', e.target.checked)} style={{ cursor: 'pointer' }} />
-                    <label htmlFor={`coe-${i}`} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>{t('browserStep.continueOnError')}</label>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Footer hint */}
-      <Alert title={<span>{t('browserStep.footerHintPrefix')} <Text code>{'{{key}}'}</Text> {t('browserStep.footerHintSuffix')} <Text code>input_data</Text></span>}
-        type="info"
-        showIcon
-        style={{ margin: '8px 16px', borderRadius: 8 }}
-      />
-    </div>
-  )
-}
-
-const PositionSelector = ({ value, onChange }) => {
-  const { t } = useTranslation()
-  const btnStyle = (pos) => ({
-    width: 48,
-    height: 28,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    background: value === pos ? 'var(--accent-primary)' : 'transparent',
-    color: value === pos ? '#fff' : 'var(--text-secondary)',
-    border: `1px solid ${value === pos ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-    borderRadius: 6,
-    transition: 'all 0.2s',
-    fontSize: '0.75rem',
-    userSelect: 'none'
-  });
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '48px 48px 48px', gridTemplateRows: '28px 28px 28px', gap: '4px' }}>
-      <div style={{ gridColumn: 2, gridRow: 1 }} onClick={() => onChange('top')}>
-        <div style={btnStyle('top')}>{t('browserStep.posTop')}</div>
-      </div>
-      <div style={{ gridColumn: 1, gridRow: 2 }} onClick={() => onChange('left')}>
-        <div style={btnStyle('left')}>{t('browserStep.posLeft')}</div>
-      </div>
-      <div style={{ gridColumn: 3, gridRow: 2 }} onClick={() => onChange('right')}>
-        <div style={btnStyle('right')}>{t('browserStep.posRight')}</div>
-      </div>
-      <div style={{ gridColumn: 2, gridRow: 3 }} onClick={() => onChange('bottom')}>
-        <div style={btnStyle('bottom')}>{t('browserStep.posBottom')}</div>
-      </div>
-    </div>
-  );
-};
-
-export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate, inputKeys = [], workflowId, projectId }) {
+export default function BlockEditorModal({ node, open, onClose, onSave, inputKeys = [], workflowId, projectId }) {
   const { t } = useTranslation()
   const VAR_NAME_RULE = getVarNameRule(t)
   const VAR_NAME_HINT = getVarNameHint(t)
   const theme = useStore(state => state.theme)
   const [form] = Form.useForm()
-  const [code, setCode] = useState(node.data.code || BLOCK_TEMPLATES.python.default)
+  const [code, setCode] = useState(node.data.code || DEFAULT_PYTHON_CODE)
   const [sqlCode, setSqlCode] = useState(node.data.sqlQuery || DEFAULT_SQL_QUERY)
-  const [activeTemplate, setActiveTemplate] = useState('default')
   
   const [availableFiles, setAvailableFiles] = useState([])
   const [loadingFiles, setLoadingFiles] = useState(false)
@@ -717,7 +79,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   const pivotSortColumn = Form.useWatch('pivotSortColumn', form)
   const pivotSortOrder = Form.useWatch('pivotSortOrder', form)
   
-  const pivotIndex = Form.useWatch('pivotIndex', form) || []
   const pivotColumns = Form.useWatch('pivotColumns', form) || []
   const loopMode = Form.useWatch('loopMode', form)
   const sortableColumns = [...new Set([...pivotColumns])]
@@ -774,7 +135,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
   // Browser steps state
   const [browserSteps, setBrowserSteps] = useState(node.data.steps || [])
-  const [expandedStep, setExpandedStep] = useState(null)
 
   // Google Sheets state
   const [googleSheetsCols, setGoogleSheetsCols] = useState(node.data.googleSheetsCols || [])
@@ -783,26 +143,6 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
   // Excel Edit state: danh sách bước có THỨ TỰ (xóa dòng / lọc theo cột / xóa cột)
   const [excelEditSteps, setExcelEditSteps] = useState(node.data.excelEditSteps || [])
-  // Đổi loại bước thì tạo object mới sạch — không giữ field của loại cũ (tránh dữ liệu rác lẫn vào)
-  const newExcelEditStep = (op) => (
-    op === 'filter' ? { op, column: '', mode: 'keep', text: '', caseSensitive: false }
-    : op === 'delete_cols' ? { op, cols: '' }
-    : { op: 'delete_rows', rows: '' }
-  )
-  const updateExcelEditStep = (idx, patch) =>
-    setExcelEditSteps(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s))
-  const changeExcelEditOp = (idx, op) =>
-    setExcelEditSteps(prev => prev.map((s, i) => i === idx ? newExcelEditStep(op) : s))
-  const removeExcelEditStep = (idx) =>
-    setExcelEditSteps(prev => prev.filter((_, i) => i !== idx))
-  const moveExcelEditStep = (idx, dir) =>
-    setExcelEditSteps(prev => {
-      const j = idx + dir
-      if (j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      ;[next[idx], next[j]] = [next[j], next[idx]]
-      return next
-    })
 
   // Excel Read state
   const [excelReadCols, setExcelReadCols] = useState(node.data.excelReadCols || [])
@@ -942,7 +282,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         }
       });
       aiCancelFn.current = cancel;
-    } catch (err) {
+    } catch {
       setAiGenerating(false);
     }
   };
@@ -1076,7 +416,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
   // Đồng bộ nội dung code cho Editor khi đổi block
   useEffect(() => {
     if (open) {
-      const initialCode = node.data.code || BLOCK_TEMPLATES.python.default
+      const initialCode = node.data.code || DEFAULT_PYTHON_CODE
       const initialSql = node.data.sqlQuery || DEFAULT_SQL_QUERY
       setCode(initialCode)
       setSqlCode(initialSql)
@@ -1139,7 +479,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
             setColumnError(t('blockEditor.noColumnsFound'))
             setAvailableColumns([])
           }
-        } catch (e) {
+        } catch {
           setColumnError(t('blockEditor.fileNotExistManualCol'))
           setAvailableColumns([])
         } finally {
@@ -1333,26 +673,9 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
         } : {}),
       })
       toast.success(t('blockEditor.saveBlockSuccess'))
-    } catch (e) {
+    } catch {
       // validation error already surfaced via form fields
     }
-  }
-
-  // Helpers cho danh sách biến của khối "Biến đầu vào"
-  const updateInputField = (idx, key, val) =>
-    setInputFields(prev => prev.map((f, i) => i === idx ? { ...f, [key]: val } : f))
-  const removeInputField = (idx) =>
-    setInputFields(prev => prev.filter((_, i) => i !== idx))
-  const addInputField = () =>
-    setInputFields(prev => [...prev, { name: `bien_${prev.length + 1}`, label: '', type: 'text', required: false, defaultValue: '' }])
-
-  const applyTemplate = (key) => {
-    const newCode = BLOCK_TEMPLATES.python[key];
-    if (editorRef.current) {
-      editorRef.current.setValue(newCode);
-    }
-    setCode(newCode);
-    setActiveTemplate(key);
   }
 
   const getDrawerWidth = () => {
@@ -1685,58 +1008,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
 
               <Divider style={{ margin: '8px 0 16px' }}>{t('blockEditor.varListDivider')}</Divider>
 
-              {inputFields.map((f, idx) => (
-                <div key={idx} style={{ border: '1px solid var(--border-default)', borderRadius: 8, padding: 12, marginBottom: 10, background: 'var(--bg-surface)' }}>
-                  <Row gutter={8} align="middle">
-                    <Col span={8}>
-                      <Input
-                        placeholder={t('blockEditor.varNamePlaceholder')}
-                        value={f.name}
-                        onChange={(e) => updateInputField(idx, 'name', e.target.value.replace(/[^\w]/g, '_'))}
-                        addonBefore="{{ }}"
-                      />
-                    </Col>
-                    <Col span={9}>
-                      <Input
-                        placeholder={t('blockEditor.varLabelPlaceholder')}
-                        value={f.label}
-                        onChange={(e) => updateInputField(idx, 'label', e.target.value)}
-                      />
-                    </Col>
-                    <Col span={5}>
-                      <Select
-                        style={{ width: '100%' }}
-                        value={f.type || 'text'}
-                        onChange={(v) => updateInputField(idx, 'type', v)}
-                        options={[
-                          { value: 'text', label: t('blockEditor.varTypeText') },
-                          { value: 'number', label: t('blockEditor.varTypeNumber') },
-                          { value: 'date', label: t('blockEditor.varTypeDate') },
-                        ]}
-                      />
-                    </Col>
-                    <Col span={2} style={{ textAlign: 'right' }}>
-                      <Button danger type="text" icon={<Trash2 size={16} />} aria-label={t('blockEditor.removeVarAria')}
-                        onClick={() => removeInputField(idx)} disabled={inputFields.length <= 1} />
-                    </Col>
-                  </Row>
-                  <Row gutter={8} align="middle" style={{ marginTop: 8 }}>
-                    <Col span={17}>
-                      <Input
-                        placeholder={t('blockEditor.defaultValuePlaceholder')}
-                        value={f.defaultValue}
-                        onChange={(e) => updateInputField(idx, 'defaultValue', e.target.value)}
-                      />
-                    </Col>
-                    <Col span={7} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Switch checked={!!f.required} onChange={(v) => updateInputField(idx, 'required', v)} size="small" />
-                      <span className="text-secondary text-sm">{t('blockEditor.requiredLabel')}</span>
-                    </Col>
-                  </Row>
-                </div>
-              ))}
-
-              <Button type="dashed" block icon={<Plus size={16} />} onClick={addInputField}>{t('blockEditor.addVarBtn')}</Button>
+              <InputFieldsEditor fields={inputFields} setFields={setInputFields} />
             </>
           )}
 
@@ -2044,110 +1316,7 @@ export default function BlockEditorModal({ node, open, onClose, onSave, onUpdate
                 <Input placeholder={t('blockEditor.excelEditFilePlaceholder')} />
               </Form.Item>
 
-              <Divider style={{ margin: '8px 0 16px' }}>{t('blockEditor.excelEditStepsTitle')}</Divider>
-              <Alert type="info" showIcon style={{ marginBottom: 12 }} description={t('blockEditor.excelEditStepsHint')} />
-
-              {excelEditSteps.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '16px 0', marginBottom: 10, color: 'var(--text-muted)', border: '1px dashed var(--border-default)', borderRadius: 8 }}>
-                  {t('blockEditor.excelEditNoSteps')}
-                </div>
-              )}
-
-              {excelEditSteps.map((s, idx) => (
-                <div key={idx} style={{ border: '1px solid var(--border-default)', borderRadius: 8, padding: 12, marginBottom: 10, background: 'var(--bg-surface)' }}>
-                  <Row gutter={8} align="middle">
-                    <Col flex="none"><Tag color="magenta" style={{ margin: 0 }}>{idx + 1}</Tag></Col>
-                    <Col flex="auto">
-                      <Select
-                        style={{ width: '100%' }}
-                        value={s.op}
-                        aria-label={t('blockEditor.excelEditOpLabel')}
-                        onChange={(v) => changeExcelEditOp(idx, v)}
-                        options={[
-                          { value: 'delete_rows', label: t('blockEditor.excelEditOpDeleteRows') },
-                          { value: 'filter', label: t('blockEditor.excelEditOpFilter') },
-                          { value: 'delete_cols', label: t('blockEditor.excelEditOpDeleteCols') },
-                        ]}
-                      />
-                    </Col>
-                    <Col flex="none">
-                      <Space size={2}>
-                        <Button type="text" size="small" icon={<ArrowUp size={14} />} aria-label={t('blockEditor.excelEditMoveUpAria')} disabled={idx === 0} onClick={() => moveExcelEditStep(idx, -1)} />
-                        <Button type="text" size="small" icon={<ArrowDown size={14} />} aria-label={t('blockEditor.excelEditMoveDownAria')} disabled={idx === excelEditSteps.length - 1} onClick={() => moveExcelEditStep(idx, 1)} />
-                        <Button danger type="text" size="small" icon={<Trash2 size={14} />} aria-label={t('blockEditor.excelEditRemoveStepAria')} onClick={() => removeExcelEditStep(idx)} />
-                      </Space>
-                    </Col>
-                  </Row>
-
-                  <div style={{ marginTop: 10 }}>
-                    {s.op === 'delete_rows' && (
-                      <>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditRowsLabel')}</div>
-                        <Input
-                          aria-label={t('blockEditor.excelEditRowsLabel')}
-                          placeholder={t('blockEditor.excelEditRowsPlaceholder')}
-                          value={s.rows}
-                          onChange={(e) => updateExcelEditStep(idx, { rows: e.target.value })}
-                        />
-                      </>
-                    )}
-                    {s.op === 'delete_cols' && (
-                      <>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditColsLabel')}</div>
-                        <Input
-                          aria-label={t('blockEditor.excelEditColsLabel')}
-                          placeholder={t('blockEditor.excelEditColsPlaceholder')}
-                          value={s.cols}
-                          onChange={(e) => updateExcelEditStep(idx, { cols: e.target.value })}
-                        />
-                      </>
-                    )}
-                    {s.op === 'filter' && (
-                      <>
-                        <Row gutter={8}>
-                          <Col span={9}>
-                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditFilterColumn')}</div>
-                            <Input
-                              aria-label={t('blockEditor.excelEditFilterColumn')}
-                              placeholder={t('blockEditor.excelEditFilterColumnPlaceholder')}
-                              value={s.column}
-                              onChange={(e) => updateExcelEditStep(idx, { column: e.target.value })}
-                            />
-                          </Col>
-                          <Col span={15}>
-                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{t('blockEditor.excelEditFilterMode')}</div>
-                            <Select
-                              style={{ width: '100%' }}
-                              value={s.mode}
-                              aria-label={t('blockEditor.excelEditFilterMode')}
-                              onChange={(v) => updateExcelEditStep(idx, { mode: v })}
-                              options={[
-                                { value: 'keep', label: t('blockEditor.excelEditModeKeep') },
-                                { value: 'remove', label: t('blockEditor.excelEditModeRemove') },
-                              ]}
-                            />
-                          </Col>
-                        </Row>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '8px 0 4px' }}>{t('blockEditor.excelEditFilterText')}</div>
-                        <Input
-                          aria-label={t('blockEditor.excelEditFilterText')}
-                          placeholder={`${t('blockEditor.excelEditFilterTextPlaceholder')} {{ten_bien}}`}
-                          value={s.text}
-                          onChange={(e) => updateExcelEditStep(idx, { text: e.target.value })}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                          <Switch size="small" checked={!!s.caseSensitive} onChange={(v) => updateExcelEditStep(idx, { caseSensitive: v })} />
-                          <span className="text-secondary text-sm">{t('blockEditor.excelEditCaseSensitive')}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              <Button type="dashed" block icon={<Plus size={16} />} onClick={() => setExcelEditSteps(prev => [...prev, newExcelEditStep('delete_rows')])}>
-                {t('blockEditor.excelEditAddStep')}
-              </Button>
+              <ExcelEditStepsEditor steps={excelEditSteps} setSteps={setExcelEditSteps} />
             </>
           )}
 

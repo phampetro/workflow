@@ -53,6 +53,12 @@ Mọi biến có bản `:root[data-theme="light"]`; thêm token mới phải kha
 - Log SSE tự reconnect với `offset += received` — không tự đóng EventSource trong `onerror`.
 - Autosave workflow debounce 1.5s kèm `expected_updated_at`; 409 → hỏi "Tải lại / Ghi đè".
 
+## Form cấu hình khối
+
+`components/BlockEditorModal.jsx` là khung (state chung, `onSave`, layout drawer). Phần tự đóng gói được nằm ở `components/block-editor/`: `BrowserStepEditorPanel`, `ExcelEditStepsEditor`, `InputFieldsEditor`, `PositionSelector`, `constants.js` (mã mặc định, `getVarNameRule/Hint`). Thêm editor dạng danh sách mới → làm theo mẫu `ExcelEditStepsEditor`: state vẫn ở modal (vì `onSave` cần), component con nhận `value` + `setValue` và giữ các hàm thao tác.
+
+⚠ Khi tách/đổi tên bằng tìm-thay, **dùng ranh giới từ** (`\bten\b`): thay `excelEditSteps` trần từng đổi luôn key dịch `blockEditor.excelEditStepsTitle` → key không tồn tại (test_conventions bắt được).
+
 ## Lint
 
-`npx oxlint src` — chỉ lỗi làm đỏ CI. Cảnh báo còn lại chủ yếu là `react-hooks/exhaustive-deps`: **đừng thêm dependency hàng loạt cho hết cảnh báo** — nhiều effect cố ý chỉ chạy khi mở form; thêm sai là chạy lặp hoặc ghi đè dữ liệu người dùng đang gõ.
+`npx oxlint src` — chỉ lỗi làm đỏ CI. Đã bật `no-undef` (env browser): thiếu import là lỗi lúc build, không đợi người dùng bấm mới văng (từng thiếu `toast` khi tách panel Trình duyệt). Cảnh báo còn lại chủ yếu là `react-hooks/exhaustive-deps`: **đừng thêm dependency hàng loạt cho hết cảnh báo** — nhiều effect cố ý chỉ chạy khi mở form; thêm sai là chạy lặp hoặc ghi đè dữ liệu người dùng đang gõ.
