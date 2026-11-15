@@ -17,6 +17,7 @@ from pathlib import Path
 import shutil
 
 from services import venv_manager
+from services import secret_store
 # connect_sqlite = sqlite3.connect tới pyflow.db đã bật sẵn WAL + busy_timeout 15s.
 # Bắt buộc dùng ở mọi chỗ trong thread executor: kênh sync này ghi song song với
 # SQLAlchemy async của tầng API, chỉ cần một kết nối quên bật là đủ gây
@@ -165,7 +166,8 @@ def get_saved_db_connection(connection_id: str) -> dict | None:
         return None
     return {
         "db_type": row[0], "host": row[1], "port": row[2],
-        "username": row[3], "password": row[4], "dbname": row[5],
+        # Đường sqlite3 thô không qua ORM (EncryptedText) → tự giải mã DPAPI.
+        "username": row[3], "password": secret_store.decrypt(row[4]), "dbname": row[5],
     }
 
 def build_conn_str(db_config: dict) -> str:

@@ -6,10 +6,29 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Text, Integer
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.types import TypeDecorator
+
+from services import secret_store
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class EncryptedText(TypeDecorator):
+    """Cột secret: ORM đọc/ghi chữ thường, DB lưu "dpapi:..." (services/secret_store.py).
+
+    Đường sqlite3 sync trong thread executor KHÔNG đi qua ORM → phải tự gọi
+    secret_store.decrypt()/encrypt() (xem get_saved_db_connection, block cloud).
+    """
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return secret_store.encrypt(value)
+
+    def process_result_value(self, value, dialect):
+        return secret_store.decrypt(value)
 
 
 class User(Base):
@@ -179,7 +198,7 @@ class DbConnection(Base):
     host = Column(String, default="")
     port = Column(String, default="")
     username = Column(String, default="")
-    password = Column(String, default="")
+    password = Column(EncryptedText, default="")     # DPAPI — xem EncryptedText
     dbname = Column(String, default="")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -226,7 +245,7 @@ class CloudConnection(Base):
     provider = Column(String, nullable=False)          # "google" | "onedrive"
     label = Column(String, default="")
     account = Column(String, default="")               # email tài khoản đã đăng nhập
-    refresh_token = Column(Text, default="")
+    refresh_token = Column(EncryptedText, default="")   # DPAPI — xem EncryptedText
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

@@ -134,11 +134,18 @@ def _sqlite_apply_schema_updates(conn):
         pass
 
 
+def _encrypt_plaintext_secrets(conn):
+    """Mã hoá DPAPI các mật khẩu/token còn lưu chữ thường (DB từ bản cũ, file import)."""
+    from services.secret_store import migrate_plaintext_secrets
+    migrate_plaintext_secrets(conn)
+
+
 def create_db_and_tables():
     """Tạo tất cả bảng khi khởi động"""
     Base.metadata.create_all(sync_engine)
     with sync_engine.begin() as conn:
         _sqlite_apply_schema_updates(conn)
+        _encrypt_plaintext_secrets(conn)
 
 
 async def get_session():
@@ -152,3 +159,4 @@ async def init_db():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_sqlite_apply_schema_updates)
+        await conn.run_sync(_encrypt_plaintext_secrets)

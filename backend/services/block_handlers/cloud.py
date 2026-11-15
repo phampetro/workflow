@@ -16,13 +16,16 @@ def _load_connection(conn_id):
     with eb.connect_sqlite() as conn:
         row = conn.execute(
             "SELECT provider, account, refresh_token FROM cloud_connection WHERE id=?", (conn_id,)).fetchone()
-    return {"provider": row[0], "account": row[1] or "", "refresh_token": row[2] or ""} if row else None
+    return {"provider": row[0], "account": row[1] or "",
+            # sqlite3 thô không qua ORM (EncryptedText) → tự giải mã DPAPI
+            "refresh_token": eb.secret_store.decrypt(row[2] or "")} if row else None
 
 
 def _save_rotated_token(conn_id, token):
     # Microsoft xoay refresh token mỗi lần làm mới — không lưu là kết nối tự hỏng dần.
     with eb.connect_sqlite() as conn:
-        conn.execute("UPDATE cloud_connection SET refresh_token=? WHERE id=?", (token, conn_id))
+        conn.execute("UPDATE cloud_connection SET refresh_token=? WHERE id=?",
+                     (eb.secret_store.encrypt(token), conn_id))
 
 
 def _resolve_files(ctx, step, names):

@@ -98,7 +98,10 @@ def test_rotated_refresh_token_is_saved(engine, fake_cloud):
     fake_cloud["rotated"] = "new-token"
     engine.run(graph([("s", "start", {}), ("up", "cloud_upload", _block())], [("s", "up")]))
     with sqlite3.connect(engine.db_path) as c:
-        assert c.execute("SELECT refresh_token FROM cloud_connection").fetchone()[0] == "new-token"
+        stored = c.execute("SELECT refresh_token FROM cloud_connection").fetchone()[0]
+    # Token mới phải được lưu MÃ HOÁ (DPAPI), không chữ thường.
+    from services import secret_store
+    assert secret_store.is_encrypted(stored) and secret_store.decrypt(stored) == "new-token"
 
 
 def test_stop_during_upload(engine, monkeypatch, fake_cloud):
