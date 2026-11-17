@@ -22,7 +22,11 @@ from services.executor_blocks import get_saved_db_connection
 # Control policy has blocked this file" ngay ở `import sqlalchemy` (gặp thật 11/2026,
 # nút Test kết nối DB và mọi khối SQL hỏng). Bản 2.0 bị chặn phần biên dịch thì tự lùi
 # về Python thuần. Nâng phiên bản → thử trên máy bật Smart App Control trước.
-SQLALCHEMY = "sqlalchemy==2.0.36"
+# ⚠ Không được thấp hơn bản tối thiểu pandas đòi (pandas/compat/_optional.py
+# VERSIONS["sqlalchemy"]: pandas 3.1.1 đòi 2.0.42). Thấp hơn là pandas âm thầm coi
+# Engine như kết nối DBAPI → "'Engine' object has no attribute 'cursor'" (gặp thật khi
+# ghim 2.0.36). Script sql_to_excel / excel_to_sql kiểm lúc chạy và báo rõ.
+SQLALCHEMY = "sqlalchemy==2.0.58"
 
 # Package cố định cho từng khối chạy trong project venv (khớp ensure_packages).
 # Có "==" là ghim: ensure_packages / Tự động cài so cả phiên bản, lệch là cài lại.

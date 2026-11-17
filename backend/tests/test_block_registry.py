@@ -26,8 +26,8 @@ def test_every_palette_block_has_handler():
 
 def test_required_packages_single_source():
     # SQLAlchemy GHIM 2.0.x — xem pkg_scanner.SQLALCHEMY (Smart App Control chặn bản 2.1)
-    assert required_packages("sql_to_excel", "postgresql") == ["pandas", "sqlalchemy==2.0.36", "openpyxl", "psycopg2-binary"]
-    assert required_packages("run_sql_exec", None) == ["sqlalchemy==2.0.36", "pyodbc"]
+    assert required_packages("sql_to_excel", "postgresql") == ["pandas", "sqlalchemy==2.0.58", "openpyxl", "psycopg2-binary"]
+    assert required_packages("run_sql_exec", None) == ["sqlalchemy==2.0.58", "pyodbc"]
     assert required_packages("merge_excel") == ["pandas", "openpyxl", "xlrd"]
     assert required_packages("python") == []
     for btype in _BLOCK_BASE:

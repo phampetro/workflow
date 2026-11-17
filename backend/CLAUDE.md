@@ -42,7 +42,7 @@ Không quay lại cơ chế "bí danh" (trả key gốc trong `current_input` r�
 Phân biệt venv project với venv backend: xem đầu [services/pkg_scanner.py](services/pkg_scanner.py).
 
 1. Khai package cố định của khối vào **`_BLOCK_BASE`** trong `pkg_scanner.py`, trong handler gọi **`ensure_block_packages(ctx, step, db_type)`**. Đây là **nguồn duy nhất** cho cả lúc chạy lẫn lúc quét "Tự động cài thư viện" — hai nơi khai riêng từng lệch nhau (quét báo đủ, chạy thật văng `ImportError`).
-   Ghim phiên bản bằng `==` khi cần (ensure_packages và Tự động cài so ĐÚNG bản, lệch là cài lại). ⚠ **SQLAlchemy ghim 2.0.x** (`pkg_scanner.SQLALCHEMY`): bản 2.1 nạp bắt buộc file `.pyd` không chữ ký → **Smart App Control** của Windows 11 chặn ("Application Control policy has blocked this file") và không có đường lùi; 2.0 tự lùi về Python thuần. Nâng bản → thử trên máy bật Smart App Control trước.
+   Ghim phiên bản bằng `==` khi cần (ensure_packages và Tự động cài so ĐÚNG bản, lệch là cài lại). ⚠ **SQLAlchemy ghim 2.0.x mới nhất** (`pkg_scanner.SQLALCHEMY`, hiện 2.0.58 — KHÔNG thấp hơn bản tối thiểu pandas đòi, xem `pandas/compat/_optional.py`): bản 2.1 nạp bắt buộc file `.pyd` không chữ ký → **Smart App Control** của Windows 11 chặn ("Application Control policy has blocked this file") và không có đường lùi; 2.0 tự lùi về Python thuần. Nâng bản → thử trên máy bật Smart App Control trước.
 2. Driver khác nhau theo loại DB → khai thêm `_DRIVER_BLOCKS` + `_DB_DRIVERS`.
 3. Khối tự do (Python Block) không cần khai — quét `ast.parse()` lo; chỉ bổ sung `_MODULE_ALIAS` nếu tên module khác tên gói pip (VD `cv2`→`opencv-python`).
 

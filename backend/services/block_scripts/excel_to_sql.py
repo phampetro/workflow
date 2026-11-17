@@ -9,6 +9,26 @@ import warnings
 
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
+import sqlalchemy
+
+# pandas chỉ nhận Engine khi SQLAlchemy >= bản tối thiểu của chính nó; thấp hơn thì nó
+# âm thầm coi Engine là kết nối DBAPI → "'Engine' object has no attribute 'cursor'"
+# (gặp thật). Kiểm trước để báo lỗi dễ hiểu. Xem pkg_scanner.SQLALCHEMY.
+try:
+    from pandas.compat._optional import VERSIONS as _PD_MIN
+except ImportError:          # pandas đổi cấu trúc nội bộ → bỏ qua kiểm tra, không chặn chạy
+    _PD_MIN = {}
+_need = _PD_MIN.get("sqlalchemy")
+_have = sqlalchemy.__version__
+
+
+def _ver(s):
+    return tuple(int(x) for x in str(s).split(".")[:3] if x.isdigit())
+
+
+if _need and _ver(_have) < _ver(_need):
+    raise RuntimeError(f"pandas {pd.__version__} cần SQLAlchemy >= {_need} nhưng venv của project đang có "
+                       f"{_have}. Mở project → 'Tự động cài thư viện' để cài lại cho khớp.")
 
 # Suppress openpyxl style warnings (file không có default style vẫn đọc được)
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')

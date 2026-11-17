@@ -73,3 +73,25 @@ def test_sql_query_with_triple_quotes_stays_data():
     ns = {}
     exec(code.split("\n", 2)[0] + "\n" + code.split("\n", 2)[1], ns)
     assert ns["PARAMS"]["sql_query"] == evil
+
+
+def test_sql_scripts_explain_sqlalchemy_too_old_for_pandas(monkeypatch, dirs):
+    """pandas đòi SQLAlchemy mới hơn bản trong venv → lỗi rõ ràng thay vì
+    "'Engine' object has no attribute 'cursor'" (gặp thật khi ghim 2.0.36 với pandas 3.1.1)."""
+    from pandas.compat import _optional
+    monkeypatch.setitem(_optional.VERSIONS, "sqlalchemy", "9.9.9")
+    i, o = dirs
+    for name, params in (("sql_to_excel", {"conn_str": "sqlite://", "sql_query": "select 1", "excel_filename": "x.xlsx"}),
+                         ("excel_to_sql", {"conn_str": "sqlite://", "input_file": "a.xlsx", "table_name": "t",
+                                           "import_mode": "append", "mapping": {}, "header_row_str": "1",
+                                           "header_row_val": 0})):
+        with pytest.raises(RuntimeError, match="cần SQLAlchemy >= 9.9.9"):
+            _run(name, params, i, o)
+
+
+def test_sql_to_excel_reads_through_engine(dirs):
+    i, o = dirs
+    out = _run("sql_to_excel", {"conn_str": "sqlite://", "sql_query": "select 1 as a, 'x' as b",
+                                "excel_filename": "kq.xlsx"}, i, o)
+    assert out == {"file_name": "kq.xlsx"}
+    assert pd.read_excel(o / "kq.xlsx").to_dict("records") == [{"a": 1, "b": "x"}]
