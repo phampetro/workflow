@@ -57,10 +57,10 @@ def run_db_script(config: DbConfig, script_template: str):
     # Cài đặt thư viện theo db_type
     if config.project_id:
         from services.executor_blocks import ensure_packages
-        pkgs = ["sqlalchemy"]
-        if config.db_type == "postgresql": pkgs.append("psycopg2-binary")
-        elif config.db_type == "mysql": pkgs.extend(["pymysql", "cryptography"])
-        elif config.db_type == "sqlserver": pkgs.append("pyodbc")
+        from services.pkg_scanner import required_packages
+        # Nguồn duy nhất (giống khối EXEC): gồm SQLAlchemy đã ghim + driver theo db_type.
+        # Trước đây tự khai danh sách riêng ở đây, không ghim phiên bản.
+        pkgs = required_packages("run_sql_exec", config.db_type)
         # PHẢI bắt lỗi tại đây: trước đây ensure_packages nằm ngoài mọi try nên lỗi
         # cài đặt thành 500 trần — response đó không có header CORS, trình duyệt
         # chặn đọc nên FE chỉ hiện "Lỗi kết nối mạng" dù nguyên nhân là venv hỏng

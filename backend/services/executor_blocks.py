@@ -279,6 +279,16 @@ def _pkg_key(pkg: str) -> str:
     return pkg.lower().split('==')[0].split('>')[0].split('<')[0].strip()
 
 
+def _pkg_satisfied(pkg: str, freeze_lower: str) -> bool:
+    """Gói đã có trong output `pip freeze` (chữ thường) chưa. Có "==" thì phải ĐÚNG bản:
+    venv đang có SQLAlchemy 2.1 mà khối đòi 2.0.36 → coi là thiếu để cài lại."""
+    name = _pkg_key(pkg).replace("_", "-")
+    lines = {ln.strip().replace("_", "-") for ln in freeze_lower.splitlines()}
+    if "==" in pkg:
+        return f"{name}=={pkg.split('==', 1)[1].strip().lower()}" in lines
+    return any(ln.startswith(f"{name}==") or ln.startswith(f"{name} @") for ln in lines)
+
+
 def _stream_install(cmd, missing, log_fn, bid, tool, stop_event, language, idle_timeout=300):
     """Chạy lệnh cài, đẩy từng dòng ra log; trả returncode.
 
@@ -329,7 +339,8 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
     if not venv_exists(project_id):
         create_venv_sync(project_id)
 
-    wanted = {_pkg_key(p) for p in packages}
+    # Khoá cache là spec đầy đủ: "sqlalchemy==2.0.36" khác "sqlalchemy".
+    wanted = {p.lower().strip() for p in packages}
     mtime = _site_packages_mtime(project_id)
     with _pkg_ok_lock:
         cached = _pkg_ok_cache.get(project_id)
@@ -340,11 +351,7 @@ def ensure_packages(project_id: str, packages: list, log_fn=None, bid=None, labe
     result = subprocess.run(pip + ["freeze"], capture_output=True, text=True, timeout=30)
     installed = result.stdout.lower()
 
-    missing = []
-    for pkg in packages:
-        pkg_name = _pkg_key(pkg)
-        if f"{pkg_name}==" not in installed and f"{pkg_name} @" not in installed:
-            missing.append(pkg)
+    missing = [pkg for pkg in packages if not _pkg_satisfied(pkg, installed)]
 
     if missing:
         if log_fn:

@@ -30,7 +30,7 @@ def test_second_run_skips_pip_freeze(fake_venv):
     _sp, calls = fake_venv
     eb.ensure_packages("p", ["openpyxl", "pandas"])
     eb.ensure_packages("p", ["openpyxl"])
-    eb.ensure_packages("p", ["pandas==3.0.3"])
+    eb.ensure_packages("p", ["pandas"])
     assert len(calls) == 1
 
 
@@ -67,3 +67,28 @@ def test_stop_button_works_while_installer_is_silent():
     with pytest.raises(RuntimeError, match="stopped"):
         eb._stream_install(SILENT, [], None, "b", "pip", stop, "vi", idle_timeout=300)
     assert time.time() - t0 < 10
+
+
+def test_pinned_version_must_match_exactly():
+    """venv có SQLAlchemy 2.1.8 mà khối đòi 2.0.36 → phải coi là THIẾU để cài lại
+    (Smart App Control chặn phần biên dịch của 2.1; trước đây chỉ so tên nên không bao giờ hạ)."""
+    freeze = "sqlalchemy==2.1.8\npandas==3.0.3\npyodbc==5.2.0\n"
+    assert not eb._pkg_satisfied("sqlalchemy==2.0.36", freeze)
+    assert eb._pkg_satisfied("sqlalchemy==2.1.8", freeze)
+    assert eb._pkg_satisfied("sqlalchemy", freeze)
+    assert eb._pkg_satisfied("pandas", freeze)
+    assert not eb._pkg_satisfied("openpyxl", freeze)
+    assert not eb._pkg_satisfied("pyodbc==5.1.0", freeze)
+
+
+def test_mark_installed_compares_pinned_version(monkeypatch):
+    from services import pkg_scanner as ps
+    from services import venv_manager
+    monkeypatch.setattr(venv_manager, "venv_exists", lambda pid: True)
+    monkeypatch.setattr(eb, "list_pkgs_sync", lambda pid: [{"name": "SQLAlchemy", "version": "2.1.8"},
+                                                          {"name": "pyodbc", "version": "5.2.0"}])
+    monkeypatch.setattr(ps, "_importable_in_venv", lambda exe, mods: {})
+    monkeypatch.setattr(venv_manager, "get_python_path", lambda pid: "py")
+    items = ps.mark_installed("p", [{"package": "sqlalchemy==2.0.36", "fixed": True},
+                                    {"package": "pyodbc", "fixed": True}])
+    assert [i["installed"] for i in items] == [False, True]

@@ -16,13 +16,22 @@ import sys
 
 from services.executor_blocks import get_saved_db_connection
 
-# Package cố định cho từng khối chạy trong project venv (khớp ensure_packages)
+# GHIM SQLAlchemy 2.0.x (khớp backend/requirements.txt). SQLAlchemy 2.1 nạp bắt buộc
+# phần biên dịch (_immutabledict_cy*.pyd, không chữ ký số) và KHÔNG có đường lùi: máy bật
+# Smart App Control của Windows 11 chặn file đó → "DLL load failed ... Application
+# Control policy has blocked this file" ngay ở `import sqlalchemy` (gặp thật 11/2026,
+# nút Test kết nối DB và mọi khối SQL hỏng). Bản 2.0 bị chặn phần biên dịch thì tự lùi
+# về Python thuần. Nâng phiên bản → thử trên máy bật Smart App Control trước.
+SQLALCHEMY = "sqlalchemy==2.0.36"
+
+# Package cố định cho từng khối chạy trong project venv (khớp ensure_packages).
+# Có "==" là ghim: ensure_packages / Tự động cài so cả phiên bản, lệch là cài lại.
 _BLOCK_BASE = {
-    "sql_to_excel": ["pandas", "sqlalchemy", "openpyxl"],
-    "excel_to_sql": ["pandas", "openpyxl", "sqlalchemy", "xlrd"],
+    "sql_to_excel": ["pandas", SQLALCHEMY, "openpyxl"],
+    "excel_to_sql": ["pandas", "openpyxl", SQLALCHEMY, "xlrd"],
     "merge_excel": ["pandas", "openpyxl", "xlrd"],
     "pivot_excel": ["pandas", "openpyxl", "xlrd"],
-    "run_sql_exec": ["sqlalchemy"],
+    "run_sql_exec": [SQLALCHEMY],
 }
 # Khối nào cần driver DB → key chứa id kết nối trong data
 _DRIVER_BLOCKS = {
@@ -219,12 +228,15 @@ def mark_installed(project_id: str, items: list) -> list:
             it["installed"] = False
         return items
 
-    pip_names = {_norm(p["name"]) for p in list_pkgs_sync(project_id)}
+    pip_versions = {_norm(p["name"]): p.get("version", "") for p in list_pkgs_sync(project_id)}
     modules = sorted({m for it in items for m in it.get("modules", [])})
     importable = _importable_in_venv(venv_manager.get_python_path(project_id), modules)
 
     for it in items:
-        by_pip = _norm(it["package"]) in pip_names
+        name, _, pinned = it["package"].partition("==")
+        have = pip_versions.get(_norm(name))
+        # Gói ghim phiên bản: có mà khác bản (VD SQLAlchemy 2.1 thay vì 2.0.36) = chưa đạt.
+        by_pip = have is not None and (not pinned or have == pinned.strip())
         mods = it.get("modules") or []
         if importable is None or not mods:
             ok = by_pip                                   # gói cố định / không chạy được venv
