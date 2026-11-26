@@ -1,22 +1,63 @@
+import asyncio
 import json
+import logging
 from datetime import datetime
 from typing import Optional, Callable
 
+from apscheduler.events import EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-scheduler = AsyncIOScheduler()
+logger = logging.getLogger("pyflow.scheduler")
+
+# misfire_grace_time=None + coalesce: tới giờ mà job bị TRỄ (máy ngủ/ngủ đông đúng giờ
+# đó, event loop bận, đồng hồ hẹn giờ lệch sau khi máy thức dậy) thì VẪN CHẠY, gộp các
+# lượt lỡ thành 1. Mặc định của APScheduler là grace 1 GIÂY: trễ hơn là bỏ qua lặng lẽ,
+# chỉ để lại "was missed by" trong log — đúng triệu chứng "đặt giờ mà hôm sau không
+# chạy" (gặp thật 11/2026). Workflow đang chạy dở thì trigger_workflow_from_scheduler
+# vẫn tự bỏ qua lượt mới, nên chạy bù không gây chạy chồng.
+scheduler = AsyncIOScheduler(job_defaults={"misfire_grace_time": None, "coalesce": True, "max_instances": 1})
 _run_callback: Optional[Callable] = None
+_heartbeat_task: Optional[asyncio.Task] = None
+
+# Nhịp đánh thức scheduler (giây). APScheduler hẹn MỘT timer tới lần chạy kế tiếp (lịch
+# hằng ngày: ~24 giờ) theo đồng hồ monotonic của event loop; sau khi máy ngủ dậy hoặc
+# chỉnh giờ hệ thống, timer đó có thể kêu lệch hẳn so với giờ thật. Đánh thức mỗi phút
+# để scheduler so lại với giờ thật → lịch chạy trễ tối đa ~1 phút thay vì lệch hàng giờ.
+HEARTBEAT_SEC = 60
+
 
 def set_run_callback(cb: Callable):
     global _run_callback
     _run_callback = cb
 
+
+def _on_job_missed(event):
+    logger.warning(f"⏰ Lịch {event.job_id} lỡ giờ chạy {event.scheduled_run_time} (đã quá hạn chờ)")
+
+
+async def _heartbeat():
+    while True:
+        await asyncio.sleep(HEARTBEAT_SEC)
+        if scheduler.running:
+            scheduler.wakeup()
+
+
 def start_scheduler():
+    global _heartbeat_task
     if not scheduler.running:
+        scheduler.add_listener(_on_job_missed, EVENT_JOB_MISSED)
         scheduler.start()
+    if _heartbeat_task is None or _heartbeat_task.done():
+        # Giữ tham chiếu ở biến module: task không ai giữ có thể bị GC giữa chừng.
+        _heartbeat_task = asyncio.get_running_loop().create_task(_heartbeat())
+
 
 def stop_scheduler():
+    global _heartbeat_task
+    if _heartbeat_task is not None:
+        _heartbeat_task.cancel()
+        _heartbeat_task = None
     if scheduler.running:
         scheduler.shutdown()
 

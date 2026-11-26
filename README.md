@@ -530,6 +530,8 @@ Cơ chế `{{...}}` **không hỗ trợ truy cập field con** kiểu `{{ten_bie
   Chuỗi cron chuẩn "phút giờ ngày tháng thứ" vẫn được hỗ trợ để tương thích ngược ([scheduler.py:52](backend/services/scheduler.py:52)).
 - Job wrapper: `trigger_workflow_job → trigger_workflow_from_scheduler` — **skip nếu còn run RUNNING** cho workflow đó (chống chồng chéo khi cron dày hơn thời gian workflow chạy). Ghi log cảnh báo, không tạo run mới.
 - Sau mỗi lần chạy, `_record_schedule_run` UPDATE `last_run_at` + `next_run_at`.
+- **Lượt chạy bị trễ vẫn chạy** ([scheduler.py](backend/services/scheduler.py)): `misfire_grace_time=None` + `coalesce`. Mặc định của APScheduler chỉ cho trễ 1 giây — máy ngủ đúng giờ, event loop bận, hay timer ~24 giờ lệch sau khi máy thức dậy là lượt đó bị BỎ QUA lặng lẽ (lỗi thật 11/2026: "đặt giờ mà hôm sau không chạy"). Thêm nhịp đánh thức mỗi 60 giây để scheduler so lại với giờ thật. Lượt lỡ ghi log `⏰ Lịch … lỡ giờ chạy`.
+- Lịch hằng tháng ngày 29–31: tháng không có ngày đó thì **không chạy** (cách CronTrigger hoạt động).
 
 ---
 
